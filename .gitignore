@@ -32,3 +32,6 @@ docs/superpowers/
 *.log
 *.bak
 .env*
+
+# Superpowers plan/spec/scratch (kept locally; repo is destined public)
+docs/superpowers/
