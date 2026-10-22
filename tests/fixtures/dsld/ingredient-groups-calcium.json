@@ -31,6 +31,12 @@
           },
           {
             "nutrient": "Calcium citrate",
+            "cas": "813-94-5",
+            "identity": "Calcium citrate",
+            "iupacNomenclature": "calcium 2-hydroxypropane-1,2,3-tricarboxylate"
+          },
+          {
+            "nutrient": "Calcium citrate",
             "cas": "   ",
             "identity": "Calcium citrate"
           }

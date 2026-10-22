@@ -420,6 +420,26 @@ describe("DSLD brand search", () => {
     expectSanitized(message);
   });
 
+  it("falls back to the typed brand when browse fails for another reason", async () => {
+    const { client, fetchMock } = clientFor((url) => {
+      if (url.pathname.endsWith("/v9/browse-brands")) {
+        return failure(503);
+      }
+      if (url.pathname.endsWith("/v9/search-filter")) {
+        return jsonResponse(searchPage());
+      }
+      throw new Error(`unexpected DSLD request: ${url.pathname}`);
+    });
+    const adapter = createDsldAdapter(client);
+
+    const groups = await adapter.searchProducts("brand", "Nature's Best", 1);
+
+    expect(groups[0]?.items).toHaveLength(2);
+    const [search] = searchRequests(fetchMock);
+    expect(search?.searchParams.get("brand")).toBe("Nature's Best");
+    expect(search?.searchParams.get("q")).toBe("*");
+  });
+
   it("returns an empty group without a request for a blank brand", async () => {
     const { client, fetchMock } = clientFor(searchOnly(searchPage()));
     const adapter = createDsldAdapter(client);
@@ -546,6 +566,38 @@ describe("DSLD barcode search", () => {
     expect(message).toContain("Wait a few seconds");
     expectSanitized(message);
   });
+
+  it("sanitizes an empty 2xx barcode page", async () => {
+    const { client } = clientFor(() => new Response("", { status: 200 }));
+    const adapter = createDsldAdapter(client);
+
+    const message = await errorMessage(
+      adapter.searchProducts("barcode", "033674139417", 1),
+    );
+
+    expect(message).toContain("did not return a usable response");
+    expect(message).not.toContain("Cannot read");
+    expectSanitized(message);
+  });
+
+  it("skips malformed barcode hits instead of throwing", async () => {
+    const { client, fetchMock } = clientFor(
+      searchOnly({
+        hits: [
+          { _source: null },
+          { _source: "not-an-object" },
+          { _source: { id: 82118 } },
+        ],
+      }),
+    );
+    const adapter = createDsldAdapter(client);
+
+    const groups = await adapter.searchProducts("barcode", "033674139417", 1);
+
+    expect(groups[0]?.items).toHaveLength(1);
+    expect(groups[0]?.items[0]?.identifiers.dsldId).toBe(82118);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
 });
 
 describe("DSLD label lookup", () => {
@@ -555,11 +607,11 @@ describe("DSLD label lookup", () => {
         return jsonResponse(labelPage());
       }
       if (url.pathname.endsWith("/v9/ingredient-groups")) {
-        return jsonResponse(
-          url.searchParams.get("term") === "Calcium"
-            ? calciumGroups()
-            : emptyList(),
-        );
+        const term = url.searchParams.get("term");
+        if (term === "Vitamin D3") {
+          return jsonResponse(fixture("ingredient-groups-vitamin-d3.json"));
+        }
+        return jsonResponse(term === "Calcium" ? calciumGroups() : emptyList());
       }
       throw new Error(`unexpected DSLD request: ${url.pathname}`);
     });
@@ -603,7 +655,10 @@ describe("DSLD label lookup", () => {
     expect(vitaminD?.name).toBe("Vitamin D3");
     expect(vitaminD?.role).toBe("active");
     expect(vitaminD?.quantity).toBe("25 mcg");
-    expect(vitaminD?.identifiers).toEqual({ unii: "1C6V77Q43H" });
+    expect(vitaminD?.identifiers).toEqual({
+      unii: "1C6V77Q43H",
+      cas: ["67-97-0"],
+    });
     expect(vitaminD?.summary).toBe("Category: vitamin · Group: Vitamin D");
     expect(vitaminD?.source).toEqual(record.product.source);
 
@@ -622,8 +677,8 @@ describe("DSLD label lookup", () => {
     const terms = groupRequests(fetchMock).map((url) =>
       url.searchParams.get("term"),
     );
-    expect(terms).toEqual(["Calcium", "Gelatin"]);
-    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(terms).toEqual(["Vitamin D3", "Calcium", "Gelatin"]);
+    expect(fetchMock).toHaveBeenCalledTimes(4);
     expect(
       requests(fetchMock).some((url) =>
         url.pathname.endsWith("/v9/search-filter"),
@@ -689,6 +744,9 @@ describe("DSLD label lookup", () => {
           ],
         });
       }
+      if (url.pathname.endsWith("/v9/ingredient-groups")) {
+        return jsonResponse(emptyList());
+      }
       throw new Error(`unexpected DSLD request: ${url.pathname}`);
     });
     const adapter = createDsldAdapter(client);
@@ -706,7 +764,7 @@ describe("DSLD label lookup", () => {
     expect(record.ingredients[0]?.identifiers).toEqual({
       unii: "ABCDEFGHIJ",
     });
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it("leaves rows unenriched when nutrient info has no confident match", async () => {
@@ -766,12 +824,15 @@ describe("DSLD label lookup", () => {
     expect(fetchMock).toHaveBeenCalledTimes(5);
   });
 
-  it("keeps the label when nutrient-info enrichment fails", async () => {
+  it("stops enrichment at the first failure and keeps the label", async () => {
     const { client, fetchMock } = clientFor((url) => {
       if (url.pathname.endsWith("/v9/label/888")) {
         return jsonResponse({
           id: 888,
-          ingredientRows: [{ order: 1, name: "Mystery" }],
+          ingredientRows: [
+            { order: 1, name: "Mystery One" },
+            { order: 2, name: "Mystery Two" },
+          ],
         });
       }
       if (url.pathname.endsWith("/v9/ingredient-groups")) {
@@ -783,11 +844,119 @@ describe("DSLD label lookup", () => {
 
     const record = await adapter.getProduct("888", {});
 
-    expect(record.product.summary).toBe("1 ingredient");
-    expect(record.ingredients).toHaveLength(1);
+    expect(record.product.summary).toBe("2 ingredients");
+    expect(record.ingredients).toHaveLength(2);
     expect(record.ingredients[0]?.identifiers).toEqual({});
     expect(record.ingredients[0]?.summary).toBeUndefined();
+    expect(record.ingredients[1]?.identifiers).toEqual({});
+    const terms = groupRequests(fetchMock).map((url) =>
+      url.searchParams.get("term"),
+    );
+    expect(terms).toEqual(["Mystery One"]);
     expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("attaches only the salt form named on the label", async () => {
+    const { client, fetchMock } = clientFor((url) => {
+      if (url.pathname.endsWith("/v9/label/890")) {
+        return jsonResponse({
+          id: 890,
+          ingredientRows: [
+            {
+              order: 1,
+              name: "Calcium",
+              description: "Calcium (as calcium citrate)",
+            },
+            { order: 2, name: "Calcium", notes: "Calcium citrate" },
+            { order: 3, name: "Calcium", description: "Calcium" },
+          ],
+        });
+      }
+      if (url.pathname.endsWith("/v9/ingredient-groups")) {
+        return jsonResponse(calciumGroups());
+      }
+      throw new Error(`unexpected DSLD request: ${url.pathname}`);
+    });
+    const adapter = createDsldAdapter(client);
+
+    const record = await adapter.getProduct("890", {});
+
+    expect(record.ingredients[0]?.identifiers).toEqual({ cas: ["813-94-5"] });
+    expect(record.ingredients[1]?.identifiers).toEqual({ cas: ["813-94-5"] });
+    // Three rows share one name; the lookup is deduplicated, and a row with
+    // no form name cannot pick between the group's two salts.
+    expect(record.ingredients[2]?.identifiers).toEqual({});
+    expect(groupRequests(fetchMock)).toHaveLength(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("uses a single group CAS when the label names no form", async () => {
+    const { client, fetchMock } = clientFor((url) => {
+      if (url.pathname.endsWith("/v9/label/891")) {
+        return jsonResponse({
+          id: 891,
+          ingredientRows: [{ order: 1, name: "Magnesium" }],
+        });
+      }
+      if (url.pathname.endsWith("/v9/ingredient-groups")) {
+        return jsonResponse({
+          hits: [
+            {
+              _source: {
+                groupName: "Magnesium",
+                category: ["mineral"],
+                nutrientInfo: [
+                  { nutrient: "Magnesium oxide", cas: "1309-48-4" },
+                ],
+              },
+            },
+          ],
+        });
+      }
+      throw new Error(`unexpected DSLD request: ${url.pathname}`);
+    });
+    const adapter = createDsldAdapter(client);
+
+    const record = await adapter.getProduct("891", {});
+
+    expect(record.product.summary).toBe("1 ingredient");
+    expect(record.ingredients[0]?.identifiers).toEqual({
+      cas: ["1309-48-4"],
+    });
+    expect(record.ingredients[0]?.summary).toBe(
+      "Category: mineral · Group: Magnesium",
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("caps nutrient-info enrichment per label", async () => {
+    const { client, fetchMock } = clientFor((url) => {
+      if (url.pathname.endsWith("/v9/label/892")) {
+        return jsonResponse({
+          id: 892,
+          ingredientRows: Array.from({ length: 21 }, (_, index) => ({
+            order: index + 1,
+            name: `Ingredient ${index + 1}`,
+          })),
+        });
+      }
+      if (url.pathname.endsWith("/v9/ingredient-groups")) {
+        return jsonResponse(emptyList());
+      }
+      throw new Error(`unexpected DSLD request: ${url.pathname}`);
+    });
+    const adapter = createDsldAdapter(client);
+
+    const record = await adapter.getProduct("892", {});
+
+    expect(record.ingredients).toHaveLength(21);
+    const terms = groupRequests(fetchMock).map((url) =>
+      url.searchParams.get("term"),
+    );
+    expect(terms).toHaveLength(20);
+    expect(terms[0]).toBe("Ingredient 1");
+    expect(terms[19]).toBe("Ingredient 20");
+    expect(fetchMock).toHaveBeenCalledTimes(21);
   });
 
   it("rejects an invalid label id before making a request", async () => {

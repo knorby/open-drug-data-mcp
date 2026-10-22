@@ -60,9 +60,12 @@ import type {
  *   supplement package barcode.
  *
  * **Cost.** A search maps only search-index hits; it never fetches a full
- * label. `getProduct` fetches one label, then best-effort nutrient-info rows
- * for ingredients that have no UNII (the only place DSLD publishes CAS), so a
- * label that already carries UNIIs costs exactly one request.
+ * label. `getProduct` fetches one label, then enriches at most
+ * {@link ENRICHMENT_LIMIT} distinct label ingredient names with nutrient-info
+ * rows (the only place DSLD publishes CAS). Enrichment is serial, stops at the
+ * first failure, and is supplemental: the label still returns when nutrient
+ * info is unavailable. A label whose ingredient names are all covered by the
+ * cap costs at most one extra request per distinct name.
  *
  * **Pagination.** One page per call; every search reports `hasMore` from a
  * full page. The adapter never walks pages on its own.
@@ -84,6 +87,9 @@ const BRAND_LIMIT = 20;
 
 /** Ingredient-group candidates requested per nutrient-info lookup. */
 const GROUP_LIMIT = 10;
+
+/** Distinct label ingredient names enriched with nutrient info per label. */
+const ENRICHMENT_LIMIT = 20;
 
 /** Ingredient names listed in a search summary before "+N more". */
 const INGREDIENT_SUMMARY_LIMIT = 5;
@@ -227,10 +233,10 @@ function labelSummary(label: Label): string | undefined {
  * an empty source id.
  */
 function productRefOf(
-  raw: SearchLabelSource | undefined,
+  raw: SearchLabelSource | null | undefined,
   retrievedAt: string,
 ): ProductRef | null {
-  if (raw === undefined) return null;
+  if (raw === null || typeof raw !== "object") return null;
   const id = raw.id;
   if (typeof id !== "number" || !Number.isInteger(id) || id <= 0) return null;
 
@@ -276,6 +282,14 @@ function hasFullPage(result: SearchResult): boolean {
 }
 
 /**
+ * The HTTP status an upstream failure carries, when it has one. Reading the
+ * field defensively keeps client error classes out of the failure wording.
+ */
+function httpStatus(error: unknown): unknown {
+  return (error as { status?: unknown } | null | undefined)?.status;
+}
+
+/**
  * Turns a failed request into model-facing text.
  *
  * The message carries only DSLD's status and advice: client names, raw URLs
@@ -283,7 +297,7 @@ function hasFullPage(result: SearchResult): boolean {
  * are deliberately dropped. A 429 keeps `Retry-After` as a wait instruction.
  */
 function dsldFailure(context: string, error: unknown): Error {
-  const status = (error as { status?: unknown } | null | undefined)?.status;
+  const status = httpStatus(error);
 
   if (status === 429) {
     const retryAfter = (
@@ -349,6 +363,11 @@ async function searchGroup(
  * "natures best" reaches the label that says "Nature's Best". A browse with
  * no exact match contributes its keyword candidates; an empty browse falls
  * back to the typed value. Either way the product search filters by `brand`.
+ *
+ * A browse failure other than rate limiting is not fatal: the typed value is
+ * still a usable brand filter, so it is used directly. A 429 propagates so the
+ * caller keeps the upstream back-off advice instead of silently broadening
+ * the search.
  */
 async function brandNames(
   client: DsldClient,
@@ -376,7 +395,10 @@ async function brandNames(
     if (exact.length > 0) return exact;
     return candidates.length > 0 ? candidates : [query];
   } catch (error) {
-    throw dsldFailure("The brand search", error);
+    if (httpStatus(error) === 429) {
+      throw dsldFailure("The brand search", error);
+    }
+    return [query];
   }
 }
 
@@ -419,23 +441,24 @@ async function barcodeGroup(
   let hasMore = false;
 
   for (const variant of unique(parsed.upcVariants)) {
-    let result: SearchResult;
     try {
-      result = await client.search.byBarcode(variant, {
+      const result = await client.search.byBarcode(variant, {
         from: (page - 1) * PAGE_SIZE,
         size: PAGE_SIZE,
       });
+
+      // Mapping stays inside the failure boundary: a 2xx response with a
+      // malformed page must be reworded, not surfaced as a raw TypeError.
+      for (const ref of mapSearchResult(result, retrievedAt)) {
+        const id = ref.identifiers.dsldId;
+        if (id === undefined || seen.has(id)) continue;
+        seen.add(id);
+        items.push(ref);
+      }
+      hasMore = hasMore || hasFullPage(result);
     } catch (error) {
       throw dsldFailure("The barcode search", error);
     }
-
-    for (const ref of mapSearchResult(result, retrievedAt)) {
-      const id = ref.identifiers.dsldId;
-      if (id === undefined || seen.has(id)) continue;
-      seen.add(id);
-      items.push(ref);
-    }
-    hasMore = hasMore || hasFullPage(result);
   }
 
   return { source: "DSLD", items, page, hasMore };
@@ -445,17 +468,25 @@ async function barcodeGroup(
 interface LabelIngredient {
   name?: string;
   description?: string;
+  notes?: string;
   category?: string;
   ingredientGroup?: string;
   uniiCode?: string;
   quantity?: IngredientQuantity[];
 }
 
+/** One nutrient-info fact: a CAS number tied to a form name. */
+interface NutrientFact {
+  cas?: string;
+  identity?: string;
+  nutrient?: string;
+}
+
 /** The nutrient facts DSLD publishes on an ingredient group. */
-interface NutrientInfo {
-  cas: string[];
+interface GroupInfo {
   category?: string;
   groupName?: string;
+  facts: NutrientFact[];
 }
 
 /** The ingredient name a label row carries, preferring the display name. */
@@ -497,43 +528,91 @@ function findGroup(
   return undefined;
 }
 
-/** Reads CAS numbers, category, and name from an ingredient group. */
-function nutrientInfoOf(doc: IngredientGroupDoc): NutrientInfo {
-  const cas: string[] = [];
-  for (const info of doc.nutrientInfo ?? []) {
-    const value = nonEmpty(info.cas);
-    if (value !== undefined) cas.push(value);
-  }
+/** Reads the form-specific nutrient facts and group identity. */
+function groupInfoOf(doc: IngredientGroupDoc): GroupInfo {
+  const facts: NutrientFact[] = (doc.nutrientInfo ?? []).map((info) => ({
+    cas: nonEmpty(info.cas),
+    identity: nonEmpty(info.identity),
+    nutrient: nonEmpty(info.nutrient),
+  }));
   const category = nonEmpty(doc.category?.[0]);
   const groupName = nonEmpty(doc.groupName);
 
   return {
-    cas: unique(cas),
+    facts,
     ...(category !== undefined ? { category } : {}),
     ...(groupName !== undefined ? { groupName } : {}),
   };
 }
 
 /**
- * Best-effort CAS and category lookup for label rows without a UNII.
+ * Selects the CAS numbers that belong to a label row.
  *
- * One `ingredient-groups` request per distinct name, bounded by the label's
- * own ingredient list. A group contributes CAS only on an exact normalized
- * name or synonym match: a near-miss would attach another ingredient's CAS to
- * the label row, which is worse than leaving it blank. Any failure (including
- * a 429) is treated as absent enrichment: the label is the authoritative
- * payload, and optional identity data must not fail it.
+ * A group can publish several salt forms (calcium carbonate, calcium citrate,
+ * …), so a group-wide CAS list would attach the wrong salt's number. The
+ * row's own description/notes are matched against each fact's identity and
+ * nutrient name; only facts whose form appears on the label contribute. When
+ * no form match is possible, a single distinct CAS is safe to carry and a
+ * multi-CAS group is left blank rather than guessed.
  */
-async function nutrientInfoByName(
+function casForRow(
+  info: GroupInfo | undefined,
+  row: LabelIngredient,
+): string[] {
+  if (info === undefined) return [];
+
+  const text = normalizeToken([row.description, row.notes].join(" "));
+  const matched: string[] = [];
+  for (const fact of info.facts) {
+    if (fact.cas === undefined) continue;
+    // Identity is the specific form; the nutrient name is often generic
+    // ("Calcium") and would match every salt, so it is only a fallback.
+    const formName = fact.identity ?? fact.nutrient;
+    if (
+      formName !== undefined &&
+      text.length > 0 &&
+      text.includes(normalizeToken(formName))
+    ) {
+      matched.push(fact.cas);
+    }
+  }
+  if (matched.length > 0) return unique(matched);
+
+  const distinct = unique(
+    info.facts
+      .map((fact) => fact.cas)
+      .filter((cas): cas is string => cas !== undefined),
+  );
+  return distinct.length === 1 ? distinct : [];
+}
+
+/**
+ * Best-effort CAS, form, and category lookup for a label's ingredient names.
+ *
+ * One `ingredient-groups` request per distinct normalized name, deduplicated
+ * and capped at {@link ENRICHMENT_LIMIT} names. Requests stay serial to match
+ * the client's polite pacing, and the first failure stops the remaining
+ * lookups: a rate-limited label must not turn into one request per row. A
+ * group contributes identity data only on an exact normalized name or synonym
+ * match; a near-miss would attach another ingredient's facts to the label row.
+ */
+async function groupInfoByName(
   client: DsldClient,
   names: readonly string[],
-): Promise<Map<string, NutrientInfo>> {
-  const result = new Map<string, NutrientInfo>();
+): Promise<Map<string, GroupInfo>> {
+  const result = new Map<string, GroupInfo>();
+  const targets: { key: string; name: string }[] = [];
+  const seen = new Set<string>();
 
-  for (const name of unique(names)) {
+  for (const name of names) {
     const key = normalizeToken(name);
-    if (key.length === 0 || result.has(key)) continue;
+    if (key.length === 0 || seen.has(key)) continue;
+    seen.add(key);
+    targets.push({ key, name });
+    if (targets.length === ENRICHMENT_LIMIT) break;
+  }
 
+  for (const { key, name } of targets) {
     try {
       const groups = await client.ingredients.groups({
         term: name,
@@ -541,9 +620,10 @@ async function nutrientInfoByName(
         size: GROUP_LIMIT,
       });
       const match = findGroup(groups.hits, name);
-      if (match !== undefined) result.set(key, nutrientInfoOf(match));
+      if (match !== undefined) result.set(key, groupInfoOf(match));
     } catch {
-      // Optional enrichment: the label remains usable without it.
+      // Optional enrichment: stop asking and keep the label usable.
+      break;
     }
   }
 
@@ -553,7 +633,7 @@ async function nutrientInfoByName(
 /** A short ingredient summary: label category and ingredient group. */
 function ingredientSummary(
   row: LabelIngredient,
-  info: NutrientInfo | undefined,
+  info: GroupInfo | undefined,
 ): string | undefined {
   const parts: string[] = [];
   const category = nonEmpty(row.category) ?? info?.category;
@@ -568,14 +648,14 @@ function ingredientRefOf(
   row: LabelIngredient,
   role: IngredientRole,
   source: SourceRef,
-  enrichment: ReadonlyMap<string, NutrientInfo>,
+  enrichment: ReadonlyMap<string, GroupInfo>,
 ): IngredientRef | null {
   const name = ingredientName(row);
   if (name === undefined) return null;
 
   const unii = nonEmpty(row.uniiCode);
   const info = enrichment.get(normalizeToken(name));
-  const cas = info?.cas ?? [];
+  const cas = casForRow(info, row);
   const identifiers: IngredientIdentifiers = {
     ...(unii !== undefined ? { unii } : {}),
     ...(cas.length > 0 ? { cas } : {}),
@@ -615,13 +695,12 @@ async function labelIngredientRefs(
     ),
   ];
 
-  const missingUnii: string[] = [];
+  const names: string[] = [];
   for (const { row } of rows) {
-    if (nonEmpty(row.uniiCode) !== undefined) continue;
     const name = ingredientName(row);
-    if (name !== undefined) missingUnii.push(name);
+    if (name !== undefined) names.push(name);
   }
-  const enrichment = await nutrientInfoByName(client, missingUnii);
+  const enrichment = await groupInfoByName(client, names);
 
   const items: IngredientRef[] = [];
   for (const { row, role } of rows) {
