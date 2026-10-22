@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
   dailyMedLabelUrl,
+  extractSplUsageSections,
   parseSplIngredients,
   parseSplLabel,
-} from "../src/sources/identity/spl.js";
+  SPL_USAGE_LOINC_CODES,
+} from "../src/sources/identity/spl-ingredients.js";
 
 /**
  * DailyMed SPL XML parsing is pure: these tests pin the two extraction paths
@@ -402,6 +404,218 @@ describe("parseSplLabel", () => {
     expect(label.productName).toBeUndefined();
     expect(label.dosageForm).toBeUndefined();
     expect(label.labeler).toBeUndefined();
+  });
+});
+
+/** A namespaced SPL document wrapping one or more section components. */
+function usageSpl(sections: string): string {
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<document xmlns="urn:hl7-org:v3">
+  <effectiveTime value="20261013"/>
+  <versionNumber value="2"/>
+  <component>
+    <structuredBody>${sections}</structuredBody>
+  </component>
+</document>`;
+}
+
+/** One section with a LOINC code, optional title, and text markup. */
+function section(
+  code: string,
+  body: string,
+  title?: string,
+  nested = "",
+): string {
+  return `<component><section>
+    <code code="${code}" codeSystem="2.16.840.1.113883.6.1"/>
+    ${title === undefined ? "" : `<title>${title}</title>`}
+    <text>${body}</text>
+    ${nested}
+  </section></component>`;
+}
+
+describe("extractSplUsageSections", () => {
+  it("extracts a usage section with its heading, paragraph text, and label version", () => {
+    const xml = usageSpl(
+      section(
+        "34068-7",
+        "<paragraph>Clean the area and spray 1 to 3 times a day.</paragraph>",
+        "Directions",
+      ),
+    );
+
+    expect(extractSplUsageSections(xml)).toEqual({
+      sections: [
+        {
+          heading: "Directions",
+          text: "Clean the area and spray 1 to 3 times a day.",
+        },
+      ],
+      truncated: false,
+      version: "2",
+      effectiveTime: "20261013",
+    });
+    expect(SPL_USAGE_LOINC_CODES).toContain("34068-7");
+  });
+
+  it("ignores sections outside the usage LOINC set", () => {
+    const xml = usageSpl(
+      section(
+        "55105-1",
+        "<paragraph>Topical antiseptic.</paragraph>",
+        "Purpose",
+      ),
+    );
+
+    expect(extractSplUsageSections(xml)).toEqual({
+      sections: [],
+      truncated: false,
+      version: "2",
+      effectiveTime: "20261013",
+    });
+  });
+
+  it("falls back to the LOINC code when a matching section has no title", () => {
+    const xml = usageSpl(
+      section("59845-8", "<paragraph>Use as directed.</paragraph>"),
+    );
+
+    expect(extractSplUsageSections(xml).sections).toEqual([
+      { heading: "59845-8", text: "Use as directed." },
+    ]);
+  });
+
+  it("keeps paragraph and item text while skipping table content", () => {
+    const xml = usageSpl(
+      section(
+        "42231-1",
+        `<paragraph>Take with food.</paragraph>
+         <table><tr><td>Hidden table cell</td></tr></table>
+         <list><item>Do not crush.</item></list>`,
+        "Medication Guide",
+      ),
+    );
+
+    const extraction = extractSplUsageSections(xml);
+    expect(extraction.sections).toEqual([
+      {
+        heading: "Medication Guide",
+        text: "Take with food.\n\nDo not crush.",
+      },
+    ]);
+  });
+
+  it("flags a table-only section and does not flatten the table", () => {
+    const xml = usageSpl(
+      section(
+        "34068-7",
+        "<table><tr><td>Hidden table cell</td></tr></table>",
+        "Directions",
+      ),
+    );
+
+    expect(extractSplUsageSections(xml).sections).toEqual([
+      {
+        heading: "Directions",
+        text: "[Table content omitted; open the hosted label for the table.]",
+      },
+    ]);
+  });
+
+  it("extracts nested usage sections separately and skips them in the parent text", () => {
+    const xml = usageSpl(
+      section(
+        "42230-3",
+        "<paragraph>Outer guidance.</paragraph>",
+        "Patient Package Insert",
+        section(
+          "34068-7",
+          "<paragraph>Inner directions.</paragraph>",
+          "Directions",
+        ),
+      ),
+    );
+
+    expect(extractSplUsageSections(xml).sections).toEqual([
+      { heading: "Patient Package Insert", text: "Outer guidance." },
+      { heading: "Directions", text: "Inner directions." },
+    ]);
+  });
+
+  it("skips empty paragraphs and nested sections and ignores uncoded sections", () => {
+    const xml = usageSpl(
+      `<component><section><text><paragraph>No code here.</paragraph></text></section></component>` +
+        section(
+          "34068-7",
+          `<paragraph>Before <content><table><tr><td>Hidden</td></tr></table></content> after</paragraph>
+           <paragraph><section><code code="55105-1"/><text><paragraph>Ignored</paragraph></text></section></paragraph>
+           <paragraph>   </paragraph>
+           <paragraph>Use as directed.</paragraph>`,
+          "Directions",
+        ) +
+        section("59845-8", "<paragraph>Use.</paragraph>", "   "),
+    );
+
+    expect(extractSplUsageSections(xml).sections).toEqual([
+      { heading: "Directions", text: "Beforeafter\n\nUse as directed." },
+      { heading: "59845-8", text: "Use." },
+    ]);
+  });
+
+  it("omits version fields when the document has none", () => {
+    const xml = `<document><component><structuredBody>${section(
+      "34068-7",
+      "<paragraph>Use.</paragraph>",
+      "Directions",
+    )}</structuredBody></component></document>`;
+
+    expect(extractSplUsageSections(xml)).toEqual({
+      sections: [{ heading: "Directions", text: "Use." }],
+      truncated: false,
+    });
+  });
+
+  it("truncates an oversized section text and reports it", () => {
+    const xml = usageSpl(
+      section(
+        "34068-7",
+        `<paragraph>${"x".repeat(9_000)}</paragraph>`,
+        "Directions",
+      ),
+    );
+
+    const extraction = extractSplUsageSections(xml);
+    expect(extraction.truncated).toBe(true);
+    expect(extraction.sections).toHaveLength(1);
+    expect(extraction.sections[0]?.text.endsWith("…[truncated]")).toBe(true);
+    expect(extraction.sections[0]?.text.length).toBe(
+      8_000 + "…[truncated]".length,
+    );
+  });
+
+  it("caps the number of sections and reports truncation", () => {
+    const sections = Array.from({ length: 25 }, (_, index) =>
+      section(
+        "34068-7",
+        `<paragraph>Directions ${index}.</paragraph>`,
+        `Directions ${index}`,
+      ),
+    ).join("");
+    const extraction = extractSplUsageSections(usageSpl(sections));
+
+    expect(extraction.sections).toHaveLength(20);
+    expect(extraction.truncated).toBe(true);
+  });
+
+  it("returns empty defaults for blank or malformed XML", () => {
+    expect(extractSplUsageSections("")).toEqual({
+      sections: [],
+      truncated: false,
+    });
+    expect(extractSplUsageSections("<document><not-closed")).toEqual({
+      sections: [],
+      truncated: false,
+    });
   });
 });
 

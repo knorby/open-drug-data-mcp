@@ -17,7 +17,6 @@ import type {
   IngredientRef,
   NextStep,
   ProductRef,
-  SourceRef,
 } from "../src/lib/schemas.js";
 import { createDsldAdapter } from "../src/sources/dsld.js";
 import { createInkeedecoderAdapter } from "../src/sources/inkeedecoder.js";
@@ -42,6 +41,7 @@ import {
 
 const FIXTURES = new URL("./fixtures/", import.meta.url);
 const SPL_SETID = "a1e07d5c-2056-46f3-8737-f03ed0b4bae8";
+const OVERSIZED_SETID = "ffffffff-1111-4111-8111-111111111111";
 const RETRIEVED_AT = "2026-10-21T12:00:00.000Z";
 const ENV_KEYS = [
   "OPENFDA_API_KEY",
@@ -114,19 +114,21 @@ async function findTool(harness: TestHarness, name: string) {
 
 interface ProductDetailOutput {
   product: ProductRef;
-  ingredients: Array<{
-    name: string;
-    unii?: string;
-    cas?: string;
-    role?: "active" | "inactive" | "unknown";
-    strength?: string;
-    form?: string;
-    source?: SourceRef;
-  }>;
+  details: Record<string, unknown>;
+  ingredients?: IngredientRef[];
+  labelSections?: {
+    sections: Array<{ heading: string; text: string }>;
+    truncated: boolean;
+  };
   links: Array<{ label: string; url: string }>;
   summary?: string;
   nextSteps: NextStep[];
   labelIngredientsIncluded: boolean;
+  pagination: {
+    page: number;
+    ingredientsHasMore: boolean;
+    sectionsHasMore: boolean;
+  };
 }
 
 function productRef(
@@ -197,7 +199,7 @@ describe("get_product tool", () => {
     vi.restoreAllMocks();
   });
 
-  it("advertises the product lookup with the five product databases", async () => {
+  it("advertises the briefed product inputs and sources", async () => {
     harness = await start(createRegistry([], []));
 
     const tool = await findTool(harness, "drugdata_get_product");
@@ -207,12 +209,15 @@ describe("get_product tool", () => {
       idempotentHint: true,
       openWorldHint: true,
     });
-    expect(tool.description).toContain("include_label_ingredients");
+    expect(tool.description).toContain("include_label_sections");
+    expect(tool.description).toContain("large");
     expect(tool.description).toContain("default false");
     expect(tool.description).not.toMatch(/client/i);
     expect(Object.keys(tool.inputSchema.properties ?? {}).sort()).toEqual([
       "id",
-      "include_label_ingredients",
+      "include_ingredients",
+      "include_label_sections",
+      "page",
       "response_format",
       "source",
     ]);
@@ -220,11 +225,10 @@ describe("get_product tool", () => {
       enum?: string[];
     };
     expect(sourceSchema.enum).toEqual([
-      "openFDA",
-      "RxNorm",
-      "DailyMed",
-      "DSLD",
-      "INKEEDecoder",
+      "openfda",
+      "dsld",
+      "dailymed",
+      "inkeedecoder",
     ]);
   });
 
@@ -253,7 +257,7 @@ describe("get_product tool", () => {
     harness = await start(createRegistry([withLeak], []));
     const result = await harness.client.callTool({
       name: "drugdata_get_product",
-      arguments: { source: "DailyMed", id: SPL_SETID },
+      arguments: { source: "dailymed", id: SPL_SETID },
     });
 
     expect(result.isError).toBeFalsy();
@@ -271,13 +275,19 @@ describe("get_product tool", () => {
         url: `https://dailymed.nlm.nih.gov/dailymed/drugInfo.cfm?setid=${SPL_SETID}`,
       },
     });
+    expect(output.details).toEqual({
+      version: "2",
+      effectiveTime: "20261013",
+      dosageForm: "LIQUID",
+      labeler: "Natural Immunogenics Corp.dba SOVEREIGN NATURALS",
+    });
     expect(output.labelIngredientsIncluded).toBe(true);
     expect(output.ingredients).toEqual([
       {
         name: "Silver",
-        unii: "3M4G523W1G",
         role: "active",
-        strength: "30 [hp_X]/g",
+        quantity: "30 [hp_X]/g",
+        identifiers: { unii: "3M4G523W1G" },
         source: expect.objectContaining({
           database: "DailyMed",
           id: SPL_SETID,
@@ -285,14 +295,20 @@ describe("get_product tool", () => {
       },
       {
         name: "Water",
-        unii: "059QF0KO0R",
         role: "inactive",
+        identifiers: { unii: "059QF0KO0R" },
         source: expect.objectContaining({
           database: "DailyMed",
           id: SPL_SETID,
         }),
       },
     ]);
+    expect(output.labelSections).toBeUndefined();
+    expect(output.pagination).toEqual({
+      page: 1,
+      ingredientsHasMore: false,
+      sectionsHasMore: false,
+    });
     expect(output.links[0]).toEqual({
       label: "DailyMed record",
       url: `https://dailymed.nlm.nih.gov/dailymed/drugInfo.cfm?setid=${SPL_SETID}`,
@@ -313,10 +329,89 @@ describe("get_product tool", () => {
     expect(text).toContain("SOVEREIGN SILVER HOMEOPATHIC WOUND WASH");
     expect(text).toContain("## Ingredients (2)");
     expect(text).toContain("role: active");
-    expect(text).toContain("strength: 30 [hp_X]/g");
+    expect(text).toContain("quantity: 30 [hp_X]/g");
     expect(text).toContain("UNII: 3M4G523W1G");
     expect(text).toContain("**Next steps**");
     expect(text).toContain("drugdata_resolve_identifiers");
+    expect(text).not.toContain("## Label sections");
+  });
+
+  it("extracts DailyMed usage sections only when asked", async () => {
+    const xml = textFixture("nlm/dailymed-spl-a1e07d5c.xml");
+    const client = nlmClient((url) =>
+      url.pathname.includes(SPL_SETID)
+        ? new Response(xml, {
+            headers: { "content-type": "application/xml" },
+          })
+        : new Response(null, { status: 404 }),
+    );
+
+    harness = await start(createRegistry([createNlmAdapter(client)], []));
+    const withSections = await harness.client.callTool({
+      name: "drugdata_get_product",
+      arguments: {
+        source: "dailymed",
+        id: SPL_SETID,
+        include_label_sections: true,
+      },
+    });
+
+    expect(withSections.isError).toBeFalsy();
+    const output = withSections.structuredContent as ProductDetailOutput;
+    expect(output.labelSections?.truncated).toBe(false);
+    expect(output.labelSections?.sections).toEqual([
+      {
+        heading: "Directions",
+        text: expect.stringContaining("Clean affected area"),
+      },
+    ]);
+    expect(textOf(withSections)).toContain("## Label sections (1)");
+    expect(textOf(withSections)).toContain("### Directions");
+
+    const withoutSections = await harness.client.callTool({
+      name: "drugdata_get_product",
+      arguments: {
+        source: "dailymed",
+        id: SPL_SETID,
+        include_label_sections: false,
+      },
+    });
+    expect(
+      (withoutSections.structuredContent as ProductDetailOutput).labelSections,
+    ).toBeUndefined();
+    expect(textOf(withoutSections)).not.toContain("## Label sections");
+  });
+
+  it("bounds a deliberately oversized label and notes the truncation", async () => {
+    const xml = textFixture("nlm/dailymed-spl-oversized.xml");
+    const client = nlmClient((url) =>
+      url.pathname.includes(OVERSIZED_SETID)
+        ? new Response(xml, {
+            headers: { "content-type": "application/xml" },
+          })
+        : new Response(null, { status: 404 }),
+    );
+
+    harness = await start(createRegistry([createNlmAdapter(client)], []));
+    const result = await harness.client.callTool({
+      name: "drugdata_get_product",
+      arguments: {
+        source: "dailymed",
+        id: OVERSIZED_SETID,
+        include_label_sections: true,
+      },
+    });
+
+    expect(result.isError).toBeFalsy();
+    expect(JSON.stringify(result.structuredContent).length).toBeLessThanOrEqual(
+      CHARACTER_LIMIT,
+    );
+    const output = result.structuredContent as ProductDetailOutput;
+    expect(output.pagination.sectionsHasMore).toBe(true);
+    expect(output.labelSections?.truncated).toBe(true);
+    const text = textOf(result);
+    expect(text).toContain("Some fields were shortened");
+    expect(text.length).toBeLessThanOrEqual(CHARACTER_LIMIT);
   });
 
   it("returns an openFDA NDC product with directory actives by default", async () => {
@@ -330,7 +425,7 @@ describe("get_product tool", () => {
     harness = await start(createRegistry([createOpenFdaAdapter(client)], []));
     const result = await harness.client.callTool({
       name: "drugdata_get_product",
-      arguments: { source: "openFDA", id: "58151-155" },
+      arguments: { source: "openfda", id: "58151-155" },
     });
 
     expect(result.isError).toBeFalsy();
@@ -340,70 +435,32 @@ describe("get_product tool", () => {
     expect(output.product.identifiers.splSetId).toBe(
       "a60cc18b-0631-4cf0-b021-9f52224ece65",
     );
+    expect(output.details).toMatchObject({
+      source: "ndc",
+      labeler: "Viatris Specialty LLC",
+    });
     expect(output.labelIngredientsIncluded).toBe(false);
     expect(output.ingredients).toEqual([
       {
         name: "ATORVASTATIN CALCIUM TRIHYDRATE",
         role: "active",
-        strength: "10 mg/1",
+        quantity: "10 mg/1",
+        identifiers: {},
         source: expect.objectContaining({ database: "openFDA" }),
       },
     ]);
-    expect(output.ingredients.map((item) => item.name)).not.toContain("Water");
+    expect(output.ingredients?.map((item) => item.name)).not.toContain("Water");
+    expect(output.pagination).toEqual({
+      page: 1,
+      ingredientsHasMore: false,
+      sectionsHasMore: false,
+    });
     expect(output.links.map((link) => link.url)).toEqual(
       expect.arrayContaining([
         expect.stringContaining("api.fda.gov"),
         expect.stringContaining("dailymed.nlm.nih.gov"),
       ]),
     );
-  });
-
-  it("parses SPL ingredients when openFDA include_label_ingredients is true", async () => {
-    const xml = textFixture("nlm/dailymed-spl-a1e07d5c.xml");
-    const getSplXml = vi.fn(async () => xml);
-    const client = openFdaClient((url) => {
-      if (url.pathname === "/drug/ndc.json") {
-        return jsonResponse(fixture("openfda/ndc-brand-lipitor.json"));
-      }
-      return new Response(null, { status: 404 });
-    });
-
-    harness = await start(
-      createRegistry([createOpenFdaAdapter(client, { getSplXml })], []),
-    );
-    const result = await harness.client.callTool({
-      name: "drugdata_get_product",
-      arguments: {
-        source: "openFDA",
-        id: "5815115577",
-        include_label_ingredients: true,
-      },
-    });
-
-    expect(result.isError).toBeFalsy();
-    const output = result.structuredContent as ProductDetailOutput;
-    expect(getSplXml).toHaveBeenCalledWith(
-      "a60cc18b-0631-4cf0-b021-9f52224ece65",
-    );
-    expect(output.labelIngredientsIncluded).toBe(true);
-    expect(output.ingredients).toEqual([
-      expect.objectContaining({
-        name: "Silver",
-        unii: "3M4G523W1G",
-        role: "active",
-        strength: "30 [hp_X]/g",
-        source: expect.objectContaining({ database: "DailyMed" }),
-      }),
-      expect.objectContaining({
-        name: "Water",
-        unii: "059QF0KO0R",
-        role: "inactive",
-        source: expect.objectContaining({ database: "DailyMed" }),
-      }),
-    ]);
-    const text = textOf(result);
-    expect(text).toContain("UNII: 3M4G523W1G");
-    expect(text).toContain("DailyMed label");
   });
 
   it("returns an openFDA label by SPL set id", async () => {
@@ -423,7 +480,7 @@ describe("get_product tool", () => {
     const result = await harness.client.callTool({
       name: "drugdata_get_product",
       arguments: {
-        source: "openFDA",
+        source: "openfda",
         id: "A60CC18B-0631-4CF0-B021-9F52224ECE65",
       },
     });
@@ -439,58 +496,16 @@ describe("get_product tool", () => {
       "58151-156",
       "58151-155-77",
     ]);
-    expect(output.product.identifiers.splSetId).toBe(
-      "a60cc18b-0631-4cf0-b021-9f52224ece65",
-    );
+    expect(output.details).toMatchObject({
+      source: "label",
+      effectiveTime: "20260101",
+      version: "29",
+    });
     expect(output.labelIngredientsIncluded).toBe(false);
     expect(output.ingredients).toEqual([]);
+    expect(output.labelSections).toBeUndefined();
     expect(output.summary).toContain("effective 20260101");
-    expect(textOf(result)).toContain("include_label_ingredients: true");
-  });
-
-  it("returns an RxNorm concept with its NDCs", async () => {
-    const client = nlmClient((url) => {
-      if (url.pathname.endsWith("/rxcui/617314/properties.json")) {
-        return jsonResponse(fixture("nlm/rxnorm-concept-617314.json"));
-      }
-      if (url.pathname.endsWith("/rxcui/617314/ndcs.json")) {
-        return jsonResponse(fixture("nlm/rxnorm-ndcs-617314.json"));
-      }
-      return new Response(null, { status: 404 });
-    });
-
-    harness = await start(createRegistry([createNlmAdapter(client)], []));
-    const result = await harness.client.callTool({
-      name: "drugdata_get_product",
-      arguments: { source: "RxNorm", id: "617314" },
-    });
-
-    expect(result.isError).toBeFalsy();
-    const output = result.structuredContent as ProductDetailOutput;
-    expect(output.product).toMatchObject({
-      name: "atorvastatin 10 MG Oral Tablet [Lipitor]",
-      category: "medication",
-      identifiers: {
-        rxcui: ["617314"],
-        ndc: expect.arrayContaining(["58151015577"]),
-      },
-      source: {
-        database: "RxNorm",
-        id: "617314",
-      },
-    });
-    expect(output.ingredients).toEqual([]);
-    expect(output.labelIngredientsIncluded).toBe(false);
-    expect(output.summary).toContain("RxNorm term type: SBD");
-    expect(output.nextSteps).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          tool: "drugdata_get_ingredient",
-          input: { source: "nlm", id: "617314" },
-        }),
-      ]),
-    );
-    expect(textOf(result)).toContain("Product detail — RxNorm (617314)");
+    expect(textOf(result)).toContain('source: "dailymed"');
   });
 
   it("returns a DSLD label with active and inactive ingredient rows", async () => {
@@ -517,7 +532,7 @@ describe("get_product tool", () => {
     harness = await start(createRegistry([adapter], []));
     const result = await harness.client.callTool({
       name: "drugdata_get_product",
-      arguments: { source: "DSLD", id: "82118" },
+      arguments: { source: "dsld", id: "82118" },
     });
 
     expect(result.isError).toBeFalsy();
@@ -527,15 +542,22 @@ describe("get_product tool", () => {
       dsldId: 82118,
       upc: ["0 33674 13941 7"],
     });
-    expect(output.labelIngredientsIncluded).toBe(false);
-    expect(output.ingredients[0]).toMatchObject({
-      name: "Vitamin D3",
-      unii: "1C6V77Q43H",
-      cas: "67-97-0",
-      role: "active",
-      strength: "25 mcg",
+    expect(output.details).toEqual({
+      productType: "Vitamin",
+      targetGroups: ["Adult (18 - 50 Years)", "Adult (51 - 70 Years)"],
+      netContents: ["90 Softgel(s)"],
+      claims: ["Nutrient"],
+      offMarket: false,
+      entryDate: "2023-05-01",
     });
-    expect(output.ingredients[2]).toMatchObject({
+    expect(output.labelIngredientsIncluded).toBe(false);
+    expect(output.ingredients?.[0]).toMatchObject({
+      name: "Vitamin D3",
+      role: "active",
+      quantity: "25 mcg",
+      identifiers: { unii: "1C6V77Q43H", cas: ["67-97-0"] },
+    });
+    expect(output.ingredients?.[2]).toMatchObject({
       name: "Gelatin",
       role: "inactive",
     });
@@ -568,7 +590,7 @@ describe("get_product tool", () => {
     const result = await harness.client.callTool({
       name: "drugdata_get_product",
       arguments: {
-        source: "INKEEDecoder",
+        source: "inkeedecoder",
         id: "https://inkeedecoder.com/products/the-inkey-list-niacinamide",
       },
     });
@@ -579,13 +601,14 @@ describe("get_product tool", () => {
     expect(output.product.identifiers).toEqual({
       slug: "the-inkey-list-niacinamide",
     });
-    expect(output.ingredients[0]).toMatchObject({
+    expect(output.ingredients?.[0]).toMatchObject({
       name: "Water (Aqua/Eau)",
+      identifiers: { slug: "water" },
     });
-    expect(output.ingredients[0]?.role).toBeUndefined();
+    expect(output.ingredients?.[0]?.role).toBeUndefined();
     expect(
-      output.ingredients.find((item) => item.name.startsWith("Niacinamide")),
-    ).toMatchObject({ strength: "10.0%" });
+      output.ingredients?.find((item) => item.name.startsWith("Niacinamide")),
+    ).toMatchObject({ quantity: "10.0%" });
     expect(output.summary).toContain("Description:");
     expect(textOf(result)).toContain("Description:");
   });
@@ -594,13 +617,12 @@ describe("get_product tool", () => {
     harness = await start(createRegistry([], []));
 
     const cases: Array<[string, string, RegExp]> = [
-      ["openFDA", "definitely-not-an-id", /drugdata_search_products/],
-      ["RxNorm", "abc", /drugdata_search_ingredients/],
-      ["DailyMed", "not-a-setid", /drugdata_search_products/],
-      ["DSLD", "label-82118", /drugdata_search_products/],
-      ["INKEEDecoder", "", /drugdata_search_products/],
+      ["openfda", "definitely-not-an-id", /drugdata_search_products/],
+      ["dailymed", "not-a-setid", /drugdata_search_products/],
+      ["dsld", "label-82118", /drugdata_search_products/],
+      ["inkeedecoder", "", /drugdata_search_products/],
       [
-        "INKEEDecoder",
+        "inkeedecoder",
         "https://example.com/products/nope",
         /drugdata_search_products/,
       ],
@@ -621,30 +643,24 @@ describe("get_product tool", () => {
 
     const result = await harness.client.callTool({
       name: "drugdata_get_product",
-      arguments: { source: "DrugCentral", id: "74" },
+      arguments: { source: "rxnorm", id: "617314" },
     });
 
     expect(result.isError).toBe(true);
     const text = textOf(result);
-    for (const source of [
-      "openFDA",
-      "RxNorm",
-      "DailyMed",
-      "DSLD",
-      "INKEEDecoder",
-    ]) {
+    for (const source of ["openfda", "dsld", "dailymed", "inkeedecoder"]) {
       expect(text).toContain(source);
     }
   });
 
   it("bounds an oversized product detail and says fields were shortened", async () => {
-    const ingredients = Array.from({ length: 300 }, (_, index) =>
+    const ingredients = Array.from({ length: 100 }, (_, index) =>
       ingredientRef(`Ingredient ${index} with a long descriptive name`, {
         quantity: "10 mg",
         identifiers: { unii: `UNII${String(index).padStart(6, "0")}` },
         summary:
           "A deliberately long ingredient summary used to exercise bounding. ".repeat(
-            3,
+            10,
           ),
       }),
     );
@@ -653,17 +669,17 @@ describe("get_product tool", () => {
         "DailyMed",
         "Oversized label",
         { splSetId: SPL_SETID },
-        { category: "medication", summary: "x".repeat(5_000) },
+        { category: "medication", summary: "x".repeat(20_000) },
       ),
       ingredients,
-      summary: "y".repeat(5_000),
+      summary: "y".repeat(20_000),
       labelIngredientsIncluded: true,
     }));
 
     harness = await start(createRegistry([adapter], []));
     const result = await harness.client.callTool({
       name: "drugdata_get_product",
-      arguments: { source: "DailyMed", id: SPL_SETID },
+      arguments: { source: "dailymed", id: SPL_SETID },
     });
 
     expect(result.isError).toBeFalsy();
@@ -684,7 +700,7 @@ describe("get_product tool", () => {
     harness = await start(createRegistry([adapter], []));
     const result = await harness.client.callTool({
       name: "drugdata_get_product",
-      arguments: { source: "DSLD", id: "42", response_format: "json" },
+      arguments: { source: "dsld", id: "42", response_format: "json" },
     });
 
     const text = textOf(result);
@@ -704,7 +720,7 @@ describe("get_product tool", () => {
     harness = await start(failing);
     const result = await harness.client.callTool({
       name: "drugdata_get_product",
-      arguments: { source: "DailyMed", id: SPL_SETID },
+      arguments: { source: "dailymed", id: SPL_SETID },
     });
 
     expect(result.isError).toBe(true);
@@ -720,7 +736,7 @@ describe("get_product tool", () => {
 
     const result = await harness.client.callTool({
       name: "drugdata_get_product",
-      arguments: { source: "DailyMed", id: SPL_SETID },
+      arguments: { source: "dailymed", id: SPL_SETID },
     });
 
     expect(result.isError).toBe(true);
@@ -742,7 +758,7 @@ describe("get_product tool", () => {
     harness = await start(createRegistry([adapter], []));
     const result = await harness.client.callTool({
       name: "drugdata_get_product",
-      arguments: { source: "INKEEDecoder", id: "bare-product" },
+      arguments: { source: "inkeedecoder", id: "bare-product" },
     });
 
     expect(textOf(result)).toContain("No ingredient rows are available");
@@ -762,7 +778,7 @@ describe("get_product tool", () => {
     harness = await start(createRegistry([crossLinked], []));
     const linked = await harness.client.callTool({
       name: "drugdata_get_product",
-      arguments: { source: "openFDA", id: "00000000001" },
+      arguments: { source: "openfda", id: "00000000001" },
     });
     const linkedOutput = linked.structuredContent as ProductDetailOutput;
     expect(linkedOutput.links.map((link) => link.label)).toEqual(
@@ -789,7 +805,7 @@ describe("get_product tool", () => {
     harness = await start(createRegistry([bare], []));
     const bareResult = await harness.client.callTool({
       name: "drugdata_get_product",
-      arguments: { source: "DSLD", id: "42" },
+      arguments: { source: "dsld", id: "42" },
     });
     const bareOutput = bareResult.structuredContent as ProductDetailOutput;
     expect(bareOutput.product.identifiers).toEqual({});
@@ -807,7 +823,7 @@ describe("get_product tool", () => {
     harness = await start(createRegistry([supplement], []));
     const supplementResult = await harness.client.callTool({
       name: "drugdata_get_product",
-      arguments: { source: "DSLD", id: "43" },
+      arguments: { source: "dsld", id: "43" },
     });
     expect(
       (supplementResult.structuredContent as ProductDetailOutput).summary,
@@ -834,7 +850,7 @@ describe("get_product tool", () => {
     harness = await start(createRegistry([cosmetic], []));
     const cosmeticResult = await harness.client.callTool({
       name: "drugdata_get_product",
-      arguments: { source: "INKEEDecoder", id: "cosmetic" },
+      arguments: { source: "inkeedecoder", id: "cosmetic" },
     });
     const cosmeticOutput =
       cosmeticResult.structuredContent as ProductDetailOutput;
@@ -867,7 +883,7 @@ describe("get_product tool", () => {
     harness = await start(createRegistry([adapter], []));
     const byUser = await harness.client.callTool({
       name: "drugdata_get_product",
-      arguments: { source: "INKEEDecoder", id: "uploaded" },
+      arguments: { source: "inkeedecoder", id: "uploaded" },
     });
     expect((byUser.structuredContent as ProductDetailOutput).summary).toBe(
       "Uploaded by alice",
@@ -875,11 +891,108 @@ describe("get_product tool", () => {
 
     const byDate = await harness.client.callTool({
       name: "drugdata_get_product",
-      arguments: { source: "INKEEDecoder", id: "uploaded" },
+      arguments: { source: "inkeedecoder", id: "uploaded" },
     });
     expect((byDate.structuredContent as ProductDetailOutput).summary).toBe(
       "Uploaded on 2026-02-02",
     );
+  });
+
+  it("pages ingredient and label-section collections and honors include_ingredients", async () => {
+    const ingredients = Array.from({ length: 30 }, (_, index) =>
+      ingredientRef(`Ingredient ${index}`, {
+        role: "active",
+        identifiers: { unii: `UNII${String(index).padStart(6, "0")}` },
+      }),
+    );
+    const sections = Array.from({ length: 15 }, (_, index) => ({
+      heading: `Section ${index}`,
+      text: `Text for section ${index}.`,
+    }));
+    const adapter = lookupAdapter("nlm", ["DailyMed"], async () => ({
+      product: productRef("DailyMed", "Large label", { splSetId: SPL_SETID }),
+      ingredients,
+      labelSections: { sections, truncated: false },
+    }));
+
+    harness = await start(createRegistry([adapter], []));
+    const first = await harness.client.callTool({
+      name: "drugdata_get_product",
+      arguments: {
+        source: "dailymed",
+        id: SPL_SETID,
+        include_label_sections: true,
+      },
+    });
+    const firstOutput = first.structuredContent as ProductDetailOutput;
+    expect(firstOutput.ingredients).toHaveLength(25);
+    expect(firstOutput.labelSections?.sections).toHaveLength(10);
+    expect(firstOutput.pagination).toEqual({
+      page: 1,
+      ingredientsHasMore: true,
+      sectionsHasMore: true,
+    });
+    expect(textOf(first)).toContain(
+      "More results available — call this tool again with page: 2.",
+    );
+
+    const second = await harness.client.callTool({
+      name: "drugdata_get_product",
+      arguments: {
+        source: "dailymed",
+        id: SPL_SETID,
+        include_label_sections: true,
+        page: 2,
+      },
+    });
+    const secondOutput = second.structuredContent as ProductDetailOutput;
+    expect(secondOutput.ingredients).toHaveLength(5);
+    expect(secondOutput.ingredients?.[0]?.name).toBe("Ingredient 25");
+    expect(secondOutput.labelSections?.sections).toHaveLength(5);
+    expect(secondOutput.pagination).toEqual({
+      page: 2,
+      ingredientsHasMore: false,
+      sectionsHasMore: false,
+    });
+
+    const noIngredients = await harness.client.callTool({
+      name: "drugdata_get_product",
+      arguments: {
+        source: "dailymed",
+        id: SPL_SETID,
+        include_ingredients: false,
+      },
+    });
+    const noIngredientsOutput =
+      noIngredients.structuredContent as ProductDetailOutput;
+    expect(noIngredientsOutput.ingredients).toBeUndefined();
+    expect(noIngredientsOutput.labelIngredientsIncluded).toBe(false);
+    expect(noIngredientsOutput.pagination.ingredientsHasMore).toBe(false);
+    expect(textOf(noIngredients)).toContain(
+      "Ingredients omitted (include_ingredients: false).",
+    );
+  });
+
+  it("explains when a requested label has no usage sections", async () => {
+    const adapter = lookupAdapter("nlm", ["DailyMed"], async () => ({
+      product: productRef("DailyMed", "No sections", { splSetId: SPL_SETID }),
+      ingredients: [],
+      labelSections: { sections: [], truncated: false },
+    }));
+
+    harness = await start(createRegistry([adapter], []));
+    const result = await harness.client.callTool({
+      name: "drugdata_get_product",
+      arguments: {
+        source: "dailymed",
+        id: SPL_SETID,
+        include_label_sections: true,
+      },
+    });
+
+    expect(result.isError).toBeFalsy();
+    expect(textOf(result)).toContain("## Label sections (0)");
+    expect(textOf(result)).toContain("No usage sections were found");
   });
 });
 
@@ -1156,7 +1269,7 @@ describe("product adapter lookups", () => {
       { getSplXml: async () => "<document/>" },
     );
 
-    const record = (await adapter.getProduct?.("58151-155", {
+    const record = (await adapter.getProduct?.("5815115577", {
       includeLabelIngredients: true,
     })) as { ingredients: IngredientRef[]; labelIngredientsIncluded: boolean };
     expect(record.labelIngredientsIncluded).toBe(true);
@@ -1259,6 +1372,36 @@ describe("product adapter lookups", () => {
     );
   });
 
+  it("maps an RxNorm concept product with its NDCs", async () => {
+    const adapter = createNlmAdapter(
+      nlmClient((url) => {
+        if (url.pathname.endsWith("/properties.json")) {
+          return jsonResponse(fixture("nlm/rxnorm-concept-617314.json"));
+        }
+        if (url.pathname.endsWith("/ndcs.json")) {
+          return jsonResponse(fixture("nlm/rxnorm-ndcs-617314.json"));
+        }
+        return new Response(null, { status: 404 });
+      }),
+    );
+
+    const record = (await adapter.getProduct?.("617314", {})) as {
+      product: ProductRef;
+      summary?: string;
+      labelIngredientsIncluded: boolean;
+    };
+    expect(record.product).toMatchObject({
+      name: "atorvastatin 10 MG Oral Tablet [Lipitor]",
+      identifiers: {
+        rxcui: ["617314"],
+        ndc: expect.arrayContaining(["58151015577"]),
+      },
+      source: { database: "RxNorm", id: "617314" },
+    });
+    expect(record.summary).toBe("RxNorm term type SBD");
+    expect(record.labelIngredientsIncluded).toBe(false);
+  });
+
   it("omits NDCs from an RxNorm concept with no crosswalk", async () => {
     const adapter = createNlmAdapter(
       nlmClient((url) =>
@@ -1357,8 +1500,14 @@ describe("productDetailNextSteps", () => {
           rxcui: ["1191"],
         }),
         [
-          { name: "Aspirin", unii: "R16CO5Y76E", role: "active" },
-          { name: "Cellulose", unii: "OP96U8655W", role: "inactive" },
+          ingredientRef("Aspirin", {
+            role: "active",
+            identifiers: { unii: "R16CO5Y76E" },
+          }),
+          ingredientRef("Cellulose", {
+            role: "inactive",
+            identifiers: { unii: "OP96U8655W" },
+          }),
         ],
       ),
     );
@@ -1370,7 +1519,7 @@ describe("productDetailNextSteps", () => {
     ]);
     expect(steps[0]?.input).toEqual({ unii: "R16CO5Y76E" });
     expect(steps[1]?.input).toEqual({
-      source: "DailyMed",
+      source: "dailymed",
       id: SPL_SETID,
     });
     expect(steps[2]?.input).toEqual({ source: "nlm", id: "1191" });
@@ -1384,7 +1533,7 @@ describe("productDetailNextSteps", () => {
           ndc: ["00000000001"],
           splSetId: SPL_SETID,
         }),
-        [{ name: "Unknown", role: "unknown" }],
+        [ingredientRef("Unknown", { role: "active" })],
       ),
     );
     expect(ndcSteps).toEqual([
@@ -1396,7 +1545,10 @@ describe("productDetailNextSteps", () => {
 
     const casSteps = productDetailNextSteps(
       subject(productRef("DSLD", "Supplement", { dsldId: 7 }), [
-        { name: "Thing", cas: "50-00-0", role: "active" },
+        ingredientRef("Thing", {
+          role: "active",
+          identifiers: { cas: ["50-00-0"] },
+        }),
       ]),
     );
     expect(casSteps).toEqual([
@@ -1408,16 +1560,15 @@ describe("productDetailNextSteps", () => {
 
     const slugSteps = productDetailNextSteps(
       subject(productRef("INKEEDecoder", "Cosmetic", { slug: "product" }), [
-        {
-          name: "Niacinamide",
-          role: "active",
+        ingredientRef("Niacinamide", {
+          identifiers: { slug: "niacinamide" },
           source: {
             database: "INKEEDecoder",
             id: "niacinamide",
             url: "https://inkeedecoder.com/ingredients/niacinamide",
             retrievedAt: RETRIEVED_AT,
           },
-        },
+        }),
       ]),
     );
     expect(slugSteps).toEqual([
@@ -1432,13 +1583,13 @@ describe("productDetailNextSteps", () => {
     expect(
       productDetailNextSteps(
         subject(productRef("DSLD", "Bare supplement", { dsldId: 1 }), [
-          { name: "No source", role: "active" },
+          ingredientRef("No source", { role: "active" }),
         ]),
       ),
     ).toEqual([]);
   });
 
-  it("caps the list at three unique steps", () => {
+  it("caps the list at three steps", () => {
     const steps = productDetailNextSteps(
       subject(
         productRef("DailyMed", "Label", {
@@ -1447,19 +1598,20 @@ describe("productDetailNextSteps", () => {
           rxcui: ["1191"],
         }),
         [
-          {
-            name: "One",
-            unii: "ABCDEFGHIJ",
-            cas: "50-00-0",
+          ingredientRef("One", {
             role: "active",
+            identifiers: { unii: "ABCDEFGHIJ", cas: ["50-00-0"] },
             source: {
               database: "INKEEDecoder",
               id: "one",
               url: "https://example.test/one",
               retrievedAt: RETRIEVED_AT,
             },
-          },
-          { name: "Two", unii: "ABCDEFGHIJ", role: "active" },
+          }),
+          ingredientRef("Two", {
+            role: "active",
+            identifiers: { unii: "ABCDEFGHIJ" },
+          }),
         ],
       ),
     );

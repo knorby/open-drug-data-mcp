@@ -8,7 +8,6 @@ import type {
   DatabaseId,
   IngredientRef,
   NextStep,
-  ProductIngredient,
   ProductRef,
 } from "./schemas.js";
 
@@ -74,22 +73,22 @@ function decimal(value: number | undefined): string | undefined {
 const PRODUCT_TARGETS: Partial<Record<DatabaseId, ProductTarget>> = {
   openFDA: {
     tool: GET_PRODUCT,
-    source: "openFDA",
+    source: "openfda",
     what: "an openFDA product record",
   },
   DailyMed: {
     tool: GET_PRODUCT,
-    source: "DailyMed",
+    source: "dailymed",
     what: "a DailyMed SPL document",
   },
   DSLD: {
     tool: GET_PRODUCT,
-    source: "DSLD",
+    source: "dsld",
     what: "a DSLD supplement label",
   },
   INKEEDecoder: {
     tool: GET_PRODUCT,
-    source: "INKEEDecoder",
+    source: "inkeedecoder",
     what: "an INKEEDecoder product page",
   },
   RxNorm: {
@@ -215,19 +214,7 @@ export function searchNextSteps(
 /** What a product detail offers as follow-up: its ref and ingredient rows. */
 export interface ProductDetailSubject {
   product: ProductRef;
-  ingredients: readonly ProductIngredient[];
-}
-
-/** An ingredient row known to carry its INKEEDecoder source record. */
-type IkdIngredient = ProductIngredient & {
-  source: NonNullable<ProductIngredient["source"]>;
-};
-
-/** Whether a product ingredient came from an INKEEDecoder ingredient page. */
-function hasIkdSource(
-  ingredient: ProductIngredient,
-): ingredient is IkdIngredient {
-  return ingredient.source?.database === "INKEEDecoder";
+  ingredients: readonly IngredientRef[];
 }
 
 /**
@@ -237,7 +224,7 @@ function hasIkdSource(
  * the same product in another database (a DailyMed label behind an openFDA
  * record), the RxNorm concept, and finally the product NDC resolution. When
  * none of those apply, an ingredient's CAS number or INKEEDecoder slug is the
- * remaining usable identifier. At most {@link MAX_NEXT_STEPS} unique calls are
+ * remaining usable identifier. At most {@link MAX_NEXT_STEPS} calls are
  * returned, so a multi-ingredient label stays a short, actionable list.
  */
 export function productDetailNextSteps(
@@ -252,8 +239,8 @@ export function productDetailNextSteps(
   };
 
   const unii = ingredients.find(
-    (ingredient) => ingredient.unii !== undefined,
-  )?.unii;
+    (ingredient) => ingredient.identifiers.unii !== undefined,
+  )?.identifiers.unii;
   if (unii !== undefined) {
     add({
       tool: RESOLVE_IDENTIFIERS,
@@ -266,7 +253,7 @@ export function productDetailNextSteps(
   if (setid !== undefined && product.source.database !== "DailyMed") {
     add({
       tool: GET_PRODUCT,
-      input: { source: "DailyMed", id: setid },
+      input: { source: "dailymed", id: setid },
       why: "The product carries a DailyMed SPL set id; open the label for its ingredient and usage detail.",
     });
   }
@@ -291,24 +278,29 @@ export function productDetailNextSteps(
 
   const casIngredient = ingredients.find(
     (ingredient) =>
-      ingredient.unii === undefined && ingredient.cas !== undefined,
+      ingredient.identifiers.unii === undefined &&
+      first(ingredient.identifiers.cas) !== undefined,
   );
-  if (casIngredient?.cas !== undefined) {
+  const cas = first(casIngredient?.identifiers.cas);
+  if (casIngredient !== undefined && cas !== undefined) {
     add({
       tool: "drugdata_search_ingredients",
-      input: { type: "cas", query: casIngredient.cas },
-      why: `The product lists ${casIngredient.name} with CAS ${casIngredient.cas}; search ingredients by that number to identify it across sources.`,
+      input: { type: "cas", query: cas },
+      why: `The product lists ${casIngredient.name} with CAS ${cas}; search ingredients by that number to identify it across sources.`,
     });
   }
 
   const slugIngredient = ingredients.find(
-    (ingredient): ingredient is IkdIngredient =>
-      ingredient.unii === undefined && hasIkdSource(ingredient),
+    (ingredient) =>
+      ingredient.identifiers.unii === undefined &&
+      ingredient.source.database === "INKEEDecoder" &&
+      ingredient.identifiers.slug !== undefined,
   );
-  if (slugIngredient !== undefined) {
+  const slug = slugIngredient?.identifiers.slug;
+  if (slugIngredient !== undefined && slug !== undefined) {
     add({
       tool: GET_INGREDIENT,
-      input: { source: "inkeedecoder", id: slugIngredient.source.id },
+      input: { source: "inkeedecoder", id: slug },
       why: `Open the INKEEDecoder ingredient page for ${slugIngredient.name} to continue with its CosIng identifiers.`,
     });
   }

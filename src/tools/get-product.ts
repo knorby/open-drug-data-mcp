@@ -4,6 +4,7 @@ import {
   applyCharacterLimit,
   boundStructured,
   formatJson,
+  morePagesNote,
   RESPONSE_FORMATS,
   truncationNote,
 } from "../lib/format.js";
@@ -13,14 +14,16 @@ import {
   productDetailNextSteps,
 } from "../lib/next-steps.js";
 import {
-  type IngredientRef,
+  type DatabaseId,
   ingredientRefSchema,
+  labelSectionsSchema,
+  type ProductDetails,
   type ProductIdentifiers,
-  type ProductIngredient,
   productDetailSchema,
+  productDetailsSchema,
   productRefSchema,
 } from "../lib/schemas.js";
-import { dailyMedLabelUrl } from "../sources/identity/spl.js";
+import { dailyMedLabelUrl } from "../sources/identity/spl-ingredients.js";
 import type { Registry } from "../sources/types.js";
 import {
   type IdentifierField,
@@ -39,38 +42,46 @@ import {
  * normalizing the ones that can, validating the adapter's record into the
  * closed product-detail schema, deriving follow-up calls, and rendering.
  *
- * `include_label_ingredients` is the one costly switch. An openFDA product
- * may carry an SPL set id, and parsing that label XML adds ingredient rows
- * with UNIIs and active/inactive roles at the cost of one extra DailyMed
- * request. It defaults off so an ordinary openFDA lookup stays cheap. A
- * DailyMed product is the label itself, so its ingredients are parsed without
- * the flag; structured sources (DSLD, INKEEDecoder) already publish their
- * ingredient rows and need no flag either.
+ * `include_label_sections` is the costly switch. DailyMed SPL usage sections
+ * (dosage, directions, patient guidance) are large, so they are extracted only
+ * when asked for; the false path never runs the section parser. Ingredient
+ * rows are included by default and can be turned off with
+ * `include_ingredients`. `page` pages both collections one page at a time.
  */
 
-/** Databases that can answer a product lookup, as agent-visible labels. */
+/** Databases that can answer a product lookup, in the tool's spelling. */
 export const PRODUCT_SOURCES = [
-  "openFDA",
-  "RxNorm",
-  "DailyMed",
-  "DSLD",
-  "INKEEDecoder",
+  "openfda",
+  "dsld",
+  "dailymed",
+  "inkeedecoder",
 ] as const;
 
 /** Databases that can answer a product lookup. */
 export type ProductSource = (typeof PRODUCT_SOURCES)[number];
 
+/** The registry's database label for each tool source value. */
+const SOURCE_DATABASES: Readonly<Record<ProductSource, DatabaseId>> = {
+  openfda: "openFDA",
+  dsld: "DSLD",
+  dailymed: "DailyMed",
+  inkeedecoder: "INKEEDecoder",
+};
+
+/** Ingredient rows returned per page. */
+const INGREDIENT_PAGE_SIZE = 25;
+
+/** Label sections returned per page. */
+const SECTION_PAGE_SIZE = 10;
+
 /** An openFDA NDC directory product id (labeler-product, no package segment). */
 const OPENFDA_PRODUCT_NDC = /^\d{4,5}-\d{3,4}$/;
-
-/** RxNorm concepts are decimal identifiers. */
-const RXCUI = /^\d+$/;
 
 /** A DSLD label id is a positive safe integer. */
 const DSLD_ID = /^\d+$/;
 
 const DESCRIPTION =
-  "Fetch one product record from openFDA, RxNorm, DailyMed, DSLD, or INKEEDecoder. The `id` is the database's own key: a product NDC or SPL set id for openFDA, an RxCUI for RxNorm, an SPL set id for DailyMed, a label id for DSLD, and a product slug (or product URL) for INKEEDecoder. The result carries the unified product ref, its ingredient rows, links to the source records, and suggested follow-up calls. Set `include_label_ingredients: true` to parse an openFDA product's SPL XML for ingredient UNIIs, strengths, and active/inactive roles — this costs one extra DailyMed request; default false. DailyMed products always include their label ingredients because the label is the record. A malformed id is an error result naming the search tool that finds a valid one; an upstream miss is an error result, not an empty product.";
+  "Fetch one product record from openFDA, DSLD, DailyMed, or INKEEDecoder. The `id` is the database's own key: a product NDC (openFDA), a numeric label id (DSLD), an SPL set id (DailyMed), or a product slug/URL (INKEEDecoder). The result carries the unified product ref, source-specific details, ingredient rows (UNIIs, roles, quantities), links, and suggested follow-up calls. `include_ingredients` is true by default; `include_label_sections` extracts DailyMed SPL usage sections — these are large and default false. `page` pages the ingredient and label-section collections one page at a time and re-fetches the record; it never walks pages automatically. A malformed id is an error result naming the search tool that finds a valid one; an upstream miss is an error result, not an empty product.";
 
 const inputSchema = z.object({
   source: z
@@ -78,20 +89,34 @@ const inputSchema = z.object({
       error: `source must be one of: ${PRODUCT_SOURCES.join(", ")}.`,
     })
     .describe(
-      "Upstream database that owns the record: 'openFDA', 'RxNorm', 'DailyMed', 'DSLD', or 'INKEEDecoder'.",
+      "Upstream database that owns the record: 'openfda', 'dsld', 'dailymed', or 'inkeedecoder'.",
     ),
   id: z
     .string()
     .trim()
     .max(300)
     .describe(
-      "The database's own identifier: product NDC or SPL set id (openFDA), rxcui (RxNorm), SPL set id (DailyMed), numeric label id (DSLD), or slug/URL (INKEEDecoder).",
+      "The database's own identifier: product NDC (openfda), numeric label id (dsld), SPL set id (dailymed), or slug/URL (inkeedecoder).",
     ),
-  include_label_ingredients: z
+  include_label_sections: z
     .boolean()
     .default(false)
     .describe(
-      "Parse an openFDA product's SPL XML to add ingredient rows with UNIIs, strengths, and active/inactive roles. One extra DailyMed request; DailyMed products always include their label ingredients; default false.",
+      "Extract DailyMed SPL usage sections (dosage, directions, patient guidance). Large — default false. Applies to dailymed products; false omits the sections and does not run the section parser.",
+    ),
+  include_ingredients: z
+    .boolean()
+    .default(true)
+    .describe(
+      "Include the product's ingredient rows with UNIIs, roles, and quantities. Default true.",
+    ),
+  page: z
+    .number()
+    .int()
+    .min(1)
+    .default(1)
+    .describe(
+      "Page number for ingredient and label-section collections, starting at 1. One page per call; the record is re-fetched and the tool never walks pages automatically.",
     ),
   response_format: z
     .enum(RESPONSE_FORMATS)
@@ -114,6 +139,7 @@ const sourceRecordSchema = z.object({
   details: z.unknown().optional(),
   summary: z.string().optional(),
   labelIngredientsIncluded: z.boolean().optional(),
+  labelSections: labelSectionsSchema.optional(),
 });
 
 type SourceRecord = z.infer<typeof sourceRecordSchema>;
@@ -150,7 +176,7 @@ export function prepareProductId(
   }
 
   switch (source) {
-    case "openFDA": {
+    case "openfda": {
       if (isSplSetId(id)) return { ok: true, id: id.toLowerCase() };
       if (OPENFDA_PRODUCT_NDC.test(id)) return { ok: true, id };
       const ndc = normalizeNdc(id);
@@ -162,25 +188,17 @@ export function prepareProductId(
           )
         : { ok: true, id: ndc };
     }
-    case "RxNorm":
-      return RXCUI.test(id)
-        ? { ok: true, id }
-        : invalidId(
-            source,
-            id,
-            "expects an RxNorm concept id (rxcui, decimal digits)",
-          );
-    case "DailyMed":
+    case "dailymed":
       return isSplSetId(id)
         ? { ok: true, id: id.toLowerCase() }
         : invalidId(source, id, "expects a DailyMed SPL set id (UUID-shaped)");
-    case "DSLD": {
+    case "dsld": {
       const numeric = Number(id);
       return DSLD_ID.test(id) && Number.isSafeInteger(numeric) && numeric > 0
         ? { ok: true, id: String(numeric) }
         : invalidId(source, id, "expects a positive numeric DSLD label id");
     }
-    case "INKEEDecoder": {
+    case "inkeedecoder": {
       try {
         return { ok: true, id: normalizeSlug(id) };
       } catch (error) {
@@ -206,30 +224,23 @@ const IDENTIFIER_FIELDS: ReadonlyArray<IdentifierField<ProductIdentifiers>> = [
   ["slug", "slug"],
 ];
 
-/** Whether a value is a plain object. */
-function asRecord(value: unknown): Record<string, unknown> | undefined {
-  return value !== null && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : undefined;
-}
-
-/** Reads a non-blank string field from a record. */
+/** Reads a non-blank string field from a parsed detail object. */
 function stringField(
-  record: Record<string, unknown> | undefined,
+  record: Record<string, unknown>,
   key: string,
 ): string | undefined {
-  const value = record?.[key];
+  const value = record[key];
   return typeof value === "string" && value.trim().length > 0
     ? value
     : undefined;
 }
 
-/** Reads a string list field from a record, dropping blank entries. */
+/** Reads a string list field from a parsed detail object, dropping blanks. */
 function stringListField(
-  record: Record<string, unknown> | undefined,
+  record: Record<string, unknown>,
   key: string,
 ): string[] {
-  const value = record?.[key];
+  const value = record[key];
   if (!Array.isArray(value)) return [];
   return value.filter(
     (entry): entry is string => typeof entry === "string" && entry.length > 0,
@@ -254,13 +265,13 @@ function pushPart(
  */
 function detailSummary(
   source: ProductSource,
-  details: unknown,
+  details: ProductDetails,
   fallback: string | undefined,
 ): string | undefined {
-  const record = asRecord(details);
+  const record = details as Record<string, unknown>;
   const parts: string[] = [];
 
-  if (source === "openFDA") {
+  if (source === "openfda") {
     pushPart(parts, stringField(record, "labeler"), "Labeler");
     pushPart(
       parts,
@@ -275,19 +286,16 @@ function detailSummary(
     }
     const version = stringField(record, "version");
     if (version !== undefined) parts.push(`Label version ${version}`);
-  } else if (source === "RxNorm") {
-    pushPart(parts, stringField(record, "tty"), "RxNorm term type");
-    pushPart(parts, stringField(record, "synonym"), "Synonym");
-  } else if (source === "DailyMed") {
+  } else if (source === "dailymed") {
     const version = stringField(record, "version");
     if (version !== undefined) parts.push(`SPL version ${version}`);
     const effectiveTime = stringField(record, "effectiveTime");
     if (effectiveTime !== undefined) parts.push(`effective ${effectiveTime}`);
     pushPart(parts, stringField(record, "dosageForm"));
     pushPart(parts, stringField(record, "labeler"), "Labeler");
-  } else if (source === "DSLD") {
+  } else if (source === "dsld") {
     pushPart(parts, stringField(record, "productType"));
-    const offMarket = record?.offMarket;
+    const offMarket = record.offMarket;
     if (typeof offMarket === "boolean") {
       parts.push(offMarket ? "Off market" : "On market");
     }
@@ -324,20 +332,32 @@ function detailSummary(
   return parts.length > 0 ? parts.join(" · ") : fallback;
 }
 
-/** Maps an adapter ingredient ref to the flatter product-detail row. */
-function detailIngredient(ref: IngredientRef): ProductIngredient {
-  const cas = ref.identifiers.cas?.[0];
-  return {
-    name: ref.name,
-    ...(ref.identifiers.unii !== undefined
-      ? { unii: ref.identifiers.unii }
-      : {}),
-    ...(cas !== undefined ? { cas } : {}),
-    ...(ref.role !== undefined ? { role: ref.role } : {}),
-    ...(ref.quantity !== undefined ? { strength: ref.quantity } : {}),
-    ...(ref.form !== undefined ? { form: ref.form } : {}),
-    source: ref.source,
-  };
+/** One page of a defined collection. */
+function pageSlice<T>(
+  items: readonly T[],
+  page: number,
+  pageSize: number,
+): T[] {
+  return items.slice((page - 1) * pageSize, page * pageSize);
+}
+
+/** One page of a collection, or undefined when the collection is absent. */
+function pageOf<T>(
+  items: readonly T[] | undefined,
+  page: number,
+  pageSize: number,
+): T[] | undefined {
+  if (items === undefined) return undefined;
+  return pageSlice(items, page, pageSize);
+}
+
+/** Whether a collection has another page after `page`. */
+function hasMoreOf<T>(
+  items: readonly T[] | undefined,
+  page: number,
+  pageSize: number,
+): boolean {
+  return items !== undefined && items.length > page * pageSize;
 }
 
 /** Deep links for a product: its own record plus related database records. */
@@ -390,45 +410,78 @@ function renderMarkdown(
   );
 
   const ingredientLines =
-    output.ingredients.length === 0
-      ? [
-          product.identifiers.splSetId !== undefined &&
-          !output.labelIngredientsIncluded
-            ? "- No ingredient rows were loaded. Call again with include_label_ingredients: true to parse the SPL label (one extra request)."
-            : "- No ingredient rows are available for this product.",
-        ]
-      : output.ingredients.map((ingredient) => {
-          const details = [
-            `**${ingredient.name}**`,
-            `role: ${ingredient.role ?? "unknown"}`,
-          ];
-          if (ingredient.strength !== undefined) {
-            details.push(`strength: ${ingredient.strength}`);
-          }
-          if (ingredient.form !== undefined)
-            details.push(`form: ${ingredient.form}`);
-          if (ingredient.unii !== undefined)
-            details.push(`UNII: ${ingredient.unii}`);
-          if (ingredient.cas !== undefined)
-            details.push(`CAS: ${ingredient.cas}`);
-          return `- ${details.join(" · ")}`;
-        });
+    output.ingredients === undefined
+      ? ["- Ingredients omitted (include_ingredients: false)."]
+      : output.ingredients.length === 0
+        ? [
+            product.identifiers.splSetId !== undefined &&
+            !output.labelIngredientsIncluded
+              ? '- No ingredient rows were loaded from this record. Use source: "dailymed" with this SPL set id for the label\'s ingredient rows.'
+              : "- No ingredient rows are available for this product.",
+          ]
+        : output.ingredients.map((ingredient) => {
+            const details = [`**${ingredient.name}**`];
+            if (ingredient.role !== undefined) {
+              details.push(`role: ${ingredient.role}`);
+            }
+            if (ingredient.quantity !== undefined) {
+              details.push(`quantity: ${ingredient.quantity}`);
+            }
+            if (ingredient.form !== undefined) {
+              details.push(`form: ${ingredient.form}`);
+            }
+            if (ingredient.identifiers.unii !== undefined) {
+              details.push(`UNII: ${ingredient.identifiers.unii}`);
+            }
+            const cas = ingredient.identifiers.cas?.[0];
+            if (cas !== undefined) details.push(`CAS: ${cas}`);
+            return `- ${details.join(" · ")}`;
+          });
 
-  const sections = [
+  const blocks = [
     `Product detail — ${source} (${product.source.id}).`,
     productLines.join("\n"),
-    [`## Ingredients (${output.ingredients.length})`, ...ingredientLines].join(
-      "\n",
-    ),
+    [
+      `## Ingredients (${
+        output.ingredients === undefined ? "omitted" : output.ingredients.length
+      })`,
+      ...ingredientLines,
+    ].join("\n"),
+  ];
+
+  const labelSections = output.labelSections;
+  if (labelSections !== undefined) {
+    const sectionBlocks = [
+      `## Label sections (${labelSections.sections.length}${
+        labelSections.truncated ? ", truncated" : ""
+      })`,
+    ];
+    if (labelSections.sections.length === 0) {
+      sectionBlocks.push("- No usage sections were found in this label.");
+    } else {
+      for (const section of labelSections.sections) {
+        sectionBlocks.push(`### ${section.heading}\n\n${section.text}`);
+      }
+    }
+    blocks.push(sectionBlocks.join("\n\n"));
+  }
+
+  blocks.push(
     [
       "## Links",
       ...output.links.map((link) => `- [${link.label}](${link.url})`),
     ].join("\n"),
-  ];
+  );
   const steps = nextStepsText(output.nextSteps);
-  if (steps !== undefined) sections.push(steps);
+  if (steps !== undefined) blocks.push(steps);
 
-  let text = sections.join("\n\n");
+  let text = blocks.join("\n\n");
+  if (
+    output.pagination.ingredientsHasMore ||
+    output.pagination.sectionsHasMore
+  ) {
+    text += morePagesNote(true, output.pagination.page + 1);
+  }
   if (truncated) text += truncationNote();
   return text;
 }
@@ -455,7 +508,9 @@ export function registerGetProductTool(
     async ({
       source,
       id,
-      include_label_ingredients,
+      include_label_sections,
+      include_ingredients,
+      page,
       response_format,
     }: GetProductInput) => {
       try {
@@ -465,22 +520,69 @@ export function registerGetProductTool(
         const resolved = resolveRegistry(registry);
         if (!resolved.ok) return messageError(resolved.error);
 
-        const raw = await resolved.registry.getProduct(source, prepared.id, {
-          includeLabelIngredients: include_label_ingredients,
-        });
+        const raw = await resolved.registry.getProduct(
+          SOURCE_DATABASES[source],
+          prepared.id,
+          {
+            includeLabelSections: include_label_sections,
+          },
+        );
         const record = sourceRecordSchema.parse(raw);
+        const details = productDetailsSchema.parse(record.details ?? {});
         const summary = detailSummary(
           source,
-          record.details,
+          details,
           record.summary ?? record.product.summary,
         );
+
+        const allIngredients = include_ingredients
+          ? record.ingredients
+          : undefined;
+        const ingredientPage = pageOf(
+          allIngredients,
+          page,
+          INGREDIENT_PAGE_SIZE,
+        );
+        const ingredientsHasMore = hasMoreOf(
+          allIngredients,
+          page,
+          INGREDIENT_PAGE_SIZE,
+        );
+
+        const sectionsSource = include_label_sections
+          ? record.labelSections
+          : undefined;
+        const allSections = sectionsSource?.sections;
+        const sectionsHasMore = hasMoreOf(allSections, page, SECTION_PAGE_SIZE);
+        const labelSections =
+          sectionsSource === undefined
+            ? undefined
+            : {
+                sections: pageSlice(
+                  sectionsSource.sections,
+                  page,
+                  SECTION_PAGE_SIZE,
+                ),
+                truncated: sectionsSource.truncated,
+              };
+
         const skeleton = productDetailSchema.parse({
           product: record.product,
-          ingredients: record.ingredients.map(detailIngredient),
+          details,
+          ...(ingredientPage !== undefined
+            ? { ingredients: ingredientPage }
+            : {}),
+          ...(labelSections !== undefined ? { labelSections } : {}),
+          nextSteps: [],
           links: productLinks(record.product),
           ...(summary !== undefined ? { summary } : {}),
-          nextSteps: [],
-          labelIngredientsIncluded: record.labelIngredientsIncluded ?? false,
+          labelIngredientsIncluded:
+            include_ingredients && (record.labelIngredientsIncluded ?? false),
+          pagination: {
+            page,
+            ingredientsHasMore,
+            sectionsHasMore,
+          },
         });
 
         // Bound first, then derive follow-ups from what the rendered detail
@@ -489,7 +591,7 @@ export function registerGetProductTool(
         const bounded = boundStructured(skeleton);
         const subject: ProductDetailSubject = {
           product: bounded.value.product,
-          ingredients: bounded.value.ingredients,
+          ingredients: bounded.value.ingredients ?? [],
         };
         const withSteps = productDetailSchema.parse({
           ...bounded.value,
@@ -497,11 +599,23 @@ export function registerGetProductTool(
         });
         const final = boundStructured(withSteps);
         const truncated = bounded.truncated || final.truncated;
+        // Bounding may shorten section text, so the section flag must reflect
+        // it even when the extractor itself did not hit its own caps.
+        const value =
+          truncated && final.value.labelSections !== undefined
+            ? productDetailSchema.parse({
+                ...final.value,
+                labelSections: {
+                  ...final.value.labelSections,
+                  truncated: true,
+                },
+              })
+            : final.value;
 
         if (response_format === "json") {
           return {
-            content: [{ type: "text" as const, text: formatJson(final.value) }],
-            structuredContent: final.value,
+            content: [{ type: "text" as const, text: formatJson(value) }],
+            structuredContent: value,
           };
         }
 
@@ -510,11 +624,11 @@ export function registerGetProductTool(
             {
               type: "text" as const,
               text: applyCharacterLimit(
-                renderMarkdown(source, final.value, truncated),
+                renderMarkdown(source, value, truncated),
               ),
             },
           ],
-          structuredContent: final.value,
+          structuredContent: value,
         };
       } catch (error) {
         return toolError(error, `the ${source} product lookup`);

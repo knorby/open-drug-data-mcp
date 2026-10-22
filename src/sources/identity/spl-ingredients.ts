@@ -444,6 +444,159 @@ export function parseSplIngredients(xml: string): SplIngredient[] {
   return parseSplLabel(xml).ingredients;
 }
 
+/** LOINC section codes that carry dosage, directions, or patient guidance. */
+export const SPL_USAGE_LOINC_CODES: readonly string[] = [
+  "34068-7", // Dosage & Administration (OTC title: Directions)
+  "59845-8", // Instructions for Use
+  "42231-1", // SPL Medication Guide
+  "42230-3", // SPL patient package insert (IFU may nest here)
+  "68498-5", // Patient medication information
+  "34076-0", // Information for patients / patient counseling
+  "88436-1", // Patient counseling information
+];
+
+const USAGE_CODE_SET = new Set(SPL_USAGE_LOINC_CODES);
+
+/** Usage sections kept per label; a bound, not a claim of completeness. */
+const MAX_USAGE_SECTIONS = 20;
+
+/** Characters kept per usage section before marking the extraction truncated. */
+const MAX_USAGE_SECTION_CHARS = 8_000;
+
+/** Visible note when a section's content was a table and cannot be flattened. */
+const TABLE_NOTE =
+  "[Table content omitted; open the hosted label for the table.]";
+
+/** One usage section as the product tool exposes it. */
+export interface SplUsageSection {
+  heading: string;
+  text: string;
+}
+
+/** Usage sections plus whether any section was omitted or shortened. */
+export interface SplUsageExtraction {
+  sections: SplUsageSection[];
+  truncated: boolean;
+  version?: string;
+  effectiveTime?: string;
+}
+
+/** Concatenated text of a subtree, skipping table content; flags tables. */
+function textSkippingTables(nodes: Node[]): {
+  text: string;
+  hasTable: boolean;
+} {
+  let text = "";
+  let hasTable = false;
+  for (const node of nodes) {
+    if (typeof node["#text"] === "string") {
+      text += node["#text"];
+      continue;
+    }
+    const tag = tagName(node);
+    if (tag === "table") {
+      hasTable = true;
+      continue;
+    }
+    if (tag === "section") continue; // nested sections are their own entries
+    const inner = textSkippingTables(childrenOf(node));
+    text += inner.text;
+    if (inner.hasTable) hasTable = true;
+  }
+  return { text, hasTable };
+}
+
+/** Paragraph-level text of a matched section (paragraph/item only). */
+function sectionBody(nodes: Node[]): { text: string; hasTables: boolean } {
+  const paragraphs: string[] = [];
+  let hasTables = false;
+  const visit = (current: Node[]): void => {
+    for (const node of current) {
+      const tag = tagName(node);
+      if (tag === "table") {
+        hasTables = true;
+        continue;
+      }
+      if (tag === "section") continue;
+      if (tag === "paragraph" || tag === "item") {
+        const inner = textSkippingTables(childrenOf(node));
+        const trimmed = inner.text.trim();
+        if (trimmed.length > 0) paragraphs.push(trimmed);
+        if (inner.hasTable) hasTables = true;
+        continue;
+      }
+      visit(childrenOf(node));
+    }
+  };
+  visit(nodes);
+  return { text: paragraphs.join("\n\n"), hasTables };
+}
+
+/** Walks sections in document order, collecting the usage LOINC codes. */
+function walkUsageSections(
+  nodes: Node[],
+  out: SplUsageSection[],
+  state: { truncated: boolean },
+): void {
+  for (const node of nodes) {
+    const tag = tagName(node);
+    const children = childrenOf(node);
+    if (tag === "section") {
+      const codeNode = children.find((child) => tagName(child) === "code");
+      const code =
+        codeNode === undefined ? undefined : attrValue(codeNode, "code");
+      if (code !== undefined && USAGE_CODE_SET.has(code)) {
+        if (out.length >= MAX_USAGE_SECTIONS) {
+          state.truncated = true;
+          return;
+        }
+        const titleNode = children.find((child) => tagName(child) === "title");
+        const heading =
+          titleNode === undefined ? code : textOf(titleNode).trim() || code;
+        const body = sectionBody(children);
+        let text = body.text;
+        if (body.hasTables && text.length === 0) text = TABLE_NOTE;
+        if (text.length > MAX_USAGE_SECTION_CHARS) {
+          text = `${text.slice(0, MAX_USAGE_SECTION_CHARS)}…[truncated]`;
+          state.truncated = true;
+        }
+        out.push({ heading, text });
+      }
+      walkUsageSections(children, out, state);
+    } else {
+      walkUsageSections(children, out, state);
+    }
+  }
+}
+
+/**
+ * Extracts usage-oriented SPL sections (dosage, directions, patient guidance).
+ *
+ * Section text is paragraph-level and deliberately excludes table content,
+ * which cannot be flattened faithfully; a table-only section carries a visible
+ * note instead. The extraction is bounded and reports `truncated` when a
+ * section was omitted or its text shortened. Pure; malformed XML is empty.
+ */
+export function extractSplUsageSections(xml: string): SplUsageExtraction {
+  const nodes = parseNodes(xml);
+  const document = documentNode(nodes);
+  if (document === null) return { sections: [], truncated: false };
+
+  const children = childrenOf(document);
+  const sections: SplUsageSection[] = [];
+  const state = { truncated: false };
+  walkUsageSections(children, sections, state);
+  const version = childAttr(children, "versionNumber", "value");
+  const effectiveTime = childAttr(children, "effectiveTime", "value");
+
+  return {
+    sections,
+    truncated: state.truncated,
+    ...(version !== undefined ? { version } : {}),
+    ...(effectiveTime !== undefined ? { effectiveTime } : {}),
+  };
+}
+
 /** The public DailyMed label page for a set id. */
 export function dailyMedLabelUrl(setid: string): string {
   return `https://dailymed.nlm.nih.gov/dailymed/drugInfo.cfm?setid=${encodeURIComponent(

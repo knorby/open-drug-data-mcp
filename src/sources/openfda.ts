@@ -27,7 +27,7 @@ import {
   dailyMedLabelUrl,
   parseSplIngredients,
   type SplIngredient,
-} from "./identity/spl.js";
+} from "./identity/spl-ingredients.js";
 import { type NlmBridges, nlmBridges } from "./nlm.js";
 import type {
   IngredientGroup,

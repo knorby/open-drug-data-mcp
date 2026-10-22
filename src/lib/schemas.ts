@@ -183,47 +183,59 @@ export const nextStepSchema = z.object({
 export type NextStep = z.infer<typeof nextStepSchema>;
 
 /**
- * One ingredient row on a product detail.
+ * Source-specific detail fields for one product.
  *
- * This is a flatter view than {@link ingredientRefSchema}: a product detail
- * lists what the label or record states about the ingredient in the product,
- * while an ingredient ref is a first-class record in its own source. `source`
- * is present whenever the row came from a different fetched document than the
- * product (for example SPL ingredients parsed for an openFDA NDC record).
+ * Sources are asymmetric, so every field is optional and the object is closed:
+ * an adapter contributes the fields its database actually knows, and a stray
+ * upstream key cannot reach `structuredContent`.
  */
-export const productIngredientSchema = z.object({
-  name: z.string(),
-  unii: z
-    .string()
+export const productDetailsSchema = z.object({
+  source: z
+    .enum(["ndc", "label"])
     .optional()
-    .describe("FDA Unique Ingredient Identifier when the source states one."),
-  cas: z
-    .string()
-    .optional()
-    .describe("CAS Registry Number when the source states one."),
-  role: z
-    .enum(["active", "inactive", "unknown"])
-    .optional()
-    .describe(
-      "How the ingredient participates in the product; 'unknown' means the source does not say.",
-    ),
-  strength: z
-    .string()
-    .optional()
-    .describe("Strength or concentration as the source states it."),
-  form: z
-    .string()
-    .optional()
-    .describe("Dosage or physical form as the source states it."),
-  source: sourceRefSchema
-    .optional()
-    .describe(
-      "Where this ingredient row came from, when it differs from the product.",
-    ),
+    .describe("Which openFDA record backed the result."),
+  labeler: z.string().optional(),
+  marketingCategory: z.string().optional(),
+  applicationNumber: z.string().optional(),
+  productType: z.string().optional(),
+  splSetId: z.string().optional(),
+  effectiveTime: z.string().optional(),
+  version: z.string().optional(),
+  dosageForm: z.string().optional(),
+  tty: z.string().optional(),
+  synonym: z.string().optional(),
+  targetGroups: z.array(z.string()).optional(),
+  netContents: z.array(z.string()).optional(),
+  claims: z.array(z.string()).optional(),
+  offMarket: z.boolean().optional(),
+  entryDate: z.string().optional(),
+  description: z.string().optional(),
+  hashtags: z.array(z.string()).optional(),
+  uploadedBy: z.string().optional(),
+  uploadedAt: z.string().optional(),
+  updatedAt: z.string().optional(),
 });
 
-/** One ingredient row on a product detail. */
-export type ProductIngredient = z.infer<typeof productIngredientSchema>;
+/** Source-specific detail fields for one product. */
+export type ProductDetails = z.infer<typeof productDetailsSchema>;
+
+/** One usage-oriented section extracted from a DailyMed SPL label. */
+export const labelSectionSchema = z.object({
+  heading: z.string(),
+  text: z.string(),
+});
+
+/** One usage-oriented section extracted from a DailyMed SPL label. */
+export type LabelSection = z.infer<typeof labelSectionSchema>;
+
+/** Usage sections plus whether the extraction had to shorten them. */
+export const labelSectionsSchema = z.object({
+  sections: z.array(labelSectionSchema),
+  truncated: z.boolean(),
+});
+
+/** Usage sections plus whether the extraction had to shorten them. */
+export type LabelSections = z.infer<typeof labelSectionsSchema>;
 
 /** A follow-up link on a product detail. */
 export const productLinkSchema = z.object({
@@ -234,25 +246,42 @@ export const productLinkSchema = z.object({
 /** A follow-up link on a product detail. */
 export type ProductLink = z.infer<typeof productLinkSchema>;
 
+/** Collection paging state for one product lookup. */
+export const productPaginationSchema = z.object({
+  page: z.number().int().min(1),
+  ingredientsHasMore: z.boolean(),
+  sectionsHasMore: z.boolean(),
+});
+
+/** Collection paging state for one product lookup. */
+export type ProductPagination = z.infer<typeof productPaginationSchema>;
+
 /**
- * A full product record: the unified product ref plus its ingredient rows,
- * related links, a source-faithful summary, and suggested follow-up calls.
+ * A full product record.
+ *
+ * The briefed shape is `product`, `details`, optional `ingredients` and
+ * `labelSections`, and `nextSteps`. `links`, `summary`,
+ * `labelIngredientsIncluded`, and `pagination` are additive fields that keep
+ * the record navigable without changing the briefed keys' types.
  *
  * Closed like every result schema: an adapter's stray field cannot reach
- * `structuredContent`. `labelIngredientsIncluded` says whether the ingredient
- * rows came from parsing a drug label's SPL XML (as opposed to structured
- * rows the source already publishes).
+ * `structuredContent`. `ingredients` is omitted when the caller turns
+ * `include_ingredients` off; `labelSections` is omitted unless a DailyMed
+ * lookup asked for them.
  */
 export const productDetailSchema = z.object({
   product: productRefSchema,
-  ingredients: z.array(productIngredientSchema),
+  details: productDetailsSchema,
+  ingredients: z.array(ingredientRefSchema).optional(),
+  labelSections: labelSectionsSchema.optional(),
+  nextSteps: z.array(nextStepSchema),
   links: z.array(productLinkSchema),
   summary: z
     .string()
     .optional()
     .describe("Source-faithful overview assembled from the record."),
-  nextSteps: z.array(nextStepSchema),
   labelIngredientsIncluded: z.boolean(),
+  pagination: productPaginationSchema,
 });
 
 /** A full product record in the unified vocabulary. */

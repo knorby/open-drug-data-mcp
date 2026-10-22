@@ -12,15 +12,17 @@ import type {
   IngredientIdentifiers,
   IngredientRef,
   IngredientRole,
+  LabelSections,
   ProductIdentifiers,
   ProductRef,
   SourceRef,
 } from "../lib/schemas.js";
 import {
   dailyMedLabelUrl,
+  extractSplUsageSections,
   parseSplLabel,
   type SplIngredient,
-} from "./identity/spl.js";
+} from "./identity/spl-ingredients.js";
 import type {
   IngredientGroup,
   IngredientSearchType,
@@ -610,6 +612,7 @@ export interface NlmProductRecord {
   details: NlmProductDetails;
   summary?: string;
   labelIngredientsIncluded: boolean;
+  labelSections?: LabelSections;
 }
 
 /** A not-found error the tool layer renders as an ordinary 404. */
@@ -655,6 +658,7 @@ function splIngredientRefs(
 async function dailyMedProduct(
   client: NlmDrugsClient,
   setid: string,
+  includeLabelSections: boolean,
   retrievedAt: string,
   signal: AbortSignal | undefined,
 ): Promise<NlmProductRecord> {
@@ -692,6 +696,19 @@ async function dailyMedProduct(
     ...(summary !== undefined ? { summary } : {}),
   };
 
+  // Section extraction is a second parse of the same XML. Keep it strictly
+  // opt-in so a lookup that did not ask for sections pays nothing for them.
+  const extraction = includeLabelSections
+    ? extractSplUsageSections(xml)
+    : undefined;
+  const labelSections: LabelSections | undefined =
+    extraction === undefined
+      ? undefined
+      : {
+          sections: extraction.sections,
+          truncated: extraction.truncated,
+        };
+
   return {
     product,
     ingredients: splIngredientRefs(label.ingredients, source),
@@ -703,6 +720,7 @@ async function dailyMedProduct(
     },
     ...(summary !== undefined ? { summary } : {}),
     labelIngredientsIncluded: true,
+    ...(labelSections !== undefined ? { labelSections } : {}),
   };
 }
 
@@ -886,7 +904,7 @@ export function createNlmAdapter(client?: NlmDrugsClient): SourceAdapter {
 
     async getProduct(
       id: string,
-      _opts: Record<string, unknown>,
+      opts: Record<string, unknown>,
       signal?: AbortSignal,
     ): Promise<NlmProductRecord> {
       const trimmed = id.trim();
@@ -897,6 +915,7 @@ export function createNlmAdapter(client?: NlmDrugsClient): SourceAdapter {
         return await dailyMedProduct(
           nlm,
           trimmed.toLowerCase(),
+          opts.includeLabelSections === true,
           retrievedAt,
           signal,
         );
