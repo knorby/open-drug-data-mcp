@@ -1,0 +1,28 @@
+{
+  "data": [
+    {
+      "spl_version": 8,
+      "published_date": "Jul 15, 2026",
+      "title": "LIPITOR (ATORVASTATIN CALCIUM) TABLET, FILM COATED [VIATRIS SPECIALTY LLC]",
+      "setid": "a60cc18b-0631-4cf0-b021-9f52224ece65"
+    },
+    {
+      "spl_version": 5,
+      "published_date": "Aug 22, 2011",
+      "title": "LIPITOR (ATORVASTATIN CALCIUM) TABLET, FILM COATED [PHYSICIANS TOTAL CARE, INC]",
+      "setid": "10a7ba02-42d6-4cae-8904-b256e2da5496"
+    }
+  ],
+  "metadata": {
+    "db_published_date": "Oct 21, 2026 09:14:30PM EST",
+    "elements_per_page": 2,
+    "current_url": "https://dailymed.nlm.nih.gov/dailymed/services/v2/spls.json?rxcui=153165&pagesize=2",
+    "next_page_url": "https://dailymed.nlm.nih.gov/dailymed/services/v2/spls.json?rxcui=153165&pagesize=2&page=2",
+    "total_elements": 3,
+    "total_pages": 2,
+    "current_page": 1,
+    "previous_page": "null",
+    "previous_page_url": "null",
+    "next_page": 2
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "data": [
+    {
+      "spl_version": 1,
+      "published_date": "Jan 13, 2011",
+      "title": "LIPITOR (ATORVASTATIN CALCIUM) TABLET, FILM COATED [REBEL DISTRIBUTORS CORP]",
+      "setid": "a3c08a6d-f986-4efc-9f96-3f0e652704dc"
+    }
+  ],
+  "metadata": {
+    "db_published_date": "Oct 21, 2026 09:14:30PM EST",
+    "elements_per_page": 2,
+    "current_url": "https://dailymed.nlm.nih.gov/dailymed/services/v2/spls.json?rxcui=153165&pagesize=2&page=2",
+    "next_page_url": "null",
+    "total_elements": 3,
+    "total_pages": 2,
+    "current_page": 2,
+    "previous_page": 1,
+    "previous_page_url": "https://dailymed.nlm.nih.gov/dailymed/services/v2/spls.json?rxcui=153165&pagesize=2&page=1",
+    "next_page": "null"
+  }
+}

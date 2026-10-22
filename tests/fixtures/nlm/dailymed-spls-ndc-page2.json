@@ -1,0 +1,15 @@
+{
+  "data": [],
+  "metadata": {
+    "db_published_date": "Oct 21, 2026 09:14:30PM EST",
+    "elements_per_page": 2,
+    "current_url": "https://dailymed.nlm.nih.gov/dailymed/services/v2/spls.json?ndc=58151-155-77&pagesize=2&page=2",
+    "next_page_url": "null",
+    "total_elements": 1,
+    "total_pages": 1,
+    "current_page": 2,
+    "previous_page": 1,
+    "previous_page_url": "https://dailymed.nlm.nih.gov/dailymed/services/v2/spls.json?ndc=58151-155-77&pagesize=2&page=1",
+    "next_page": "null"
+  }
+}
