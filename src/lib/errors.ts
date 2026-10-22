@@ -29,7 +29,7 @@ const NETWORK_FAILURE =
 const TIMEOUT = /timed out|timeout/i;
 
 /** Caller-cancellation wording used when a client wraps the DOMException. */
-const ABORT = /\babort(?:ed)?\b/i;
+const ABORT = /\babort(?:ed)?\b|\bcancel(?:l)?ed\b/i;
 
 /**
  * Thrown when a lookup cannot be routed to an adapter.

@@ -6,6 +6,7 @@ import { resetConfig } from "../src/config.js";
 import {
   createNlmAdapter,
   createNlmBridges,
+  failedProductGroup,
   ndcSearchCandidates,
   nlmAdapter,
   nlmBridges,
@@ -489,11 +490,12 @@ describe("NLM product search by NDC", () => {
     );
     const adapter = createNlmAdapter(client);
 
-    const failure = adapter.searchProducts?.("ndc", "58151-155-77", 1);
+    const groups = await adapter.searchProducts?.("ndc", "58151-155-77", 1);
 
-    await expect(failure).rejects.toThrow(
-      /The product search failed: RxNorm returned HTTP 503/,
-    );
+    expect(groups?.[0]?.source).toBe("RxNorm");
+    expect(groups?.[0]?.error).toMatch(/RxNorm returned HTTP 503/);
+    expect(groups?.[1]?.source).toBe("DailyMed");
+    expect(groups?.[1]?.error).toBeUndefined();
   });
 
   it("sanitizes a DailyMed failure during an NDC search", async () => {
@@ -511,11 +513,12 @@ describe("NLM product search by NDC", () => {
     });
     const adapter = createNlmAdapter(client);
 
-    const failure = adapter.searchProducts?.("ndc", "58151-155-77", 1);
+    const groups = await adapter.searchProducts?.("ndc", "58151-155-77", 1);
 
-    await expect(failure).rejects.toThrow(
-      /The product search failed: DailyMed returned HTTP 503/,
-    );
+    expect(groups?.[0]?.source).toBe("RxNorm");
+    expect(groups?.[0]?.error).toBeUndefined();
+    expect(groups?.[1]?.source).toBe("DailyMed");
+    expect(groups?.[1]?.error).toMatch(/DailyMed returned HTTP 503/);
   });
 
   it("returns empty groups for an unsupported product search type", async () => {
@@ -866,37 +869,59 @@ describe("NLM ingredient search", () => {
 });
 
 describe("NLM failure handling", () => {
+  it("renders a non-Error rejection reason as text", () => {
+    expect(failedProductGroup("RxNorm", 1, "raw failure")).toMatchObject({
+      source: "RxNorm",
+      error: "raw failure",
+    });
+  });
+
   it.each([
     ["429 rate limit", 429, /rate limited by RxNorm/],
     ["5xx outage", 503, /RxNorm returned HTTP 503/],
     ["4xx rejection", 404, /RxNorm rejected the request/],
-  ])("sanitizes a %s", async (_label, status, message) => {
-    const { client } = clientFor(() => new Response(null, { status }));
-    const adapter = createNlmAdapter(client);
+  ])(
+    "sanitizes a %s without failing the other group",
+    async (_label, status, message) => {
+      const { client } = clientFor((url) =>
+        url.pathname === "/REST/rxcui.json"
+          ? new Response(null, { status })
+          : fixtureResponse("dailymed-spls-empty.json"),
+      );
+      const adapter = createNlmAdapter(client);
 
-    const failure = adapter.searchProducts?.("name", "Lipitor", 1);
+      const groups = await adapter.searchProducts?.("name", "Lipitor", 1);
 
-    await expect(failure).rejects.toThrow(message);
-    await expect(failure).rejects.not.toThrow(/@knorby|secret|api_key/);
-  });
+      expect(groups?.[0]?.source).toBe("RxNorm");
+      expect(groups?.[0]?.error).toMatch(message);
+      expect(groups?.[0]?.error).not.toMatch(/@knorby|secret|api_key/);
+      expect(groups?.[1]?.source).toBe("DailyMed");
+      expect(groups?.[1]?.error).toBeUndefined();
+    },
+  );
 
   it("sanitizes a transport failure without naming the client", async () => {
-    const { client } = clientFor(() => {
-      throw new Error(
-        "@knorby/nlm-drugs-client failed at https://rxnav.nlm.nih.gov/?key=secret",
-      );
+    const { client } = clientFor((url) => {
+      if (url.pathname === "/REST/rxcui.json") {
+        throw new Error(
+          "@knorby/nlm-drugs-client failed at https://rxnav.nlm.nih.gov/?key=secret",
+        );
+      }
+      return fixtureResponse("dailymed-spls-empty.json");
     });
     const adapter = createNlmAdapter(client);
 
-    const failure = adapter.searchProducts?.("name", "Lipitor", 1);
+    const groups = await adapter.searchProducts?.("name", "Lipitor", 1);
 
-    await expect(failure).rejects.toThrow(
+    expect(groups?.[0]?.error).toMatch(
       /The product search failed: RxNorm did not return a usable response/,
     );
-    await expect(failure).rejects.not.toThrow(/@knorby|secret/);
+    expect(groups?.[0]?.error).not.toMatch(/@knorby|secret/);
+    expect(groups?.[1]?.source).toBe("DailyMed");
+    expect(groups?.[1]?.error).toBeUndefined();
   });
 
-  it("names DailyMed when its request fails", async () => {
+  it("names DailyMed when only its request fails", async () => {
     const { client } = clientFor((url) =>
       url.pathname === "/dailymed/services/v2/spls.json"
         ? new Response(null, { status: 503 })
@@ -904,9 +929,11 @@ describe("NLM failure handling", () => {
     );
     const adapter = createNlmAdapter(client);
 
-    const failure = adapter.searchProducts?.("name", "Lipitor", 1);
+    const groups = await adapter.searchProducts?.("name", "Lipitor", 1);
 
-    await expect(failure).rejects.toThrow(
+    expect(groups?.[0]?.source).toBe("RxNorm");
+    expect(groups?.[0]?.error).toBeUndefined();
+    expect(groups?.[1]?.error).toMatch(
       /The product search failed: DailyMed returned HTTP 503/,
     );
   });

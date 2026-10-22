@@ -506,7 +506,8 @@ describe("get_product tool", () => {
 
     expect(result.isError).toBeFalsy();
     const output = result.structuredContent as ProductDetailOutput;
-    expect(output.product.name).toBe("Lipitor");
+    expect(output.product.name).toBe("atorvastatin calcium");
+    expect(output.product.brand).toBe("Lipitor");
     expect(output.product.identifiers.ndc).toEqual(["58151-155-77"]);
     expect(output.product.identifiers.splSetId).toBe(
       "a60cc18b-0631-4cf0-b021-9f52224ece65",
@@ -628,7 +629,7 @@ describe("get_product tool", () => {
       offMarket: false,
       entryDate: "2023-05-01",
     });
-    expect(output.labelIngredientsIncluded).toBe(false);
+    expect(output.labelIngredientsIncluded).toBe(true);
     expect(output.ingredients?.[0]).toMatchObject({
       name: "Vitamin D3",
       role: "active",
@@ -1251,7 +1252,8 @@ describe("product adapter lookups", () => {
       id: "a60cc18b-0631-4cf0-b021-9f52224ece65",
       url: expect.stringContaining("/drug/label.json"),
     });
-    expect(record.product.name).toBe("Lipitor");
+    expect(record.product.name).toBe("atorvastatin calcium");
+    expect(record.product.brand).toBe("Lipitor");
     expect(record.ingredients).toHaveLength(1);
   });
 
@@ -1603,8 +1605,8 @@ describe("productDetailNextSteps", () => {
     expect(steps[1]?.input).toEqual({
       source: "dailymed",
       id: SPL_SETID,
-      include_label_sections: true,
     });
+    expect(steps[1]?.why).toContain("include_label_sections");
     expect(steps[2]?.input).toEqual({ source: "nlm", id: "1191" });
     for (const step of steps) expect(step.why.length).toBeGreaterThan(0);
   });

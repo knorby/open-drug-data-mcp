@@ -129,8 +129,8 @@ describe("openFDA product search", () => {
     expect(group?.items).toHaveLength(2);
 
     const first = group?.items[0];
-    expect(first?.name).toBe("Lipitor");
-    expect(first?.brand).toBe("Viatris Specialty LLC");
+    expect(first?.name).toBe("atorvastatin calcium");
+    expect(first?.brand).toBe("Lipitor");
     expect(first?.category).toBe("medication");
     expect(first?.identifiers.ndc).toEqual(["58151-155-77"]);
     expect(first?.identifiers.splSetId).toBe(
@@ -139,7 +139,9 @@ describe("openFDA product search", () => {
     expect(first?.identifiers.rxcui).toContain("259255");
     expect(first?.identifiers.applicationNumber).toBe("NDA020702");
     expect(first?.identifiers.upc).toContain("0358151155774");
-    expect(first?.summary).toBe("TABLET, FILM COATED · ORAL · 10 mg");
+    expect(first?.summary).toBe(
+      "TABLET, FILM COATED · ORAL · 10 mg · labeler Viatris Specialty LLC",
+    );
     expect(first?.source.database).toBe("openFDA");
     expect(first?.source.id).toBe("58151-155");
     expect(first?.source.url).toMatch(
@@ -213,6 +215,28 @@ describe("openFDA product search", () => {
     expect(derived?.name).toBe("Derived Product");
     expect(derived?.source.id).toBe("00069-0015");
     expect(derived?.identifiers.ndc).toEqual(["00069-0015-66"]);
+  });
+
+  it("uses brand_name for brand only when it differs from the product name", async () => {
+    const body = {
+      meta: { results: { skip: 0, limit: 20, total: 1 } },
+      results: [
+        {
+          product_ndc: "12345-678",
+          brand_name: "Brand Name",
+          generic_name: "Generic Name",
+          labeler_name: "Labeler Inc",
+        },
+      ],
+    } satisfies { meta: unknown; results: DrugNdc[] };
+    const { client } = clientFor(() => jsonResponse(body));
+    const adapter = createOpenFdaAdapter(client);
+
+    const [group] = (await adapter.searchProducts?.("name", "brand", 1)) ?? [];
+
+    expect(group?.items[0]?.name).toBe("Generic Name");
+    expect(group?.items[0]?.brand).toBe("Brand Name");
+    expect(group?.items[0]?.summary).toBe("labeler Labeler Inc");
   });
 
   it("does not collapse OTC package variants", async () => {
@@ -955,7 +979,8 @@ describe("openFDA identity bridges", () => {
     );
     const bridges = createOpenFdaBridges(client);
     const byNdc = await bridges.productByNdc("58151-155-77");
-    expect(byNdc?.product.name).toBe("Lipitor");
+    expect(byNdc?.product.name).toBe("atorvastatin calcium");
+    expect(byNdc?.product.brand).toBe("Lipitor");
     expect(byNdc?.product.source.database).toBe("openFDA");
 
     const { client: labelClient } = clientFor(

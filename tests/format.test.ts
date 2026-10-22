@@ -3,7 +3,6 @@ import { CHARACTER_LIMIT } from "../src/constants.js";
 import {
   applyCharacterLimit,
   boundStructured,
-  markdownBullets,
   morePagesNote,
   truncationNote,
 } from "../src/lib/format.js";
@@ -112,16 +111,6 @@ describe("truncationNote", () => {
 
   it("names a custom limit", () => {
     expect(truncationNote(1_000)).toContain("1,000-character");
-  });
-});
-
-describe("markdownBullets", () => {
-  it("renders one bullet per line", () => {
-    expect(markdownBullets("Found", ["a", "b"])).toBe("Found\n\n- a\n- b");
-  });
-
-  it("renders a none marker for an empty list", () => {
-    expect(markdownBullets("Found", [])).toBe("Found\n\n- (none)");
   });
 });
 

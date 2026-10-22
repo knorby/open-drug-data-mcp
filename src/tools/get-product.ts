@@ -529,14 +529,17 @@ export function registerGetProductTool(
         openWorldHint: true,
       },
     },
-    async ({
-      source,
-      id,
-      include_label_sections,
-      include_ingredients,
-      page,
-      response_format,
-    }: GetProductInput) => {
+    async (
+      {
+        source,
+        id,
+        include_label_sections,
+        include_ingredients,
+        page,
+        response_format,
+      }: GetProductInput,
+      ctx,
+    ) => {
       try {
         const prepared = prepareProductId(source, id);
         if (!prepared.ok) return messageError(prepared.error);
@@ -550,6 +553,7 @@ export function registerGetProductTool(
           {
             includeLabelSections: include_label_sections,
           },
+          ctx.mcpReq.signal,
         );
         const record = sourceRecordSchema.parse(raw);
         const details = productDetailsSchema.parse(record.details ?? {});
@@ -601,7 +605,8 @@ export function registerGetProductTool(
           links: productLinks(record.product),
           ...(summary !== undefined ? { summary } : {}),
           labelIngredientsIncluded:
-            include_ingredients && (record.labelIngredientsIncluded ?? false),
+            include_ingredients &&
+            (record.labelIngredientsIncluded ?? source === "dsld"),
           pagination: {
             page,
             ingredientsTotal: allIngredients?.length ?? 0,

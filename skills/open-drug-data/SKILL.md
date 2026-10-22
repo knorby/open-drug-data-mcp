@@ -221,9 +221,9 @@ direct links, derived links, and candidate sets the response actually contains.
   per-ingredient graphs. The result says when a page or a cap is incomplete.
 - **Nothing walks pages automatically.** Request `page + 1` only when the
   answer needs more records. Never fetch every page by default.
-- **Responses are character-bounded.** When text is shortened, the result says
-  which parts were cut; prefer a narrower request over assuming the record is
-  complete.
+- **Responses are character-bounded.** When text or structured fields are
+  shortened, the result says so; prefer a narrower request over assuming the
+  record is complete.
 
 ## Cost flags
 
@@ -235,7 +235,7 @@ deliberate.
 | `include_label_sections` | `drugdata_get_product` (DailyMed) | Extracts and returns SPL usage sections — dosage, directions, patient guidance. Large, often the biggest part of a response. Default `false`. | The task needs label instructions or patient-facing wording. Not for identity, brand, or ingredient-list questions. |
 | `resolve_ingredients` | `drugdata_resolve_identifiers` | Runs the full identity chain once per ingredient — many upstream requests on a multi-ingredient product. Graphs cover a prefix of the rows, capped at 20. Default `false`. | The product has one or a few ingredients and each needs its own cross-source identity. For long ingredient lists, resolve individual rows from `nextSteps` instead. |
 | `include_clinical` | `drugdata_get_ingredient` (DrugCentral) | Fetches indications, off-label uses, contraindications, and FAERS signals. Extra requests and often verbose. Default `false`. | The task is clinical or pharmacovigilance research. Not for identifying a structure or crosswalking an identifier. |
-| `include_cosing_panel` | `drugdata_get_ingredient` (INKEEDecoder) | Adds one upstream request for the CosIng CAS/EC/IUPAC panel. Default `false`. | A cosmetic ingredient needs CAS, EC, or IUPAC data that the page profile does not already show. |
+| `include_cosing_panel` | `drugdata_get_ingredient` (INKEEDecoder) | Includes the CosIng CAS/EC/IUPAC panel from the same page fetch — no extra request. Default `false`. | A cosmetic ingredient needs CAS, EC, or IUPAC data that the page profile does not already show. |
 | `include_label_ingredients` | `drugdata_resolve_identifiers` | Parses SPL XML for ingredient UNIIs — an extra request. Default `false`. | A product record lacks ingredient identifiers and you need them to pivot to ingredient profiles. |
 
 `drugdata_get_product` includes ingredient rows by default; set

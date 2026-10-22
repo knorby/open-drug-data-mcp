@@ -133,22 +133,24 @@ export function registerSearchProductsTool(
         openWorldHint: true,
       },
     },
-    async ({
-      type,
-      query,
-      category,
-      page,
-      response_format,
-    }: ProductSearchInput) => {
+    async (
+      { type, query, category, page, response_format }: ProductSearchInput,
+      ctx,
+    ) => {
       try {
         const resolved = resolveRegistry(registry);
         if (!resolved.ok) return messageError(resolved.error);
 
         const groups = sanitizeGroups(
-          await resolved.registry.searchProducts(type, query, {
-            category,
-            page,
-          }),
+          await resolved.registry.searchProducts(
+            type,
+            query,
+            {
+              category,
+              page,
+            },
+            ctx.mcpReq.signal,
+          ),
         );
         const output = outputSchema.parse({
           query,

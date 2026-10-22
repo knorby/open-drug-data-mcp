@@ -16,6 +16,7 @@ import {
   type SearchResult,
 } from "@knorby/nih-dsld-client";
 import { getClients } from "../clients.js";
+import { throwIfAborted } from "../lib/abort.js";
 import type {
   IngredientIdentifiers,
   IngredientRef,
@@ -820,8 +821,9 @@ export function createDsldAdapter(client?: DsldClient): DsldAdapter {
       type: ProductSearchType,
       query: string,
       page: number,
-      _signal?: AbortSignal,
+      signal?: AbortSignal,
     ): Promise<ProductGroup[]> {
+      throwIfAborted(signal);
       const trimmed = query.trim();
       if (trimmed.length === 0) return [emptyProductGroup(page)];
 
@@ -865,8 +867,9 @@ export function createDsldAdapter(client?: DsldClient): DsldAdapter {
     async getProduct(
       id: string,
       _opts: Record<string, unknown>,
-      _signal?: AbortSignal,
+      signal?: AbortSignal,
     ): Promise<DsldLabelRecord> {
+      throwIfAborted(signal);
       const labelId = parseLabelId(id);
       const retrievedAt = new Date().toISOString();
       const dsld = clients();
@@ -944,7 +947,8 @@ export function createDsldBridges(client?: DsldClient): DsldBridges {
   const clients = () => client ?? getClients().dsld;
 
   return {
-    async ingredientGroupsByName(name, _signal) {
+    async ingredientGroupsByName(name, signal) {
+      throwIfAborted(signal);
       const trimmed = name.trim();
       if (trimmed.length === 0) return [];
       const retrievedAt = new Date().toISOString();
@@ -968,7 +972,8 @@ export function createDsldBridges(client?: DsldClient): DsldBridges {
       }
     },
 
-    async label(dsldId, _signal) {
+    async label(dsldId, signal) {
+      throwIfAborted(signal);
       const retrievedAt = new Date().toISOString();
       const dsld = clients();
       try {

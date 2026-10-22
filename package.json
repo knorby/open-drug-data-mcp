@@ -3,6 +3,14 @@
   "version": "0.0.0",
   "description": "A local MCP server for unified open drug, supplement, and cosmetic ingredient research over openFDA, CosIng, NLM, DrugCentral, DSLD, and INKEEDecoder.",
   "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/knorby/open-drug-data-mcp.git"
+  },
+  "homepage": "https://github.com/knorby/open-drug-data-mcp#readme",
+  "bugs": {
+    "url": "https://github.com/knorby/open-drug-data-mcp/issues"
+  },
   "type": "module",
   "main": "./dist/server.js",
   "types": "./dist/server.d.ts",

@@ -147,9 +147,12 @@ function productStep(ref: ProductRef, type: SearchType): NextStep | null {
     input: {
       source: target.source,
       id: ref.source.id,
-      ...(target.source === "dailymed" ? { include_label_sections: true } : {}),
     },
-    why: `The ${type} search found ${target.what}; open its full record to continue the loop.`,
+    why: `The ${type} search found ${target.what}; open its full record to continue the loop.${
+      target.source === "dailymed"
+        ? " Set include_label_sections: true when usage sections are needed."
+        : ""
+    }`,
   };
 }
 
@@ -339,9 +342,8 @@ export function productDetailNextSteps(
       input: {
         source: "dailymed",
         id: setid,
-        include_label_sections: true,
       },
-      why: "The product carries a DailyMed SPL set id; open the label with its usage sections for ingredient and dosing detail.",
+      why: "The product carries a DailyMed SPL set id; open the label. Set include_label_sections: true when usage sections are needed.",
     });
   }
 

@@ -52,7 +52,9 @@ export const productIdentifiersSchema = z.object({
   ndc: z
     .array(z.string())
     .optional()
-    .describe("National Drug Code values, canonical 11-digit form."),
+    .describe(
+      "National Drug Code values as the source spells them: 10- or 11-digit, dashed or plain.",
+    ),
   upc: z.array(z.string()).optional().describe("Package barcodes (UPC/EAN)."),
   rxcui: z.array(z.string()).optional().describe("RxNorm concept identifiers."),
   splSetId: z
@@ -215,6 +217,21 @@ export const candidateSetSchema = z.object({
 /** One ambiguous source result, never auto-linked. */
 export type CandidateSet = z.infer<typeof candidateSetSchema>;
 
+/** One non-fatal source failure recorded during identity resolution. */
+export const resolutionErrorSchema = z.object({
+  database: z
+    .union([databaseIdSchema, z.literal("config")])
+    .describe(
+      "Upstream database that failed, or 'config' when the server environment is the problem.",
+    ),
+  message: z
+    .string()
+    .describe("Actionable, database-only explanation of the failure."),
+});
+
+/** One non-fatal source failure recorded during identity resolution. */
+export type ResolutionError = z.infer<typeof resolutionErrorSchema>;
+
 /** The resolved identity graph for one ingredient. */
 export const identityGraphSchema = z.object({
   subject: z.object({
@@ -224,6 +241,12 @@ export const identityGraphSchema = z.object({
   identifiers: ingredientIdentifiersSchema,
   links: z.array(sourceLinkSchema),
   candidates: z.array(candidateSetSchema),
+  errors: z
+    .array(resolutionErrorSchema)
+    .optional()
+    .describe(
+      "Sources that failed or were misconfigured during this resolution; absent when every source answered.",
+    ),
 });
 
 /** The resolved identity graph for one ingredient. */
@@ -281,6 +304,12 @@ export const productResolutionSchema = z.object({
     .optional()
     .describe(
       "Present with `graphs`: how many ingredient rows the graphs cover, the total, the chain cap, and whether coverage is partial.",
+    ),
+  errors: z
+    .array(resolutionErrorSchema)
+    .optional()
+    .describe(
+      "Sources that failed or were misconfigured while resolving this product; absent when every source answered.",
     ),
 });
 

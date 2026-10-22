@@ -5,8 +5,8 @@ Instructions and steering for AI coding agents working in this repository.
 This is the repository for **Open Drug Data MCP**, a local MCP (Model Context
 Protocol) server that gives an agent one read-only research interface over
 openFDA, CosIng, RxNorm, DailyMed, DrugCentral, NIH DSLD, and INKEEDecoder. It
-is served over stdio, runnable with `npx`, and published to npm via Changesets
-+ OIDC trusted publishing.
+is served over stdio, runnable with `npx`, and intended for npm publication
+via Changesets + OIDC trusted publishing (published after the first release).
 
 It began as the knorby TypeScript MCP template. The template's setup, testing,
 and release guardrails still apply and are kept below; the project-specific
@@ -115,8 +115,12 @@ scanning). Both are needed for full coverage.
     so run `npm run check` before committing if hooks are skipped)
   - `npm run typecheck` (tsc, src + tests)
   - `npm run build` (tsup)
-  - `npm test` (Vitest)
+  - `npm run test:coverage` (Vitest with the 100% thresholds)
   - `npm run test:smoke` (MCP Inspector CLI `tools/list` against `dist/`)
+  - `npm pack --dry-run` (published files are only `dist/`, `README.md`,
+    `CHANGELOG.md`, and `LICENSE`)
+  - a stdout-purity check (`echo '{}' | node dist/index.js` must write nothing
+    to stdout)
   - `npm audit --audit-level=moderate` (vulnerability scan)
 - The **pre-commit suite** (file hygiene + secret scanning) also runs in CI
   via `.github/workflows/pre-commit.yml` on every push to `main` and PRs

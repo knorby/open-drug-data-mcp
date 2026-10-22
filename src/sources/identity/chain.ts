@@ -1,4 +1,6 @@
 import type { Ingredient as ClientIngredient } from "@knorby/inkeedecoder-client";
+import { throwIfAborted } from "../../lib/abort.js";
+import { sanitizeSourceText } from "../../lib/errors.js";
 import { logWarn } from "../../lib/log.js";
 import type {
   DatabaseId,
@@ -85,12 +87,23 @@ export interface CandidateSet {
   options: IngredientRef[];
 }
 
+/**
+ * One non-fatal failure during resolution. A source outage costs that source's
+ * link, not the answer, so it is reported here instead of thrown. `config`
+ * means the process environment is invalid rather than an upstream outage.
+ */
+export interface ResolutionError {
+  database: DatabaseId | "config";
+  message: string;
+}
+
 /** The resolved identity graph for one ingredient. */
 export interface IdentityGraph {
   subject: { name?: string; inciName?: string };
   identifiers: IngredientIdentifiers;
   links: SourceLink[];
   candidates: CandidateSet[];
+  errors?: ResolutionError[];
 }
 
 /** A product-level answer: its links plus the ingredient rows it carries. */
@@ -106,6 +119,7 @@ export interface ProductResolution {
    * `ingredients[]` list remains the authoritative row set.
    */
   graphs?: IdentityGraph[];
+  errors?: ResolutionError[];
 }
 
 /** An ingredient-level answer: one identity graph. */
@@ -284,11 +298,14 @@ interface ChainState {
   input: ResolveInput;
   deps: IdentityDeps;
   signal: AbortSignal | undefined;
+  /** Internal adapter ids switched off for this process. */
+  disabled: ReadonlySet<string>;
   retrievedAt: string;
   subject: { name?: string; inciName?: string };
   links: SourceLink[];
   candidates: CandidateSet[];
   identifiers: IngredientIdentifiers[];
+  errors: ResolutionError[];
   openfdaUnii: string | undefined;
   /** The normalized UNII/CAS value openFDA's direct probe already used. */
   directProbe: string | undefined;
@@ -296,7 +313,7 @@ interface ChainState {
   nlmRxcui: string | undefined;
   linked: Set<ChainStepId>;
   reviews: Set<ChainStepId>;
-  errors: Set<ChainStepId>;
+  failed: Set<ChainStepId>;
 }
 
 /** The result of one step attempt. */
@@ -329,6 +346,8 @@ interface FirstRun {
 /** One chain step and the signature of the inputs it consumes. */
 interface Step {
   id: ChainStepId;
+  /** Database credited when this step fails. */
+  database: DatabaseId;
   run: (state: ChainState) => Promise<StepOutcome>;
   inputs: (state: ChainState) => string;
 }
@@ -407,6 +426,38 @@ function applyCandidates(
   });
 }
 
+/** The text of a thrown value, without assuming it is an Error. */
+function errorText(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+/** Whether a failure is the server's environment rather than an outage. */
+function isConfigFailure(error: unknown): boolean {
+  return /invalid environment configuration/i.test(errorText(error));
+}
+
+/** Records one source failure in the database vocabulary, scrubbed for output. */
+function recordError(
+  state: ChainState,
+  database: DatabaseId,
+  error: unknown,
+): void {
+  state.errors.push({
+    database: isConfigFailure(error) ? "config" : database,
+    message: sanitizeSourceText(errorText(error)),
+  });
+}
+
+/** Rethrows a caller cancellation instead of swallowing it. */
+function rethrowIfCancelled(state: ChainState, error: unknown): void {
+  if (state.signal?.aborted === true) throw error;
+}
+
+/** Whether an adapter is enabled for this process. */
+function enabled(state: ChainState, adapterId: string): boolean {
+  return !state.disabled.has(adapterId);
+}
+
 /** Runs the openFDA step: direct UNII/CAS first, then the name crosswalk. */
 async function openfdaStep(state: ChainState): Promise<StepOutcome> {
   const { input } = state;
@@ -451,10 +502,16 @@ async function openfdaStep(state: ChainState): Promise<StepOutcome> {
     state.subject.name;
   if (name === undefined) return { status: "none" };
 
+  throwIfAborted(state.signal);
   const hits = await state.deps.openfda.substancesByName(name, state.signal);
   if (hits.length === 0) return { status: "none" };
   const top = hits[0] as OpenFdaSubstanceHit;
-  if (hits.length === 1 || top.tier === "exact" || top.tier === "inci") {
+  // A name is only confident when exactly one candidate holds the top tier
+  // and that tier is an actual name agreement. A lone unmatched or prefix hit
+  // is still a guess, so it stays a candidate.
+  const topTierHits = hits.filter((hit) => hit.tier === top.tier);
+  const confidentTier = top.tier === "exact" || top.tier === "inci";
+  if (confidentTier && topTierHits.length === 1) {
     return {
       status: "linked",
       ref: top.ingredient,
@@ -471,13 +528,18 @@ async function openfdaStep(state: ChainState): Promise<StepOutcome> {
   };
 }
 
-/** A CosIng hit is confident when alone or an exact top INCI name. */
+/**
+ * A CosIng hit is confident only when exactly one candidate holds the top
+ * exact-INCI tier. A single fuzzy text hit is still a guess.
+ */
 function confidentCosing(
   hits: readonly { matchedOn: string; exact: boolean }[],
 ): boolean {
-  if (hits.length === 1) return true;
   const top = hits[0] as { matchedOn: string; exact: boolean };
-  return top.matchedOn === "inciName" && top.exact;
+  if (top.matchedOn !== "inciName" || !top.exact) return false;
+  return (
+    hits.filter((hit) => hit.matchedOn === "inciName" && hit.exact).length === 1
+  );
 }
 
 /** Runs the CosIng step: CAS first when supplied, then INCI/name. */
@@ -493,7 +555,6 @@ async function cosingStep(state: ChainState): Promise<StepOutcome> {
         (value) => value.trim() === cas,
       ),
     );
-    if (exact.length === 0) return { status: "none" };
     if (exact.length > 1) {
       return {
         status: "candidates",
@@ -503,19 +564,24 @@ async function cosingStep(state: ChainState): Promise<StepOutcome> {
         options: exact.map((hit) => hit.ingredient),
       };
     }
-    const top = exact[0] as (typeof exact)[number];
-    return {
-      status: "linked",
-      ref: top.ingredient,
-      matchedVia: "cas",
-      confidence: "direct",
-    };
+    if (exact.length === 1) {
+      const top = exact[0] as (typeof exact)[number];
+      return {
+        status: "linked",
+        ref: top.ingredient,
+        matchedVia: "cas",
+        confidence: "direct",
+      };
+    }
+    // A CAS miss can still name the same substance when an INCI hint exists;
+    // fall through to the documented CAS-first-then-INCI order.
   }
 
   const hint = input.inciName ?? state.subject.inciName ?? state.subject.name;
   const inci = nonEmpty(hint);
   if (inci === undefined) return { status: "deferred" };
 
+  throwIfAborted(state.signal);
   const hits = await state.deps.cosing.byInci(inci, state.signal);
   if (hits.length === 0) return { status: "none" };
   if (!confidentCosing(hits)) {
@@ -532,8 +598,7 @@ async function cosingStep(state: ChainState): Promise<StepOutcome> {
     status: "linked",
     ref: top.ingredient,
     matchedVia: "inci",
-    confidence:
-      top.matchedOn === "inciName" && top.exact ? "direct" : "derived",
+    confidence: "direct",
   };
 }
 
@@ -648,9 +713,11 @@ async function drugcentralStep(state: ChainState): Promise<StepOutcome> {
   let structIds: number[] = [];
   let matchedVia: "unii" | "rxcui" = "unii";
   if (unii !== undefined) {
+    throwIfAborted(state.signal);
     structIds = await state.deps.drugcentral.structIdsForUnii(unii);
   }
   if (structIds.length === 0 && rxcui !== undefined) {
+    throwIfAborted(state.signal);
     matchedVia = "rxcui";
     structIds = await state.deps.drugcentral.structIdsForRxcui(rxcui);
   }
@@ -678,10 +745,12 @@ async function drugcentralStep(state: ChainState): Promise<StepOutcome> {
   let identifiers: IngredientIdentifiers = { structId };
   let name: string | undefined;
   try {
+    throwIfAborted(state.signal);
     const profile = await state.deps.drugcentral.getProfile(structId);
     identifiers = profileIdentifiers(profile.data, structId);
     name = nonEmpty(profile.data.structure?.name ?? undefined);
-  } catch {
+  } catch (error) {
+    rethrowIfCancelled(state, error);
     // A profile failure should not cost the identifier link itself.
   }
 
@@ -712,12 +781,14 @@ async function drugcentralStep(state: ChainState): Promise<StepOutcome> {
 const STEPS: readonly Step[] = [
   {
     id: "openfda",
+    database: "openFDA",
     run: openfdaStep,
     inputs: (state) =>
       `openfda:${state.subject.inciName ?? state.subject.name ?? ""}`,
   },
   {
     id: "cosing",
+    database: "CosIng",
     run: cosingStep,
     inputs: (state) =>
       `cosing:${nonEmpty(state.input.cas) ?? ""}:${
@@ -729,12 +800,14 @@ const STEPS: readonly Step[] = [
   },
   {
     id: "nlm",
+    database: "RxNorm",
     run: nlmStep,
     inputs: (state) =>
       `unii:${chainUnii(state) ?? ""}:${nonEmpty(state.input.rxcui) ?? ""}`,
   },
   {
     id: "drugcentral",
+    database: "DrugCentral",
     run: drugcentralStep,
     inputs: (state) =>
       `dc:${chainUnii(state) ?? ""}:${
@@ -748,14 +821,18 @@ async function runChain(state: ChainState, cap: number): Promise<void> {
   const firstRuns = new Map<ChainStepId, FirstRun>();
 
   const attempt = async (step: Step): Promise<void> => {
+    throwIfAborted(state.signal);
     let outcome: StepOutcome;
     try {
       outcome = await step.run(state);
-    } catch {
+    } catch (error) {
+      rethrowIfCancelled(state, error);
       logWarn(`identity ${step.id} step failed`);
-      state.errors.add(step.id);
+      state.failed.add(step.id);
+      recordError(state, step.database, error);
       return;
     }
+    throwIfAborted(state.signal);
     firstRuns.set(step.id, { outcome, inputs: step.inputs(state) });
     if (outcome.status === "linked") {
       applyLinked(state, outcome);
@@ -768,13 +845,15 @@ async function runChain(state: ChainState, cap: number): Promise<void> {
 
   for (let pass = 1; pass <= 2; pass += 1) {
     for (const step of STEPS) {
+      if (!enabled(state, step.id)) continue;
+      throwIfAborted(state.signal);
       if (pass === 1) {
         await attempt(step);
         continue;
       }
       if (
         state.linked.has(step.id) ||
-        state.errors.has(step.id) ||
+        state.failed.has(step.id) ||
         state.reviews.has(step.id)
       ) {
         continue;
@@ -856,6 +935,7 @@ function graphOf(state: ChainState): IdentityGraph {
     identifiers: combineIdentifiers(state.identifiers, unii),
     links: sortedLinks(state.links),
     candidates: sortedCandidates(state.candidates),
+    ...(state.errors.length > 0 ? { errors: state.errors } : {}),
   };
 }
 
@@ -872,34 +952,42 @@ async function terminalCandidates(
   );
   if (name === undefined) return;
 
-  try {
-    const groups = await state.deps.dsld.ingredientGroupsByName(
-      name,
-      state.signal,
-    );
-    if (groups.length > 0) {
-      applyCandidates(
-        state,
-        {
-          status: "candidates",
-          database: "DSLD",
-          matchedVia: "ingredient-name",
-          reason: "name-match",
-          options: groups,
-        },
-        cap,
+  if (enabled(state, "dsld")) {
+    throwIfAborted(state.signal);
+    try {
+      const groups = await state.deps.dsld.ingredientGroupsByName(
+        name,
+        state.signal,
       );
+      if (groups.length > 0) {
+        applyCandidates(
+          state,
+          {
+            status: "candidates",
+            database: "DSLD",
+            matchedVia: "ingredient-name",
+            reason: "name-match",
+            options: groups,
+          },
+          cap,
+        );
+      }
+    } catch (error) {
+      rethrowIfCancelled(state, error);
+      recordError(state, "DSLD", error);
     }
-  } catch {
-    // A weak terminal never costs the confident graph.
   }
 
+  if (!enabled(state, "inkeedecoder")) return;
   const slug = slugGuess(name);
   if (slug.length === 0) return;
+  throwIfAborted(state.signal);
   let item: ClientIngredient | null | undefined;
   try {
     item = await state.deps.inkeedecoder.getIngredient(slug, state.signal);
-  } catch {
+  } catch (error) {
+    rethrowIfCancelled(state, error);
+    recordError(state, "INKEEDecoder", error);
     item = undefined;
   }
   if (item === null || item === undefined) return;
@@ -954,6 +1042,7 @@ async function resolveIngredientGraph(
   opts: ResolveOptions,
   signal: AbortSignal | undefined,
   deps: IdentityDeps,
+  disabled: ReadonlySet<string>,
 ): Promise<IdentityGraph> {
   const cap = maxCandidates(opts);
   const inputUnii = nonEmpty(input.unii)?.toUpperCase();
@@ -961,18 +1050,20 @@ async function resolveIngredientGraph(
     input,
     deps,
     signal,
+    disabled,
     retrievedAt: new Date().toISOString(),
     subject: {},
     links: [],
     candidates: [],
     identifiers: [],
+    errors: [],
     openfdaUnii: undefined,
     directProbe: undefined,
     inputUnii,
     nlmRxcui: undefined,
     linked: new Set(),
     reviews: new Set(),
-    errors: new Set(),
+    failed: new Set(),
   };
 
   const inputIdentifiers: IngredientIdentifiers = {
@@ -1021,11 +1112,18 @@ async function splIngredients(
   deps: IdentityDeps,
   signal: AbortSignal | undefined,
   record: ProductRecord | null,
+  errors: ResolutionError[],
 ): Promise<IngredientRef[]> {
+  throwIfAborted(signal);
   let xml: string;
   try {
     xml = await deps.nlm.getSplXml(setid, signal);
-  } catch {
+  } catch (error) {
+    if (signal?.aborted === true) throw error;
+    errors.push({
+      database: isConfigFailure(error) ? "config" : "DailyMed",
+      message: sanitizeSourceText(errorText(error)),
+    });
     return [];
   }
   const entries = parseSplIngredients(xml);
@@ -1038,11 +1136,25 @@ async function splIngredients(
   );
 }
 
-/** Runs one bridge call, treating any failure as an absent answer. */
-async function attempt<T>(work: () => Promise<T>): Promise<T | undefined> {
+/**
+ * Runs one product bridge call, treating a failure as an absent answer while
+ * recording it for the result.
+ */
+async function attempt<T>(
+  work: () => Promise<T>,
+  errors: ResolutionError[],
+  database: DatabaseId,
+  signal: AbortSignal | undefined,
+): Promise<T | undefined> {
+  throwIfAborted(signal);
   try {
     return await work();
-  } catch {
+  } catch (error) {
+    if (signal?.aborted === true) throw error;
+    errors.push({
+      database: isConfigFailure(error) ? "config" : database,
+      message: sanitizeSourceText(errorText(error)),
+    });
     return undefined;
   }
 }
@@ -1115,15 +1227,28 @@ async function ingredientGraphs(
   opts: ResolveOptions,
   signal: AbortSignal | undefined,
   deps: IdentityDeps,
+  disabled: ReadonlySet<string>,
 ): Promise<IdentityGraph[]> {
   const graphs: IdentityGraph[] = [];
   const cap = maxCandidates(opts);
   for (const ingredient of ingredients.slice(0, MAX_INGREDIENT_GRAPHS)) {
+    throwIfAborted(signal);
     const unii = ingredient.identifiers.unii;
+    const cas = ingredient.identifiers.cas?.[0];
     const input: ResolveInput =
-      unii !== undefined ? { unii } : { substanceName: ingredient.name };
+      unii !== undefined
+        ? { unii }
+        : cas !== undefined
+          ? { cas }
+          : { substanceName: ingredient.name };
     graphs.push(
-      await resolveIngredientGraph(input, { maxCandidates: cap }, signal, deps),
+      await resolveIngredientGraph(
+        input,
+        { maxCandidates: cap },
+        signal,
+        deps,
+        disabled,
+      ),
     );
   }
   return graphs;
@@ -1135,35 +1260,77 @@ async function resolveNdcProduct(
   opts: ResolveOptions,
   signal: AbortSignal | undefined,
   deps: IdentityDeps,
-  state: { retrievedAt: string; links: SourceLink[] },
+  state: {
+    retrievedAt: string;
+    links: SourceLink[];
+    errors: ResolutionError[];
+    disabled: ReadonlySet<string>;
+  },
 ): Promise<IngredientRef[]> {
   const ndc = (input.ndc as string).trim();
-  const record = await attempt(() => deps.openfda.productByNdc(ndc, signal));
+  const openfdaEnabled = !state.disabled.has("openfda");
+  const nlmEnabled = !state.disabled.has("nlm");
+  const record = openfdaEnabled
+    ? await attempt(
+        () => deps.openfda.productByNdc(ndc, signal),
+        state.errors,
+        "openFDA",
+        signal,
+      )
+    : undefined;
   if (record !== undefined && record !== null) {
     state.links.push(openFdaProductLink(record, "ndc", "direct"));
     state.links.push(...applicationLinks(record));
   }
 
-  const rxcuis = sortedValues([
-    ...((await attempt(() => deps.nlm.rxcuisForNdc(ndc, signal))) ?? []),
-    ...(record?.product.identifiers.rxcui ?? []),
-  ]);
-  for (const rxcui of rxcuis) state.links.push(rxnormLink(rxcui));
+  let setids: string[] = [];
+  if (nlmEnabled) {
+    // A product NDC is not an NLM lookup key; the record's package NDCs are.
+    // When openFDA cannot supply them, pass the caller's NDC through so NLM
+    // can decide whether it is a package spelling it understands.
+    const packageNdcs = record?.product.identifiers.ndc ?? [];
+    const nlmNdcs = packageNdcs.length > 0 ? sortedValues(packageNdcs) : [ndc];
+    const rxcuis = sortedValues([
+      ...((await attempt(
+        async () => {
+          const lists = await Promise.all(
+            nlmNdcs.map((value) => deps.nlm.rxcuisForNdc(value, signal)),
+          );
+          return lists.flat();
+        },
+        state.errors,
+        "RxNorm",
+        signal,
+      )) ?? []),
+      ...(record?.product.identifiers.rxcui ?? []),
+    ]);
+    for (const rxcui of rxcuis) state.links.push(rxnormLink(rxcui));
 
-  const setids = sortedValues(
-    (await attempt(() => deps.nlm.splsForNdc(ndc, signal))) ?? [],
-  );
-  for (const setid of setids) {
-    state.links.push(dailyMedLink(setid, "ndc", "derived"));
-  }
-  const productSetid = record?.product.identifiers.splSetId;
-  if (productSetid !== undefined) {
-    state.links.push(dailyMedLink(productSetid, "ndc", "derived"));
+    setids = sortedValues(
+      (await attempt(
+        async () => {
+          const lists = await Promise.all(
+            nlmNdcs.map((value) => deps.nlm.splsForNdc(value, signal)),
+          );
+          return lists.flat();
+        },
+        state.errors,
+        "DailyMed",
+        signal,
+      )) ?? [],
+    );
+    for (const setid of setids) {
+      state.links.push(dailyMedLink(setid, "ndc", "derived"));
+    }
+    const productSetid = record?.product.identifiers.splSetId;
+    if (productSetid !== undefined) {
+      state.links.push(dailyMedLink(productSetid, "ndc", "derived"));
+    }
   }
 
   let ingredients = record?.ingredients ?? [];
-  if (opts.includeLabelIngredients === true) {
-    const setid = productSetid ?? setids[0];
+  if (opts.includeLabelIngredients === true && nlmEnabled) {
+    const setid = record?.product.identifiers.splSetId ?? setids[0];
     if (setid !== undefined) {
       const parsed = await splIngredients(
         setid,
@@ -1171,6 +1338,7 @@ async function resolveNdcProduct(
         deps,
         signal,
         record ?? null,
+        state.errors,
       );
       if (parsed.length > 0) ingredients = parsed;
     }
@@ -1183,28 +1351,46 @@ async function resolveSplProduct(
   input: ResolveInput,
   signal: AbortSignal | undefined,
   deps: IdentityDeps,
-  state: { retrievedAt: string; links: SourceLink[] },
+  state: {
+    retrievedAt: string;
+    links: SourceLink[];
+    errors: ResolutionError[];
+    disabled: ReadonlySet<string>;
+  },
 ): Promise<IngredientRef[]> {
   const setid = (input.splSetId as string).trim().toLowerCase();
-  state.links.push(dailyMedLink(setid, "splSetId", "direct"));
+  const openfdaEnabled = !state.disabled.has("openfda");
+  const nlmEnabled = !state.disabled.has("nlm");
+  if (nlmEnabled) state.links.push(dailyMedLink(setid, "splSetId", "direct"));
 
-  const record = await attempt(() =>
-    deps.openfda.productBySetId(setid, signal),
-  );
+  const record = openfdaEnabled
+    ? await attempt(
+        () => deps.openfda.productBySetId(setid, signal),
+        state.errors,
+        "openFDA",
+        signal,
+      )
+    : undefined;
   if (record !== undefined && record !== null) {
     state.links.push(openFdaProductLink(record, "splSetId", "derived"));
     state.links.push(...applicationLinks(record));
-    for (const rxcui of sortedValues(record.product.identifiers.rxcui ?? [])) {
-      state.links.push(rxnormLink(rxcui));
+    if (nlmEnabled) {
+      for (const rxcui of sortedValues(
+        record.product.identifiers.rxcui ?? [],
+      )) {
+        state.links.push(rxnormLink(rxcui));
+      }
     }
   }
 
+  if (!nlmEnabled) return record?.ingredients ?? [];
   const parsed = await splIngredients(
     setid,
     state.retrievedAt,
     deps,
     signal,
     record ?? null,
+    state.errors,
   );
   if (parsed.length > 0) return parsed;
   return record?.ingredients ?? [];
@@ -1215,8 +1401,14 @@ async function resolveDsldProduct(
   dsldId: number,
   signal: AbortSignal | undefined,
   deps: IdentityDeps,
-  state: { retrievedAt: string; links: SourceLink[] },
+  state: {
+    retrievedAt: string;
+    links: SourceLink[];
+    errors: ResolutionError[];
+    disabled: ReadonlySet<string>;
+  },
 ): Promise<IngredientRef[]> {
+  if (state.disabled.has("dsld")) return [];
   state.links.push({
     database: "DSLD",
     id: String(dsldId),
@@ -1224,7 +1416,12 @@ async function resolveDsldProduct(
     matchedVia: "dsldId",
     confidence: "direct",
   });
-  const record = await attempt(() => deps.dsld.label(dsldId, signal));
+  const record = await attempt(
+    () => deps.dsld.label(dsldId, signal),
+    state.errors,
+    "DSLD",
+    signal,
+  );
   if (record === undefined || record === null) return [];
   return record.ingredients;
 }
@@ -1235,9 +1432,15 @@ async function resolveProduct(
   opts: ResolveOptions,
   signal: AbortSignal | undefined,
   deps: IdentityDeps,
+  disabled: ReadonlySet<string>,
 ): Promise<ProductResolution> {
   const retrievedAt = new Date().toISOString();
-  const state = { retrievedAt, links: [] as SourceLink[] };
+  const state = {
+    retrievedAt,
+    links: [] as SourceLink[],
+    errors: [] as ResolutionError[],
+    disabled,
+  };
   let ingredients: IngredientRef[];
   if (input.ndc !== undefined) {
     ingredients = await resolveNdcProduct(input, opts, signal, deps, state);
@@ -1254,7 +1457,7 @@ async function resolveProduct(
 
   const graphs =
     opts.resolveIngredients === true
-      ? await ingredientGraphs(ingredients, opts, signal, deps)
+      ? await ingredientGraphs(ingredients, opts, signal, deps, disabled)
       : undefined;
 
   return {
@@ -1263,6 +1466,7 @@ async function resolveProduct(
     candidates: [],
     ingredients,
     ...(graphs !== undefined ? { graphs } : {}),
+    ...(state.errors.length > 0 ? { errors: state.errors } : {}),
   };
 }
 
@@ -1287,13 +1491,17 @@ export interface IdentityResolver {
  *
  * @param deps Bridges backed by the repo adapters by default; tests inject
  *   fixture-backed bridges so no network call is made.
+ * @param disabled Internal adapter ids switched off for this process (from
+ *   `DRUGDATA_DISABLED_SOURCES`). Disabled sources are never queried.
  */
 export function createIdentityResolver(
   deps: IdentityDeps = defaultIdentityDeps,
+  disabled: readonly string[] = [],
 ): IdentityResolver {
+  const disabledSet = new Set(disabled);
   return {
     resolve: (input, opts, signal) =>
-      resolveIdentityWithDeps(input, opts, signal, deps),
+      resolveIdentityWithDeps(input, opts, signal, deps, disabledSet),
   };
 }
 
@@ -1303,13 +1511,14 @@ async function resolveIdentityWithDeps(
   opts: ResolveOptions = {},
   signal: AbortSignal | undefined,
   deps: IdentityDeps,
+  disabled: ReadonlySet<string>,
 ): Promise<IngredientResolution | ProductResolution> {
   if (isProductInput(input)) {
-    return await resolveProduct(input, opts, signal, deps);
+    return await resolveProduct(input, opts, signal, deps, disabled);
   }
   return {
     kind: "ingredient",
-    graph: await resolveIngredientGraph(input, opts, signal, deps),
+    graph: await resolveIngredientGraph(input, opts, signal, deps, disabled),
   };
 }
 
@@ -1321,7 +1530,8 @@ export function createInkeedecoderIngredientDep(
     async getIngredient(slug, signal) {
       try {
         return await bridge.getIngredientBySlug(slug, { signal });
-      } catch {
+      } catch (error) {
+        if (signal?.aborted === true) throw error;
         return null;
       }
     },
@@ -1355,5 +1565,6 @@ export async function resolveIdentity(
     opts,
     signal,
     defaultIdentityDeps,
+    new Set(),
   );
 }

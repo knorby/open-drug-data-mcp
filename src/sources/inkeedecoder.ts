@@ -285,6 +285,7 @@ function productIngredientRefOf(
   const percent = nonEmpty(item.percent);
   return {
     name: item.name,
+    inciName: item.name,
     ...(percent !== undefined ? { quantity: `${percent}%` } : {}),
     identifiers: { slug: item.slug },
     source: sourceOf(

@@ -12,20 +12,6 @@ import { registerSearchIngredientsTool } from "./tools/search-ingredients.js";
 import { registerSearchProductsTool } from "./tools/search-products.js";
 
 /**
- * Builds the MCP server and registers every primitive.
- *
- * This factory is deliberately transport-agnostic and side-effect free: the
- * stdio entrypoint (`src/index.ts`) calls it through `serveStdio`, and tests
- * call it through `createMcpHandler` to drive the server in-process. Adding an
- * HTTP transport later means adding an entrypoint, not touching this file.
- *
- * Registration order is fixed and deliberate. The 2026-07-28 revision says a
- * server SHOULD keep `tools/list` stable so a client can cache it, so the six
- * tools are registered in the documented order instead of being spread through
- * a map or sorted at request time.
- */
-
-/**
  * How to use the server, handed to the host at initialization.
  *
  * Hosts surface this to the model, so it carries what individual tool
@@ -46,7 +32,7 @@ Identifier vocabulary: NDC is a US drug product or package code; UNII is an FDA 
 
 Confidence: in resolve results, links are trusted matches — direct means the same identifier, derived means a documented crosswalk. candidates are possible matches that need judgment: never silently treat one as confirmed or choose one for the user. When identity matters, prefer a direct link or ask which record is meant.
 
-Pagination: a search takes one page number, applies it to every source in the fan-out, and re-queries all of them; read each group's hasMore rather than assuming a shared page count. Lookups page their own ingredient and label-section collections. Never walk every page by default — request page + 1 only when the answer needs it. Responses are character-bounded; when text is shortened, it says which parts were cut.
+Pagination: a search takes one page number, applies it to every source in the fan-out, and re-queries all of them; read each group's hasMore rather than assuming a shared page count. Lookups page their own ingredient and label-section collections. Never walk every page by default — request page + 1 only when the answer needs it. Responses are character-bounded; when text or structured fields are shortened, the result says so.
 
 Sourcing etiquette: cite the upstream database and its deep link in your answer, and do not present this server as the source. Regulatory text — annex notices, label sections, indication wording — is verbatim: summarize or quote briefly with attribution rather than republishing it. Zero matches are a normal result, not an error; use drugdata_ping when a source looks unavailable.
 
@@ -60,7 +46,19 @@ export interface ServerDependencies {
   resolver?: IdentityResolver;
 }
 
-/** Builds the server and registers every tool, resource, and prompt. */
+/**
+ * Builds the MCP server and registers every primitive.
+ *
+ * This factory is deliberately transport-agnostic and side-effect free: the
+ * stdio entrypoint (`src/index.ts`) calls it through `serveStdio`, and tests
+ * call it through `createMcpHandler` to drive the server in-process. Adding an
+ * HTTP transport later means adding an entrypoint, not touching this file.
+ *
+ * Registration order is fixed and deliberate. The 2026-07-28 revision says a
+ * server SHOULD keep `tools/list` stable so a client can cache it, so the six
+ * tools are registered in the documented order instead of being spread through
+ * a map or sorted at request time.
+ */
 export function createServer({
   registry,
   resolver,

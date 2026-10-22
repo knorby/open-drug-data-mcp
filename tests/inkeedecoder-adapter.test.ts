@@ -547,6 +547,7 @@ describe("INKEEDecoder product lookup", () => {
     expect(record.ingredients).toEqual([
       {
         name: "Water",
+        inciName: "Water",
         identifiers: { slug: "water" },
         source: {
           database: "INKEEDecoder",

@@ -71,6 +71,15 @@ describe("toUserMessage", () => {
     expect(message).toContain("cancelled");
   });
 
+  it("maps a client's cancelled-by-signal wording to cancellation", () => {
+    const message = toUserMessage(
+      new Error("Request cancelled by the caller's AbortSignal"),
+      "Search",
+    );
+
+    expect(message).toContain("cancelled");
+  });
+
   it("maps a TimeoutError by name", () => {
     const message = toUserMessage(
       new DOMException(

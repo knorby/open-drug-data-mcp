@@ -305,7 +305,7 @@ describe("get_ingredient tool", () => {
     });
     expect(tool.description).toContain("include_clinical");
     expect(tool.description).toContain("include_cosing_panel");
-    expect(tool.description).toContain("one extra upstream request");
+    expect(tool.description).toContain("no extra request");
     expect(tool.description).toContain("default false");
     expect(tool.description).not.toMatch(/client/i);
     expect(Object.keys(tool.inputSchema.properties ?? {}).sort()).toEqual([

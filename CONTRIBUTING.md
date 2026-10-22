@@ -5,8 +5,9 @@ workflow, and how to publish releases.
 
 ## Prerequisites
 
-- **Node.js 24+** (use [nvm](https://github.com/nvm-sh/nvm) or
-  [fnm](https://github.com/Schniz/fnm); this repo includes an `.nvmrc`)
+- **Node.js 22+** (Node 24 LTS recommended; use
+  [nvm](https://github.com/nvm-sh/nvm) or [fnm](https://github.com/Schniz/fnm);
+  this repo includes an `.nvmrc`)
 - **npm** (bundled with Node)
 - **pre-commit** — `pipx install pre-commit` or `brew install pre-commit`
 - **gitleaks** — `brew install gitleaks` (secret scanner for pre-commit)
@@ -123,9 +124,10 @@ Select the bump type (patch/minor/major) and write a short summary. A new
 
 ### Releasing
 
-**Automated release (default):** the release workflow ships **staged** at
+**Automated release (staged):** the release workflow is kept at
 `workflow-templates/release.yml` — GitHub only runs workflows from
-`.github/workflows/`, so it is inactive in this template. Activate it with:
+`.github/workflows/`, so it is inactive until the repository is made public and
+the workflow is moved. Activate it with:
 
 ```bash
 git mv workflow-templates/release.yml .github/workflows/release.yml
@@ -141,8 +143,18 @@ Prerequisites (one-time, repository owner): a `release` environment in repo
 Settings → Environments; workflow permissions set to Read and write with PR
 creation allowed; a trusted publisher configured on npmjs.com (repository,
 workflow filename `release.yml`, environment `release` — must match exactly);
-and npm 2FA (`npm profile enable-2fa auth-and-writes`). The very first
-publish is manual — see the README "First publish (manual)" section.
+and npm 2FA (`npm profile enable-2fa auth-and-writes`). npm requires a package
+to exist before it can link a trusted publisher, so the very first publish is
+manual:
+
+```bash
+npm login
+npm pkg delete publishConfig.provenance   # provenance needs CI + a public repo
+npm run release
+npm pkg set publishConfig.provenance=true
+git push origin main --follow-tags
+gh release create vX.Y.Z --notes-from-tag
+```
 
 **Manual release (if needed):**
 ```bash
@@ -178,8 +190,9 @@ npm pack --dry-run    # verify only dist/, README.md, CHANGELOG.md, LICENSE
 
 1. Create a branch from `main`.
 2. Make your changes + add a changeset (`npx changeset`).
-3. Ensure all checks pass: `npm run lint && npm run typecheck && npm test &&
-   npm run build`.
-4. Open a PR against `main`. CI runs lint, typecheck, build, test, and
-   `npm audit`, plus the pre-commit suite (file hygiene + secret scanning).
+3. Ensure all checks pass: `npm run lint && npm run typecheck &&
+   npm run test:coverage && npm run build && npm run test:smoke`.
+4. Open a PR against `main`. CI runs lint, typecheck, build, coverage tests,
+   the smoke test, package-content and stdout-purity checks, and `npm audit`,
+   plus the pre-commit suite (file hygiene + secret scanning).
 5. After review, merge. Release separately via changesets.

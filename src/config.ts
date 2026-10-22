@@ -70,12 +70,17 @@ const EnvSchema = z.object({
    * rate limit. Never echoed to a tool response.
    */
   DSLD_API_KEY: optionalKey(),
-  /** Abandon an upstream request that takes longer than this, in ms. */
-  DRUGDATA_TIMEOUT_MS: z.coerce
-    .number()
-    .int()
-    .positive()
-    .default(DEFAULT_TIMEOUT_MS),
+  /**
+   * Abandon an upstream request that takes longer than this, in ms. A blank
+   * value counts as unset, like the optional keys: hosts often emit `"VAR": ""`.
+   */
+  DRUGDATA_TIMEOUT_MS: z.preprocess(
+    (value) =>
+      typeof value === "string" && value.trim().length === 0
+        ? undefined
+        : value,
+    z.coerce.number().int().positive().default(DEFAULT_TIMEOUT_MS),
+  ),
   /**
    * Comma-separated adapter ids to switch off for this process. Unknown ids
    * are rejected so a typo cannot silently leave a source enabled.

@@ -136,13 +136,21 @@ export function registerSearchIngredientsTool(
         openWorldHint: true,
       },
     },
-    async ({ type, query, page, response_format }: IngredientSearchInput) => {
+    async (
+      { type, query, page, response_format }: IngredientSearchInput,
+      ctx,
+    ) => {
       try {
         const resolved = resolveRegistry(registry);
         if (!resolved.ok) return messageError(resolved.error);
 
         const groups = sanitizeGroups(
-          await resolved.registry.searchIngredients(type, query, { page }),
+          await resolved.registry.searchIngredients(
+            type,
+            query,
+            { page },
+            ctx.mcpReq.signal,
+          ),
         );
         const output = outputSchema.parse({
           query,

@@ -1,3 +1,4 @@
+import { throwIfAborted } from "../lib/abort.js";
 import { SourceRoutingError } from "../lib/errors.js";
 import type { DatabaseId } from "../lib/schemas.js";
 import {
@@ -155,6 +156,7 @@ export function createRegistry(
         selected,
         (adapter) => adapter.searchProducts(type, query, page, signal),
         page,
+        signal,
       );
     },
 
@@ -175,6 +177,7 @@ export function createRegistry(
         (adapter) =>
           adapter.searchIngredients(type, query, options.page, signal),
         options.page,
+        signal,
       );
     },
 
@@ -190,6 +193,7 @@ export function createRegistry(
           `Source "${database}" does not provide product lookups.${lookupSourcesNote("getProduct")}`,
         );
       }
+      throwIfAborted(signal);
       return owner.getProduct(id, opts, signal);
     },
 
@@ -205,6 +209,7 @@ export function createRegistry(
           `Source "${database}" does not provide ingredient lookups.${lookupSourcesNote("getIngredient")}`,
         );
       }
+      throwIfAborted(signal);
       return owner.getIngredient(id, opts, signal);
     },
   };
@@ -222,10 +227,15 @@ async function fanOut<TAdapter extends SourceAdapter, TGroup extends AnyGroup>(
   adapters: readonly TAdapter[],
   request: (adapter: TAdapter) => Promise<TGroup[]>,
   page: number,
+  signal: AbortSignal | undefined,
 ): Promise<TGroup[]> {
+  throwIfAborted(signal);
   const settled = await Promise.allSettled(
     adapters.map(async (adapter) => request(adapter)),
   );
+  // A cancelled request is not an upstream failure: surface it as a
+  // cancellation rather than synthesizing error groups.
+  throwIfAborted(signal);
 
   const groups: TGroup[] = [];
   settled.forEach((outcome, index) => {

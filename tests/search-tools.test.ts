@@ -558,7 +558,12 @@ describe("search tools", () => {
     });
 
     expect(searchProducts).not.toHaveBeenCalled();
-    expect(searchDsld).toHaveBeenCalledWith("name", "vitamin", 2, undefined);
+    expect(searchDsld).toHaveBeenCalledWith(
+      "name",
+      "vitamin",
+      2,
+      expect.any(AbortSignal),
+    );
     const output = result.structuredContent as ProductSearchOutput;
     expect(output.page).toBe(2);
     expect(output.groups.map((group) => group.source)).toEqual(["DSLD"]);
@@ -1002,9 +1007,9 @@ describe("searchNextSteps", () => {
       input: {
         source: "dailymed",
         id: "set-1",
-        include_label_sections: true,
       },
     });
+    expect(dailyMed?.why).toContain("include_label_sections");
 
     const dsld = firstStep(
       searchNextSteps("brand", [
@@ -1250,5 +1255,65 @@ describe("searchNextSteps", () => {
 
   it("returns no steps for an empty result", () => {
     expect(searchNextSteps("name", [])).toEqual([]);
+  });
+});
+
+describe("request cancellation", () => {
+  it("returns a cancelled error result instead of error groups", async () => {
+    const controller = new AbortController();
+    const first = vi.fn();
+    const hanging = fakeAdapter({
+      id: "openfda",
+      databases: ["openFDA"],
+      productTypes: ["name"],
+      searchProducts: async (_type, _query, _page, signal) => {
+        first();
+        await new Promise((_resolve, reject) => {
+          signal?.addEventListener("abort", () => reject(signal.reason), {
+            once: true,
+          });
+        });
+        return [];
+      },
+    });
+    const registry = createRegistry([hanging], []);
+    let handler:
+      | ((args: unknown, ctx: unknown) => Promise<unknown>)
+      | undefined;
+    const server = {
+      registerTool: (
+        _name: string,
+        _config: unknown,
+        callback: (args: unknown, ctx: unknown) => Promise<unknown>,
+      ) => {
+        handler = callback;
+      },
+    } as unknown as McpServer;
+    registerSearchProductsTool(server, registry);
+
+    const pending = handler?.(
+      {
+        type: "name",
+        query: "aspirin",
+        page: 1,
+        response_format: "markdown",
+      },
+      { mcpReq: { signal: controller.signal } },
+    );
+    await Promise.resolve();
+    controller.abort(
+      new DOMException(
+        "The request was cancelled by the caller.",
+        "AbortError",
+      ),
+    );
+    const result = (await pending) as {
+      isError?: boolean;
+      content: unknown;
+    };
+
+    expect(result.isError).toBe(true);
+    expect(textOf(result)).toContain("cancelled");
+    expect(first).toHaveBeenCalledTimes(1);
   });
 });

@@ -32,7 +32,9 @@ licenses, attribution requirements, and source caveats are in
   can answer.
 - **Resolve identity across sources.** One call walks the cross-source
   identity chain and returns trusted `links` (direct or derived) plus labeled
-  `candidates` where the match is ambiguous. It never silently picks one.
+  `candidates` where the match is ambiguous. A link needs a direct identifier
+  hit or a single top-tier name match; several plausible records stay
+  candidates, and the chain never silently picks one.
 - **Fetch the full record.** Product and ingredient lookups return the owning
   database's record, its identifier crosswalk, deep links, and suggested next
   calls.
@@ -101,13 +103,14 @@ never a key value.
 | --- | --- | --- |
 | `OPENFDA_API_KEY` | unset | Optional openFDA key. Raises the upstream rate limit; keyless requests work. |
 | `DSLD_API_KEY` | unset | Optional NIH DSLD key (from data.gov). Raises the limit from 1,000 to 10,000 requests per hour. Keyless requests work. |
-| `DRUGDATA_TIMEOUT_MS` | `30000` | Per-request upstream timeout in milliseconds. Must be a positive integer. |
-| `DRUGDATA_DISABLED_SOURCES` | unset | Comma-separated adapter ids to switch off: `openfda`, `cosing`, `nlm`, `drugcentral`, `dsld`, `inkeedecoder`. `nlm` covers both RxNorm and DailyMed. Unknown ids are a configuration error. |
+| `DRUGDATA_TIMEOUT_MS` | `30000` | Per-request upstream timeout in milliseconds. Must be a positive integer when set; a blank value counts as unset. |
+| `DRUGDATA_DISABLED_SOURCES` | unset | Comma-separated adapter ids to switch off: `openfda`, `cosing`, `nlm`, `drugcentral`, `dsld`, `inkeedecoder`. `nlm` covers both RxNorm and DailyMed. Applies to searches, lookups, and identifier resolution. Unknown ids are a configuration error. |
 
 Configuration is read lazily when a tool runs, never at startup. A
 misconfigured server still answers `tools/list` and explains the problem
-through a tool result. Blank API-key values count as unset;
-`DRUGDATA_TIMEOUT_MS` must be a positive integer.
+through a tool result. Blank API-key values count as unset, and a blank
+`DRUGDATA_TIMEOUT_MS` falls back to the default; a non-blank value must be a
+positive integer.
 
 ## Tools
 

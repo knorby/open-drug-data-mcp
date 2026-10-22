@@ -1,6 +1,8 @@
 import { readFileSync } from "node:fs";
 import { McpServer } from "@modelcontextprotocol/server";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { resetClients } from "../src/clients.js";
+import { resetConfig } from "../src/config.js";
 import { SERVER_NAME, SERVER_VERSION } from "../src/constants.js";
 import {
   type GraphCoverage,
@@ -332,7 +334,7 @@ afterEach(async () => {
 });
 
 /** Connects a real MCP client to a server exposing only the resolve tool. */
-async function connect(resolver: IdentityResolver): Promise<TestHarness> {
+async function connect(resolver?: IdentityResolver): Promise<TestHarness> {
   harness = await createTestClient(() => {
     const server = new McpServer({
       name: SERVER_NAME,
@@ -1301,5 +1303,125 @@ describe("resolve_identifiers product resolution", () => {
         why: expect.any(String),
       },
     ]);
+  });
+});
+
+describe("resolve configuration and source failures", () => {
+  it("returns the configuration error instead of an empty graph", async () => {
+    process.env.DRUGDATA_DISABLED_SOURCES = "not-a-source";
+    resetConfig();
+    resetClients();
+    try {
+      const client = await connect();
+      const result = await call(client.client, { unii: "R16CO5Y76E" });
+
+      expect(result.isError).toBe(true);
+      expect(textOf(result)).toContain("DRUGDATA_DISABLED_SOURCES");
+      expect(result.structuredContent).toBeUndefined();
+    } finally {
+      delete process.env.DRUGDATA_DISABLED_SOURCES;
+      resetConfig();
+      resetClients();
+    }
+  });
+
+  it("renders source failures the chain recorded", async () => {
+    const client = await connect(
+      createIdentityResolver(
+        deps({
+          openfda: {
+            substanceByUnii: async () => {
+              throw new Error("@knorby/openfda-client is down");
+            },
+          },
+          nlm: { rxcuisForUnii: async () => ["1191"] },
+        }),
+      ),
+    );
+
+    const result = await call(client.client, { unii: "R16CO5Y76E" });
+
+    expect(result.isError).toBeFalsy();
+    const output = result.structuredContent as IngredientResolution;
+    expect(output.graph.errors).toEqual([
+      { database: "openFDA", message: "the upstream service is down" },
+    ]);
+    const text = textOf(result);
+    expect(text).toContain("⚠ openFDA unavailable");
+    expect(text).not.toContain("@knorby");
+  });
+
+  it("renders a configuration failure inside the graph", async () => {
+    const client = await connect(
+      createIdentityResolver(
+        deps({
+          openfda: {
+            substanceByUnii: async () => {
+              throw new Error("Invalid environment configuration: bad timeout");
+            },
+          },
+        }),
+      ),
+    );
+
+    const result = await call(client.client, { unii: "R16CO5Y76E" });
+
+    expect(result.isError).toBeFalsy();
+    expect(textOf(result)).toContain("⚠ Configuration error");
+  });
+});
+
+describe("resolve disabled sources", () => {
+  function sourceUrl(input: RequestInfo | URL): string {
+    return String(input);
+  }
+
+  it("queries no source when every adapter is disabled", async () => {
+    process.env.DRUGDATA_DISABLED_SOURCES =
+      "openfda,cosing,nlm,drugcentral,dsld,inkeedecoder";
+    resetConfig();
+    resetClients();
+    const fetchMock = vi.fn(async () => new Response(null, { status: 404 }));
+    vi.stubGlobal("fetch", fetchMock);
+    try {
+      const client = await connect();
+      const result = await call(client.client, { unii: "R16CO5Y76E" });
+
+      expect(result.isError).toBeFalsy();
+      const output = result.structuredContent as IngredientResolution;
+      expect(output.graph.links).toEqual([]);
+      expect(output.graph.candidates).toEqual([]);
+      expect(fetchMock).not.toHaveBeenCalled();
+    } finally {
+      delete process.env.DRUGDATA_DISABLED_SOURCES;
+      resetConfig();
+      resetClients();
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("skips the INKEEDecoder terminal when its adapter is disabled", async () => {
+    process.env.DRUGDATA_DISABLED_SOURCES = "inkeedecoder";
+    resetConfig();
+    resetClients();
+    const fetchMock = vi.fn(
+      async (_input: RequestInfo | URL, _init?: RequestInit) =>
+        new Response(null, { status: 404 }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    try {
+      const client = await connect();
+      await call(client.client, { substance_name: "Niacinamide" });
+
+      const hosts = fetchMock.mock.calls.map(
+        ([input]) => new URL(sourceUrl(input)).hostname,
+      );
+      expect(hosts).not.toContain("inkeedecoder.com");
+    } finally {
+      delete process.env.DRUGDATA_DISABLED_SOURCES;
+      resetConfig();
+      resetClients();
+      vi.unstubAllGlobals();
+    }
   });
 });

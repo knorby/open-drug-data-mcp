@@ -28,10 +28,22 @@ jobs:
       - run: npm run lint
       - run: npm run typecheck
       - run: npm run build
-      - run: npm test
+      - run: npm run test:coverage
       # Smoke test: launch the built server through the MCP Inspector CLI and
       # list its tools. Proves the published bin actually speaks MCP — catches
       # a missing shebang, a bundling-only import failure, or a stray write to
       # stdout that would corrupt the JSON-RPC stream.
       - run: npm run test:smoke
+      # The published tarball must contain only dist/, README.md,
+      # CHANGELOG.md, and LICENSE — never source, config, or secrets.
+      - run: npm pack --dry-run
+      # A stdio server must keep stdout for JSON-RPC. One console.log here
+      # would corrupt the stream, so fail the build on any stdout output.
+      - name: Verify stdout purity
+        run: |
+          stdout=$(echo '{}' | node dist/index.js 2>/dev/null)
+          if [ -n "$stdout" ]; then
+            echo "Server wrote to stdout: $stdout"
+            exit 1
+          fi
       - run: npm audit --audit-level=moderate

@@ -8,6 +8,7 @@ import type {
   SplSummary,
 } from "@knorby/nlm-drugs-client";
 import { getClients } from "../clients.js";
+import { throwIfAborted } from "../lib/abort.js";
 import { isSplSetId, isUnii, normalizeNdc } from "../lib/ids.js";
 import type {
   IngredientIdentifiers,
@@ -861,6 +862,48 @@ async function fetchRxNormIngredient(
 }
 
 /**
+ * Settles the two product groups independently.
+ *
+ * RxNorm and DailyMed are separate databases behind one adapter, so one
+ * failing must not discard the other's results. A rejected side becomes an
+ * error group for its own database; a caller cancellation is rethrown.
+ */
+async function settleProductGroups(
+  rxnorm: Promise<ProductGroup>,
+  dailymed: Promise<ProductGroup>,
+  page: number,
+  signal: AbortSignal | undefined,
+): Promise<ProductGroup[]> {
+  const settled = await Promise.allSettled([rxnorm, dailymed]);
+  throwIfAborted(signal);
+
+  const [rx, dm] = settled;
+  return [
+    rx.status === "fulfilled"
+      ? rx.value
+      : failedProductGroup("RxNorm", page, rx.reason),
+    dm.status === "fulfilled"
+      ? dm.value
+      : failedProductGroup("DailyMed", page, dm.reason),
+  ];
+}
+
+/** A product group that carries one database's failure. @internal Exported for tests. */
+export function failedProductGroup(
+  source: "RxNorm" | "DailyMed",
+  page: number,
+  reason: unknown,
+): ProductGroup {
+  return {
+    source,
+    items: [],
+    page,
+    hasMore: false,
+    error: reason instanceof Error ? reason.message : String(reason),
+  };
+}
+
+/**
  * Builds the NLM adapter.
  *
  * @param client Optional client override. Tests inject one backed by fixtures;
@@ -910,14 +953,16 @@ export function createNlmAdapter(client?: NlmDrugsClient): SourceAdapter {
             emptyProductGroup("DailyMed", page),
           ];
         }
-        return await Promise.all([
+        return await settleProductGroups(
           rxNormProductsByNdc(nlm, ndc, page, retrievedAt, signal),
           dailyMedProductsByNdcSafely(nlm, ndc, page, retrievedAt, signal),
-        ]);
+          page,
+          signal,
+        );
       }
 
       if (type === "name") {
-        return await Promise.all([
+        return await settleProductGroups(
           rxNormProductsByName(nlm, trimmed, page, retrievedAt, signal),
           dailyMedProductsSafely(
             nlm,
@@ -926,7 +971,9 @@ export function createNlmAdapter(client?: NlmDrugsClient): SourceAdapter {
             retrievedAt,
             signal,
           ),
-        ]);
+          page,
+          signal,
+        );
       }
 
       return [

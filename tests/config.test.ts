@@ -72,6 +72,14 @@ describe("readConfig", () => {
     expect(config.DSLD_API_KEY).toBeUndefined();
   });
 
+  it("treats a blank timeout as unset", () => {
+    process.env.DRUGDATA_TIMEOUT_MS = "   ";
+
+    const config = readOk();
+
+    expect(config.DRUGDATA_TIMEOUT_MS).toBe(DEFAULT_TIMEOUT_MS);
+  });
+
   it("rejects a timeout that is not a positive integer", () => {
     process.env.DRUGDATA_TIMEOUT_MS = "0";
 

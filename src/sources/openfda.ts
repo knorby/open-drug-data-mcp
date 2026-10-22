@@ -13,6 +13,7 @@ import {
   type UniiRecord,
 } from "@knorby/openfda-client";
 import { getClients } from "../clients.js";
+import { throwIfAborted } from "../lib/abort.js";
 import { isSplSetId, isUnii } from "../lib/ids.js";
 import type {
   IngredientIdentifiers,
@@ -298,7 +299,8 @@ function mapProduct(raw: DrugNdc, retrievedAt: string): ProductRef | null {
     (packageNdcs[0] === undefined
       ? undefined
       : productNdcFromPackage(packageNdcs[0]));
-  const name = nonEmpty(raw.brand_name) ?? nonEmpty(raw.generic_name);
+  const brandName = nonEmpty(raw.brand_name);
+  const name = nonEmpty(raw.generic_name) ?? brandName;
   if (productNdc === undefined || name === undefined) return null;
 
   const openfda = raw.openfda;
@@ -306,8 +308,14 @@ function mapProduct(raw: DrugNdc, retrievedAt: string): ProductRef | null {
   const rxcuis = openfda?.rxcui;
   const upcs = openfda?.upc;
   const labeler = nonEmpty(raw.labeler_name);
+  const brand = brandName;
   const applicationNumber = nonEmpty(raw.application_number);
-  const summary = productSummary(raw);
+  const summaryParts = [
+    productSummary(raw),
+    labeler === undefined ? undefined : `labeler ${labeler}`,
+  ].filter((part): part is string => part !== undefined);
+  const summary =
+    summaryParts.length > 0 ? summaryParts.join(" · ") : undefined;
 
   const identifiers: ProductIdentifiers = {
     ndc: packageNdcs.length > 0 ? packageNdcs : [productNdc],
@@ -319,7 +327,7 @@ function mapProduct(raw: DrugNdc, retrievedAt: string): ProductRef | null {
 
   return {
     name,
-    ...(labeler !== undefined ? { brand: labeler } : {}),
+    ...(brand !== undefined && brand !== name ? { brand } : {}),
     category: "medication",
     identifiers,
     source: {
@@ -1225,7 +1233,9 @@ export function createOpenFdaAdapter(
       type: ProductSearchType,
       query: string,
       page: number,
+      signal?: AbortSignal,
     ): Promise<ProductGroup[]> {
+      throwIfAborted(signal);
       const retrievedAt = new Date().toISOString();
 
       if (type === "barcode" || type === "ndc") {
@@ -1265,7 +1275,9 @@ export function createOpenFdaAdapter(
       type: IngredientSearchType,
       query: string,
       page: number,
+      signal?: AbortSignal,
     ): Promise<IngredientGroup[]> {
+      throwIfAborted(signal);
       const trimmed = query.trim();
       const retrievedAt = new Date().toISOString();
       if (trimmed.length === 0) return [emptyIngredientGroup(page)];
@@ -1307,8 +1319,9 @@ export function createOpenFdaAdapter(
     async getProduct(
       id: string,
       opts: Record<string, unknown>,
-      _signal?: AbortSignal,
+      signal?: AbortSignal,
     ): Promise<OpenFdaProductRecord> {
+      throwIfAborted(signal);
       const trimmed = id.trim();
       const retrievedAt = new Date().toISOString();
       const includeLabelIngredients = opts.includeLabelIngredients === true;
@@ -1326,7 +1339,9 @@ export function createOpenFdaAdapter(
     async getIngredient(
       id: string,
       _opts: Record<string, unknown>,
+      signal?: AbortSignal,
     ): Promise<IngredientLookupRecord> {
+      throwIfAborted(signal);
       const retrievedAt = new Date().toISOString();
       return await fetchSubstance(clients(), id, retrievedAt);
     },
@@ -1420,13 +1435,15 @@ export function createOpenFdaBridges(client?: OpenFdaClient): OpenFdaBridges {
   const clients = () => client ?? getClients().openfda;
 
   return {
-    async substanceByUnii(unii, _signal) {
+    async substanceByUnii(unii, signal) {
+      throwIfAborted(signal);
       const normalized = unii.trim().toUpperCase();
       if (!isUnii(normalized)) return null;
       return await bridgeSubstance(clients(), field("unii", normalized));
     },
 
-    async substanceByCas(cas, _signal) {
+    async substanceByCas(cas, signal) {
+      throwIfAborted(signal);
       const normalized = cas.trim();
       if (!CAS.test(normalized)) return null;
       return await bridgeSubstance(
@@ -1435,7 +1452,8 @@ export function createOpenFdaBridges(client?: OpenFdaClient): OpenFdaBridges {
       );
     },
 
-    async substancesByName(name, _signal) {
+    async substancesByName(name, signal) {
+      throwIfAborted(signal);
       const trimmed = name.trim();
       if (trimmed.length === 0) return [];
 
@@ -1443,6 +1461,7 @@ export function createOpenFdaBridges(client?: OpenFdaClient): OpenFdaBridges {
       const retrievedAt = new Date().toISOString();
       const records: Substance[] = [];
       for (const entry of entries) {
+        throwIfAborted(signal);
         const unii = nonEmpty(entry.unii);
         if (unii === undefined) continue;
         try {
@@ -1473,11 +1492,13 @@ export function createOpenFdaBridges(client?: OpenFdaClient): OpenFdaBridges {
       return hits;
     },
 
-    async productByNdc(ndc, _signal) {
+    async productByNdc(ndc, signal) {
+      throwIfAborted(signal);
       return await bridgeProduct(clients(), ndc.trim());
     },
 
-    async productBySetId(setid, _signal) {
+    async productBySetId(setid, signal) {
+      throwIfAborted(signal);
       return await bridgeProduct(clients(), setid.trim().toLowerCase());
     },
   };

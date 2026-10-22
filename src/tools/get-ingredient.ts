@@ -44,9 +44,9 @@ import {
  *
  * The two cost flags are source-specific on purpose. `include_clinical` makes
  * DrugCentral fetch indications, off-label uses, contraindications, and FAERS
- * signals (extra requests, often verbose); `include_cosing_panel` makes
- * INKEEDecoder request the CosIng panel (CAS/EC/IUPAC). Both default false,
- * and neither changes the other sources.
+ * signals (extra requests, often verbose); `include_cosing_panel` includes
+ * INKEEDecoder's CosIng panel (CAS/EC/IUPAC) from the same page fetch. Both
+ * default false, and neither changes the other sources.
  */
 
 /** Databases that can answer an ingredient lookup, in the tool's spelling. */
@@ -77,7 +77,7 @@ const CAS = /^\d{2,7}-\d{2}-\d$/;
 const PREFIXED_IDENTIFIER = /^([A-Za-z][A-Za-z0-9_]{1,30}):(\S+)$/;
 
 const DESCRIPTION =
-  "Fetch one ingredient profile from openFDA, CosIng, DrugCentral, RxNorm, or INKEEDecoder. The `id` is the database's own key: a UNII or dashed CAS number (openfda), a numeric substance id or exact INCI/glossary name (cosing), a numeric structure id, UNII, dashed CAS number, or a supported TYPE:value crosswalk identifier (drugcentral), a numeric RxCUI (nlm), or an ingredient slug/URL (inkeedecoder). The result carries the unified ingredient ref, the source's profile fields and identifier crosswalk, verbatim regulatory notices where the source publishes them, links, and suggested follow-up calls. `include_clinical` asks DrugCentral for indications, off-label uses, contraindications, and FAERS counts — extra requests, verbose, default false. `include_cosing_panel` asks INKEEDecoder for its CosIng CAS/EC/IUPAC panel — adds one extra upstream request, default false. A malformed id is an error result naming the search tool that finds a valid one; an upstream miss is an error result, not an empty profile.";
+  "Fetch one ingredient profile from openFDA, CosIng, DrugCentral, RxNorm, or INKEEDecoder. The `id` is the database's own key: a UNII or dashed CAS number (openfda), a numeric substance id or exact INCI/glossary name (cosing), a numeric structure id, UNII, dashed CAS number, or a supported TYPE:value crosswalk identifier (drugcentral), a numeric RxCUI (nlm), or an ingredient slug/URL (inkeedecoder). The result carries the unified ingredient ref, the source's profile fields and identifier crosswalk, verbatim regulatory notices where the source publishes them, links, and suggested follow-up calls. `include_clinical` asks DrugCentral for indications, off-label uses, contraindications, and FAERS counts — extra requests, verbose, default false. `include_cosing_panel` asks INKEEDecoder to include its CosIng CAS/EC/IUPAC panel from the same page fetch — no extra request, default false. A malformed id is an error result naming the search tool that finds a valid one; an upstream miss is an error result, not an empty profile.";
 
 const inputSchema = z.object({
   source: z
@@ -104,7 +104,7 @@ const inputSchema = z.object({
     .boolean()
     .default(false)
     .describe(
-      "INKEEDecoder only: fetch the CosIng panel (CAS numbers, EC numbers, IUPAC name). Adds one extra upstream request. Default false.",
+      "INKEEDecoder only: include the CosIng panel (CAS numbers, EC numbers, IUPAC name) from the same page fetch — no extra request. Default false.",
     ),
   response_format: z
     .enum(RESPONSE_FORMATS)
@@ -682,13 +682,16 @@ export function registerGetIngredientTool(
         openWorldHint: true,
       },
     },
-    async ({
-      source,
-      id,
-      include_clinical,
-      include_cosing_panel,
-      response_format,
-    }: GetIngredientInput) => {
+    async (
+      {
+        source,
+        id,
+        include_clinical,
+        include_cosing_panel,
+        response_format,
+      }: GetIngredientInput,
+      ctx,
+    ) => {
       try {
         const prepared = prepareIngredientId(source, id);
         if (!prepared.ok) return messageError(prepared.error);
@@ -703,6 +706,7 @@ export function registerGetIngredientTool(
             includeClinical: include_clinical,
             includeCosingPanel: include_cosing_panel,
           },
+          ctx.mcpReq.signal,
         );
         const record = sourceRecordSchema.parse(raw);
 

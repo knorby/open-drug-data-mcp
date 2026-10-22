@@ -542,6 +542,79 @@ describe("identity chain (c): product resolution", () => {
     expect(result.graphs?.[0]?.identifiers.unii).toBe("A0JWA85V8F");
   });
 
+  it("uses an ingredient row's CAS when it has no UNII", async () => {
+    const record = productRecord(
+      {
+        name: "Supplement",
+        category: "supplement",
+        identifiers: { ndc: ["00093-1046"] },
+        source: {
+          database: "openFDA",
+          id: "00093-1046",
+          url: "https://example.test/ndc",
+          retrievedAt: ISO,
+        },
+      },
+      [
+        ingredient("Thing", {
+          role: "active",
+          identifiers: { cas: ["50-78-2"] },
+        }),
+      ],
+    );
+    const result = await createIdentityResolver(
+      deps({
+        openfda: {
+          productByNdc: async () => record,
+          substanceByCas: async () =>
+            ingredient("ASPIRIN", { identifiers: { unii: "R16CO5Y76E" } }),
+        },
+      }),
+    ).resolve({ ndc: "00093-1046" }, { resolveIngredients: true });
+
+    expect(result.kind).toBe("product");
+    if (result.kind !== "product") return;
+    expect(result.graphs?.[0]?.identifiers.unii).toBe("R16CO5Y76E");
+    expect(result.graphs?.[0]?.identifiers.cas).toEqual(["50-78-2"]);
+  });
+
+  it("uses the record's package NDCs for NLM bridges", async () => {
+    const rxcuisForNdc = vi.fn(async () => ["617314"]);
+    const splsForNdc = vi.fn(async () => [
+      "a1e07d5c-2056-46f3-8737-f03ed0b4bae8",
+    ]);
+    const record = productRecord(
+      {
+        name: "Lipitor",
+        category: "medication",
+        identifiers: {
+          ndc: ["00093-1046-01", "00093-1046-02"],
+          rxcui: ["617314"],
+        },
+        source: {
+          database: "openFDA",
+          id: "00093-1046",
+          url: "https://example.test/ndc",
+          retrievedAt: ISO,
+        },
+      },
+      [],
+    );
+
+    const result = await createIdentityResolver(
+      deps({
+        openfda: { productByNdc: async () => record },
+        nlm: { rxcuisForNdc, splsForNdc },
+      }),
+    ).resolve({ ndc: "00093-1046" }, {});
+
+    expect(result.kind).toBe("product");
+    expect(rxcuisForNdc).toHaveBeenCalledWith("00093-1046-01", undefined);
+    expect(rxcuisForNdc).toHaveBeenCalledWith("00093-1046-02", undefined);
+    expect(splsForNdc).toHaveBeenCalledWith("00093-1046-01", undefined);
+    expect(splsForNdc).toHaveBeenCalledWith("00093-1046-02", undefined);
+  });
+
   it("omits graphs unless resolveIngredients is requested", async () => {
     const result = await createIdentityResolver(
       deps({
@@ -773,6 +846,20 @@ describe("default resolver wiring", () => {
     );
     await expect(dep.getIngredient("missing")).resolves.toBeNull();
   });
+
+  it("rethrows a cancellation from the INKEEDecoder bridge", async () => {
+    const controller = new AbortController();
+    const getIngredientBySlug = vi.fn(async () => {
+      controller.abort(new DOMException("cancelled", "AbortError"));
+      throw new DOMException("cancelled", "AbortError");
+    });
+    const bridge = { getIngredientBySlug } as unknown as IkdBridges;
+    const dep = createInkeedecoderIngredientDep(bridge);
+
+    await expect(
+      dep.getIngredient("niacinamide", controller.signal),
+    ).rejects.toMatchObject({ name: "AbortError" });
+  });
 });
 
 describe("candidate caps", () => {
@@ -812,6 +899,98 @@ describe("failure isolation", () => {
 
     expect(graph.links.map((link) => link.database)).toEqual(["RxNorm"]);
     expect(JSON.stringify(graph)).not.toContain("@knorby");
+    expect(graph.errors).toEqual([
+      { database: "openFDA", message: "the upstream service failed" },
+    ]);
+  });
+
+  it("stops the chain on cancellation instead of recording a source error", async () => {
+    const controller = new AbortController();
+    const rxcuisForUnii = vi.fn(async () => ["1191"]);
+    const promise = createIdentityResolver(
+      deps({
+        openfda: {
+          substanceByUnii: async () => {
+            controller.abort(
+              new DOMException("The request was cancelled.", "AbortError"),
+            );
+            throw new DOMException("The request was cancelled.", "AbortError");
+          },
+        },
+        nlm: { rxcuisForUnii },
+      }),
+    ).resolve({ unii: "R16CO5Y76E" }, {}, controller.signal);
+
+    await expect(promise).rejects.toMatchObject({ name: "AbortError" });
+    expect(rxcuisForUnii).not.toHaveBeenCalled();
+  });
+
+  it("records a non-Error failure as text", async () => {
+    const graph = await resolveIngredient(
+      { unii: "R16CO5Y76E" },
+      {
+        openfda: {
+          substanceByUnii: async () => {
+            throw "plain failure";
+          },
+        },
+      },
+    );
+
+    expect(graph.errors).toEqual([
+      { database: "openFDA", message: "plain failure" },
+    ]);
+  });
+
+  it("skips the weak terminals when no subject name is known", async () => {
+    const ingredientGroupsByName = vi.fn(async () => DSLD_GROUPS);
+    const getIngredient = vi.fn(async () => ikdIngredient());
+    const graph = await resolveIngredient(
+      { unii: "R16CO5Y76E" },
+      {
+        dsld: { ingredientGroupsByName },
+        inkeedecoder: { getIngredient },
+      },
+    );
+
+    expect(graph.candidates).toEqual([]);
+    expect(ingredientGroupsByName).not.toHaveBeenCalled();
+    expect(getIngredient).not.toHaveBeenCalled();
+  });
+
+  it("skips the DSLD terminal when DSLD is disabled", async () => {
+    const ingredientGroupsByName = vi.fn(async () => DSLD_GROUPS);
+    const result = await createIdentityResolver(
+      deps({ dsld: { ingredientGroupsByName } }),
+      ["dsld"],
+    ).resolve({ substanceName: "Vitamin D3" }, {});
+
+    expect(result.kind).toBe("ingredient");
+    if (result.kind !== "ingredient") return;
+    expect(result.graph.candidates).toEqual([]);
+    expect(ingredientGroupsByName).not.toHaveBeenCalled();
+  });
+
+  it("records a configuration failure separately from source outages", async () => {
+    const graph = await resolveIngredient(
+      { unii: "R16CO5Y76E" },
+      {
+        openfda: {
+          substanceByUnii: async () => {
+            throw new Error(
+              "Invalid environment configuration: DRUGDATA_TIMEOUT_MS must be positive",
+            );
+          },
+        },
+      },
+    );
+
+    expect(graph.errors).toEqual([
+      {
+        database: "config",
+        message: expect.stringContaining("Invalid environment configuration"),
+      },
+    ]);
   });
 
   it("ignores a failing profile and a failing terminal search", async () => {
@@ -875,6 +1054,126 @@ describe("product failure isolation", () => {
     if (result.kind !== "product") return;
     expect(result.links).toEqual([]);
     expect(result.ingredients).toEqual([]);
+  });
+
+  it("records product bridge failures and respects disabled sources", async () => {
+    const configError = await createIdentityResolver(
+      deps({
+        openfda: {
+          productByNdc: async () => {
+            throw new Error("Invalid environment configuration: bad timeout");
+          },
+        },
+      }),
+    ).resolve({ ndc: "00093-1046" }, {});
+
+    expect(configError.kind).toBe("product");
+    if (configError.kind !== "product") return;
+    expect(configError.errors?.[0]).toMatchObject({ database: "config" });
+
+    const disabled = await createIdentityResolver(deps(), [
+      "openfda",
+      "nlm",
+    ]).resolve({ ndc: "00093-1046" }, {});
+    expect(disabled.kind).toBe("product");
+    if (disabled.kind !== "product") return;
+    expect(disabled.links).toEqual([]);
+
+    const splDisabled = await createIdentityResolver(deps(), [
+      "openfda",
+      "nlm",
+    ]).resolve({ splSetId: "setid-1" }, {});
+    expect(splDisabled.kind).toBe("product");
+    if (splDisabled.kind !== "product") return;
+    expect(splDisabled.links).toEqual([]);
+  });
+
+  it("skips a disabled DSLD product and records a label config failure", async () => {
+    const disabled = await createIdentityResolver(deps(), ["dsld"]).resolve(
+      { dsldId: 123 },
+      {},
+    );
+    expect(disabled.kind).toBe("product");
+    if (disabled.kind !== "product") return;
+    expect(disabled.links).toEqual([]);
+    expect(disabled.ingredients).toEqual([]);
+
+    const configFailure = await createIdentityResolver(
+      deps({
+        openfda: { productBySetId: async () => null },
+        nlm: {
+          getSplXml: async () => {
+            throw new Error("Invalid environment configuration: bad timeout");
+          },
+        },
+      }),
+    ).resolve({ splSetId: "setid-1" }, {});
+    expect(configFailure.kind).toBe("product");
+    if (configFailure.kind !== "product") return;
+    expect(configFailure.errors?.[0]).toMatchObject({ database: "config" });
+  });
+
+  it("rethrows cancellation from a product bridge", async () => {
+    const controller = new AbortController();
+    const promise = createIdentityResolver(
+      deps({
+        openfda: {
+          productByNdc: async () => {
+            controller.abort(new DOMException("cancelled", "AbortError"));
+            throw new DOMException("cancelled", "AbortError");
+          },
+        },
+      }),
+    ).resolve({ ndc: "00093-1046" }, {}, controller.signal);
+
+    await expect(promise).rejects.toMatchObject({ name: "AbortError" });
+  });
+
+  it("rethrows cancellation while reading an SPL label", async () => {
+    const controller = new AbortController();
+    const promise = createIdentityResolver(
+      deps({
+        nlm: {
+          getSplXml: async () => {
+            controller.abort(new DOMException("cancelled", "AbortError"));
+            throw new DOMException("cancelled", "AbortError");
+          },
+        },
+      }),
+    ).resolve({ splSetId: "setid-1" }, {}, controller.signal);
+
+    await expect(promise).rejects.toMatchObject({ name: "AbortError" });
+  });
+
+  it("keeps an openFDA SPL record when NLM is disabled", async () => {
+    const setid = "a1e07d5c-2056-46f3-8737-f03ed0b4bae8";
+    const result = await createIdentityResolver(
+      deps({
+        openfda: {
+          productBySetId: async () =>
+            productRecord(
+              {
+                name: "Product",
+                category: "medication",
+                identifiers: { splSetId: setid, rxcui: ["999"] },
+                source: {
+                  database: "openFDA",
+                  id: setid,
+                  url: "https://example.test/label",
+                  retrievedAt: ISO,
+                },
+              },
+              [ingredient("Only", { role: "active" })],
+            ),
+        },
+      }),
+      ["nlm"],
+    ).resolve({ splSetId: setid }, {});
+
+    expect(result.kind).toBe("product");
+    if (result.kind !== "product") return;
+    expect(result.links.map((link) => link.database)).toEqual(["openFDA"]);
+    expect(result.ingredients[0]?.name).toBe("Only");
   });
 
   it("returns an empty ingredient list when a DSLD label misses", async () => {
@@ -945,7 +1244,76 @@ describe("edge paths", () => {
         },
       },
     );
-    expect(inciGraph.links[0]?.confidence).toBe("direct");
+    expect(inciGraph.links).toEqual([]);
+    expect(inciGraph.candidates[0]?.reason).toBe("multiple-inci-matches");
+  });
+
+  it("keeps a single weak openFDA name hit as a candidate", async () => {
+    const graph = await resolveIngredient(
+      { substanceName: "glycerin" },
+      {
+        openfda: {
+          substancesByName: async () => [
+            {
+              ingredient: ingredient("GLYCERIN METHYL ETHER", {
+                identifiers: { unii: "AAA" },
+              }),
+              tier: "none",
+            },
+          ],
+        },
+      },
+    );
+
+    expect(graph.links).toEqual([]);
+    expect(graph.candidates[0]).toMatchObject({
+      database: "openFDA",
+      reason: "multiple-substance-matches",
+    });
+  });
+
+  it("links a unique exact tier even when weaker hits follow", async () => {
+    const graph = await resolveIngredient(
+      { substanceName: "glycerin" },
+      {
+        openfda: {
+          substancesByName: async () => [
+            {
+              ingredient: ingredient("GLYCERIN", {
+                identifiers: { unii: "PDC6A3C0OX" },
+              }),
+              tier: "exact",
+            },
+            {
+              ingredient: ingredient("GLYCERIN METHYL ETHER", {
+                identifiers: { unii: "AAA" },
+              }),
+              tier: "prefix",
+            },
+          ],
+        },
+      },
+    );
+
+    expect(graph.links[0]).toMatchObject({
+      database: "openFDA",
+      matchedVia: "substance name",
+    });
+    expect(graph.candidates).toEqual([]);
+  });
+
+  it("falls back from a CosIng CAS miss to an INCI hint", async () => {
+    const byInci = vi.fn(async () => [cosingHit("SALICYLIC ACID")]);
+    const graph = await resolveIngredient(
+      { cas: "50-78-2", inciName: "SALICYLIC ACID" },
+      { cosing: { byCas: async () => [], byInci } },
+    );
+
+    expect(byInci).toHaveBeenCalledWith("SALICYLIC ACID", undefined);
+    expect(graph.links[0]).toMatchObject({
+      database: "CosIng",
+      matchedVia: "inci",
+    });
   });
 
   it("ignores a single CosIng CAS hit that does not carry the input CAS", async () => {
@@ -973,7 +1341,7 @@ describe("edge paths", () => {
     expect(graph.candidates).toEqual([]);
   });
 
-  it("marks a single fuzzy INCI hit as derived rather than direct", async () => {
+  it("keeps a single fuzzy INCI hit as a candidate, not a link", async () => {
     const graph = await resolveIngredient(
       { inciName: "NIACINAMIDE" },
       {
@@ -982,8 +1350,8 @@ describe("edge paths", () => {
         },
       },
     );
-    expect(graph.links[0]?.matchedVia).toBe("inci");
-    expect(graph.links[0]?.confidence).toBe("derived");
+    expect(graph.links).toEqual([]);
+    expect(graph.candidates[0]?.reason).toBe("multiple-inci-matches");
   });
 
   it("strips combining marks before guessing an INKEEDecoder slug", async () => {

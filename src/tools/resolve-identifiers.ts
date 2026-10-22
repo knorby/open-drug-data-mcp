@@ -1,5 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/server";
 import * as z from "zod/v4";
+import { readConfig } from "../config.js";
 import {
   applyCharacterLimit,
   boundStructured,
@@ -20,9 +21,11 @@ import {
 import {
   type CandidateSet,
   createIdentityResolver,
+  defaultIdentityDeps,
   type IdentityGraph,
   type IdentityResolver,
   MAX_INGREDIENT_GRAPHS,
+  type ResolutionError,
   type ResolveInput,
   type ResolveOptions,
   type SourceLink,
@@ -728,6 +731,19 @@ function candidateBlocks(
   ];
 }
 
+/** A source failure line, always naming the database the model should retry. */
+function errorLine(error: ResolutionError): string {
+  return error.database === "config"
+    ? `- ⚠ Configuration error: ${error.message}`
+    : `- ⚠ ${error.database} unavailable: ${error.message}`;
+}
+
+/** Renders any non-fatal source failures recorded by the chain. */
+function errorBlocks(errors: readonly ResolutionError[] | undefined): string[] {
+  if (errors === undefined || errors.length === 0) return [];
+  return errors.map(errorLine);
+}
+
 /** The common identity-graph body used by both result kinds. */
 function graphBlocks(
   graph: IdentityGraph,
@@ -743,6 +759,7 @@ function graphBlocks(
     title,
     ...inci,
     ...(identifiers === undefined ? [] : [`- Identifiers: ${identifiers}`]),
+    ...errorBlocks(graph.errors),
     ...linkBlocks(
       graph.links,
       "Links",
@@ -823,6 +840,7 @@ function renderMarkdown(
             "No confident product links were found.",
             "##",
           ),
+          errorBlocks(value.errors),
           [
             `## Ingredients (${value.ingredients.length})`,
             ...(value.ingredients.length === 0
@@ -856,10 +874,40 @@ function renderMarkdown(
   return `${blocks.join("\n\n")}${truncated ? truncationNote() : ""}`;
 }
 
+/** The resolver to use, or the configuration error that prevents building one. */
+export type ResolverResolution =
+  | { ok: true; resolver: IdentityResolver }
+  | { ok: false; error: string };
+
+/**
+ * Resolves the identity engine for a call.
+ *
+ * Tests inject their own resolver. Production reads configuration lazily so
+ * `DRUGDATA_DISABLED_SOURCES` applies here exactly as it does to the registry,
+ * and a broken environment becomes an actionable result instead of an empty
+ * graph.
+ */
+export function resolveResolver(
+  resolver?: IdentityResolver,
+): ResolverResolution {
+  if (resolver !== undefined) return { ok: true, resolver };
+
+  const config = readConfig();
+  if (!config.ok) return { ok: false, error: config.error };
+
+  return {
+    ok: true,
+    resolver: createIdentityResolver(
+      defaultIdentityDeps,
+      config.config.DRUGDATA_DISABLED_SOURCES,
+    ),
+  };
+}
+
 /** Registers the `drugdata_resolve_identifiers` tool. */
 export function registerResolveIdentifiersTool(
   server: McpServer,
-  resolver: IdentityResolver = createIdentityResolver(),
+  resolver?: IdentityResolver,
 ): void {
   server.registerTool(
     RESOLVE_IDENTIFIERS,
@@ -875,7 +923,7 @@ export function registerResolveIdentifiersTool(
         openWorldHint: true,
       },
     },
-    async (request: ResolveToolInput) => {
+    async (request: ResolveToolInput, ctx) => {
       try {
         const checked = identifierInputSchema.safeParse(request);
         if (!checked.success) {
@@ -887,9 +935,13 @@ export function registerResolveIdentifiersTool(
         const prepared = prepareResolveInput(request);
         if (!prepared.ok) return messageError(prepared.error);
 
-        const resolution = await resolver.resolve(
+        const resolved = resolveResolver(resolver);
+        if (!resolved.ok) return messageError(resolved.error);
+
+        const resolution = await resolved.resolver.resolve(
           prepared.input,
           prepared.opts,
+          ctx.mcpReq.signal,
         );
         const skeleton = withGraphCoverage(
           resolveIdentifiersResultSchema.parse({

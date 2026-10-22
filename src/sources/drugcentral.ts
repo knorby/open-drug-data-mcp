@@ -15,6 +15,7 @@ import {
   type Synonym,
 } from "@knorby/drugcentral-client";
 import { getClients } from "../clients.js";
+import { throwIfAborted } from "../lib/abort.js";
 import { SourceInputError } from "../lib/errors.js";
 import { isUnii } from "../lib/ids.js";
 import type {
@@ -850,7 +851,9 @@ export function createDrugCentralAdapter(
       type: IngredientSearchType,
       query: string,
       page: number,
+      signal?: AbortSignal,
     ): Promise<IngredientGroup[]> {
+      throwIfAborted(signal);
       const trimmed = query.trim();
       if (trimmed.length === 0) return [emptyIngredientGroup(page)];
 
@@ -894,7 +897,9 @@ export function createDrugCentralAdapter(
     async getIngredient(
       id: string,
       opts: Record<string, unknown>,
+      signal?: AbortSignal,
     ): Promise<IngredientLookupRecord> {
+      throwIfAborted(signal);
       return await fetchDrugCentralIngredient(
         clients(),
         id,

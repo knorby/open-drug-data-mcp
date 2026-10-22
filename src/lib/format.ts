@@ -114,15 +114,6 @@ function boundValue<T>(
   return value;
 }
 
-/** Renders a sectioned markdown list. */
-export function markdownBullets(
-  title: string,
-  lines: readonly string[],
-): string {
-  if (lines.length === 0) return `${title}\n\n- (none)`;
-  return [`${title}\n`, ...lines.map((line) => `- ${line}`)].join("\n");
-}
-
 /**
  * Tells the model how to continue a paginated result. Every list tool returns
  * one page at a time, so this hint is what turns a truncated answer into the
