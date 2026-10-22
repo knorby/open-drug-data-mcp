@@ -12,8 +12,11 @@
  * Longest `Retry-After` the server is willing to sit out. A 429 asking for a
  * longer wait is returned to the caller instead of retried early: the
  * upstream asked for that quiet period, and ignoring it would be impolite.
+ *
+ * Exported so client constructors can size their own deadline around the
+ * policy's worst case (see `clientDeadlineMs` in `src/clients.ts`).
  */
-const MAX_RETRY_AFTER_MS = 5_000;
+export const MAX_RETRY_AFTER_MS = 5_000;
 
 /** Wait before the retry when a 429 carries no usable `Retry-After`. */
 const DEFAULT_RETRY_DELAY_MS = 1_000;
@@ -72,7 +75,11 @@ export function withFetchPolicy(
       if (delayMs === undefined) return response;
 
       attempt += 1;
-      await sleep(delayMs);
+      // The discarded response will never be read; release its body before
+      // waiting so the connection can be reused. A body that cannot be
+      // cancelled is already unusable, and the retry is still the right move.
+      await response.body?.cancel().catch(() => undefined);
+      await sleep(delayMs, callerSignal);
     }
   };
 }
@@ -96,9 +103,22 @@ function retryDelayMs(header: string | null): number | undefined {
   return delayMs <= MAX_RETRY_AFTER_MS ? delayMs : undefined;
 }
 
-/** Waits before a retry. */
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => {
-    setTimeout(resolve, ms);
+/**
+ * Waits before a retry, rejecting if the caller cancels first: a cancelled
+ * tool call must not sit out the remaining backoff.
+ */
+async function sleep(ms: number, signal?: AbortSignal | null): Promise<void> {
+  signal?.throwIfAborted();
+
+  await new Promise<void>((resolve, reject) => {
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(signal?.reason);
+    };
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    signal?.addEventListener("abort", onAbort, { once: true });
   });
 }

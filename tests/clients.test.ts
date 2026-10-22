@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { getClients, resetClients } from "../src/clients.js";
+import { clientDeadlineMs, getClients, resetClients } from "../src/clients.js";
 import { resetConfig } from "../src/config.js";
 import { withFetchPolicy } from "../src/lib/fetch-policy.js";
 import { jsonResponse } from "./helpers.js";
@@ -146,6 +146,53 @@ describe("withFetchPolicy", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
+  it("cancels the discarded 429 body before retrying", async () => {
+    let cancelled = false;
+    const body = new ReadableStream({
+      cancel() {
+        cancelled = true;
+      },
+    });
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(body, {
+          status: 429,
+          headers: { "retry-after": "0" },
+        }),
+      )
+      .mockResolvedValueOnce(new Response("ok", { status: 200 }));
+    const policyFetch = withFetchPolicy(fetchMock, { timeoutMs: 1_000 });
+
+    const response = await policyFetch("https://example.test/");
+
+    expect(response.status).toBe(200);
+    expect(cancelled).toBe(true);
+  });
+
+  it("still retries when the discarded 429 body cannot be cancelled", async () => {
+    const body = new ReadableStream({
+      cancel() {
+        throw new Error("cannot cancel");
+      },
+    });
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(body, {
+          status: 429,
+          headers: { "retry-after": "0" },
+        }),
+      )
+      .mockResolvedValueOnce(new Response("ok", { status: 200 }));
+    const policyFetch = withFetchPolicy(fetchMock, { timeoutMs: 1_000 });
+
+    const response = await policyFetch("https://example.test/");
+
+    expect(response.status).toBe(200);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
   it("returns a second 429 instead of retrying again", async () => {
     const fetchMock = vi.fn().mockResolvedValue(tooManyRequests("0"));
     const policyFetch = withFetchPolicy(fetchMock, { timeoutMs: 1_000 });
@@ -228,6 +275,38 @@ describe("withFetchPolicy", () => {
     expect(response.status).toBe(429);
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
+
+  it("aborts the retry wait when the caller cancels mid-flight", async () => {
+    vi.useFakeTimers();
+    const controller = new AbortController();
+    const fetchMock = vi.fn().mockResolvedValue(tooManyRequests("5"));
+    const policyFetch = withFetchPolicy(fetchMock, { timeoutMs: 10_000 });
+
+    const pending = policyFetch("https://example.test/", {
+      signal: controller.signal,
+    });
+    await vi.advanceTimersByTimeAsync(100);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    controller.abort();
+
+    await expect(pending).rejects.toMatchObject({ name: "AbortError" });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not start a retry when the caller cancelled before the wait", async () => {
+    const controller = new AbortController();
+    const fetchMock = vi.fn(async () => {
+      controller.abort();
+      return tooManyRequests("0");
+    });
+    const policyFetch = withFetchPolicy(fetchMock, { timeoutMs: 1_000 });
+
+    await expect(
+      policyFetch("https://example.test/", { signal: controller.signal }),
+    ).rejects.toMatchObject({ name: "AbortError" });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("getClients", () => {
@@ -291,17 +370,71 @@ describe("getClients", () => {
     expect(urls[1]).toContain("api_key=dsld-test-key");
   });
 
-  it("passes the configured timeout to clients that accept one", () => {
+  it("passes the policy-covering deadline to clients that accept one", () => {
     process.env.DRUGDATA_TIMEOUT_MS = "1234";
     resetConfig();
     vi.stubGlobal("fetch", vi.fn());
 
     const clients = getClients();
 
-    // DrugCentral exposes its constructor config; the same timeout is passed
-    // to every client that has the option, so the server setting wins over
-    // each library's shorter default.
-    expect(clients.drugcentral.config.timeoutMs).toBe(1234);
+    // DrugCentral exposes its constructor config; the same deadline is passed
+    // to every client that has the option. It must exceed the policy's worst
+    // case so the client's own timer cannot preempt a retry's fresh budget.
+    expect(clients.drugcentral.config.timeoutMs).toBe(clientDeadlineMs(1234));
+    expect(clients.drugcentral.config.timeoutMs).toBeGreaterThan(1234);
+  });
+
+  it("sizes the client deadline around two attempts and a five-second wait", () => {
+    expect(clientDeadlineMs(100)).toBe(100 * 2 + 5_000 + 1_000);
+  });
+
+  it("gives a retried 429 a fresh per-attempt budget", async () => {
+    process.env.DRUGDATA_TIMEOUT_MS = "1000";
+    resetConfig();
+
+    let secondSignal: AbortSignal | undefined;
+    let markSecondStart = (): void => {};
+    const secondStarted = new Promise<void>((resolve) => {
+      markSecondStart = resolve;
+    });
+    let calls = 0;
+    const fetchMock = vi.fn(
+      async (_input: RequestInfo | URL, init?: RequestInit) => {
+        calls += 1;
+        if (calls === 1) {
+          // A slow 429 consumes half of the client's old total deadline but
+          // none of the retry's per-attempt budget.
+          await new Promise((resolve) => setTimeout(resolve, 500));
+          return tooManyRequests("0");
+        }
+        secondSignal = init?.signal ?? undefined;
+        markSecondStart();
+        return new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener(
+            "abort",
+            () => reject(init.signal?.reason),
+            { once: true },
+          );
+        });
+      },
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const clients = getClients();
+    const request = clients.openfda.drug.ndc.search({ limit: 1 });
+    const outcome = request.then(
+      () => "resolved",
+      () => "rejected",
+    );
+
+    await secondStarted;
+    // At 750 ms into the retry, the old client deadline (1000 ms total) has
+    // already aborted, while the fresh 1000 ms attempt budget has not.
+    await new Promise((resolve) => setTimeout(resolve, 750));
+    expect(secondSignal?.aborted).toBe(false);
+
+    await expect(outcome).resolves.toBe("rejected");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it("reads configuration only when clients are first requested", async () => {
