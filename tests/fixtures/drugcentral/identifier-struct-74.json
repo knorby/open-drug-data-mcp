@@ -1,0 +1,198 @@
+[
+  {
+    "identifier": "4017536",
+    "id": 461211,
+    "id_type": "VUID",
+    "struct_id": 74,
+    "parent_match": null
+  },
+  {
+    "identifier": "N0000145918",
+    "id": 461212,
+    "id_type": "NUI",
+    "struct_id": 74,
+    "parent_match": null
+  },
+  {
+    "identifier": "D00109",
+    "id": 280320,
+    "id_type": "KEGG_DRUG",
+    "struct_id": 74,
+    "parent_match": null
+  },
+  {
+    "identifier": "1191",
+    "id": 1913445,
+    "id_type": "RXNORM",
+    "struct_id": 74,
+    "parent_match": null
+  },
+  {
+    "identifier": "C0004057",
+    "id": 1943876,
+    "id_type": "UMLSCUI",
+    "struct_id": 74,
+    "parent_match": null
+  },
+  {
+    "identifier": "CHEBI:15365",
+    "id": 1949192,
+    "id_type": "CHEBI",
+    "struct_id": 74,
+    "parent_match": null
+  },
+  {
+    "identifier": " AIN",
+    "id": 1953858,
+    "id_type": "PDB_CHEM_ID",
+    "struct_id": 74,
+    "parent_match": null
+  },
+  {
+    "identifier": "CHEMBL25",
+    "id": 1956064,
+    "id_type": "ChEMBL_ID",
+    "struct_id": 74,
+    "parent_match": null
+  },
+  {
+    "identifier": "DB00945",
+    "id": 1897661,
+    "id_type": "DRUGBANK_ID",
+    "struct_id": 74,
+    "parent_match": null
+  },
+  {
+    "identifier": "2244",
+    "id": 1890115,
+    "id_type": "PUBCHEM_CID",
+    "struct_id": 74,
+    "parent_match": null
+  },
+  {
+    "identifier": "493-53-8",
+    "id": 1912851,
+    "id_type": "SECONDARY_CAS_RN",
+    "struct_id": 74,
+    "parent_match": null
+  },
+  {
+    "identifier": "244",
+    "id": 1917149,
+    "id_type": "MMSL",
+    "struct_id": 74,
+    "parent_match": null
+  },
+  {
+    "identifier": "34512",
+    "id": 1917150,
+    "id_type": "MMSL",
+    "struct_id": 74,
+    "parent_match": null
+  },
+  {
+    "identifier": "4223",
+    "id": 1917151,
+    "id_type": "MMSL",
+    "struct_id": 74,
+    "parent_match": null
+  },
+  {
+    "identifier": "d00170",
+    "id": 1917152,
+    "id_type": "MMSL",
+    "struct_id": 74,
+    "parent_match": null
+  },
+  {
+    "identifier": "D001241",
+    "id": 1885889,
+    "id_type": "MESH_DESCRIPTOR_UI",
+    "struct_id": 74,
+    "parent_match": null
+  },
+  {
+    "identifier": "CHEMBL1697753",
+    "id": 1961858,
+    "id_type": "ChEMBL_ID",
+    "struct_id": 74,
+    "parent_match": null
+  },
+  {
+    "identifier": "132-49-0",
+    "id": 1913027,
+    "id_type": "SECONDARY_CAS_RN",
+    "struct_id": 74,
+    "parent_match": null
+  },
+  {
+    "identifier": "25817-25-8",
+    "id": 1913028,
+    "id_type": "SECONDARY_CAS_RN",
+    "struct_id": 74,
+    "parent_match": null
+  },
+  {
+    "identifier": "69-46-5",
+    "id": 1913029,
+    "id_type": "SECONDARY_CAS_RN",
+    "struct_id": 74,
+    "parent_match": null
+  },
+  {
+    "identifier": "1466-82-6",
+    "id": 1913030,
+    "id_type": "SECONDARY_CAS_RN",
+    "struct_id": 74,
+    "parent_match": null
+  },
+  {
+    "identifier": "37933-78-1",
+    "id": 1913031,
+    "id_type": "SECONDARY_CAS_RN",
+    "struct_id": 74,
+    "parent_match": null
+  },
+  {
+    "identifier": "4139",
+    "id": 1896648,
+    "id_type": "IUPHAR_LIGAND_ID",
+    "struct_id": 74,
+    "parent_match": null
+  },
+  {
+    "identifier": "4017536",
+    "id": 1939067,
+    "id_type": "VANDF",
+    "struct_id": 74,
+    "parent_match": null
+  },
+  {
+    "identifier": "R16CO5Y76E",
+    "id": 1906115,
+    "id_type": "UNII",
+    "struct_id": 74,
+    "parent_match": null
+  },
+  {
+    "identifier": "001587",
+    "id": 1925643,
+    "id_type": "NDDF",
+    "struct_id": 74,
+    "parent_match": null
+  },
+  {
+    "identifier": "387458008",
+    "id": 1931385,
+    "id_type": "SNOMEDCT_US",
+    "struct_id": 74,
+    "parent_match": null
+  },
+  {
+    "identifier": "7947003",
+    "id": 1931386,
+    "id_type": "SNOMEDCT_US",
+    "struct_id": 74,
+    "parent_match": null
+  }
+]

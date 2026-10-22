@@ -1,0 +1,41 @@
+[
+  {
+    "meddra_code": 10000059,
+    "meddra_name": "Abdominal discomfort",
+    "level": "PT",
+    "llr": 954.055,
+    "drug_ae": 3467,
+    "no_drug_ae": 641246,
+    "struct_id": 74,
+    "id": 14008779,
+    "llr_threshold": 10.068,
+    "drug_no_ae": 1588930,
+    "no_drug_no_ae": 150907258
+  },
+  {
+    "meddra_code": 10000084,
+    "meddra_name": "Abdominal pain lower",
+    "level": "PT",
+    "llr": 39.997,
+    "drug_ae": 687,
+    "no_drug_ae": 45328,
+    "struct_id": 74,
+    "id": 14010140,
+    "llr_threshold": 10.068,
+    "drug_no_ae": 1591710,
+    "no_drug_no_ae": 151503176
+  },
+  {
+    "meddra_code": 10000087,
+    "meddra_name": "Abdominal pain upper",
+    "level": "PT",
+    "llr": 13.48,
+    "drug_ae": 4629,
+    "no_drug_ae": 475331,
+    "struct_id": 74,
+    "id": 14010271,
+    "llr_threshold": 10.068,
+    "drug_no_ae": 1587768,
+    "no_drug_no_ae": 151073173
+  }
+]

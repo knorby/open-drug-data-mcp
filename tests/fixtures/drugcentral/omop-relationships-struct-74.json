@@ -1,0 +1,145 @@
+[
+  {
+    "relationship_name": "indication",
+    "id": 141850,
+    "concept_name": "Rheumatoid arthritis",
+    "snomed_full_name": "Rheumatoid arthritis",
+    "snomed_conceptid": 69896004,
+    "struct_id": 74,
+    "concept_id": 21002805,
+    "umls_cui": "C0003873",
+    "cui_semantic_type": "T047"
+  },
+  {
+    "relationship_name": "indication",
+    "id": 144521,
+    "concept_name": "Influenza-like symptoms",
+    "snomed_full_name": "Influenza-like symptoms",
+    "snomed_conceptid": 315642008,
+    "struct_id": 74,
+    "concept_id": 21003076,
+    "umls_cui": "C0392171",
+    "cui_semantic_type": "T184"
+  },
+  {
+    "relationship_name": "indication",
+    "id": 151865,
+    "concept_name": "Migraine",
+    "snomed_full_name": "Migraine",
+    "snomed_conceptid": 37796009,
+    "struct_id": 74,
+    "concept_id": 21001116,
+    "umls_cui": "C0149931",
+    "cui_semantic_type": "T047"
+  },
+  {
+    "relationship_name": "indication",
+    "id": 160407,
+    "concept_name": "Backache",
+    "snomed_full_name": "Backache",
+    "snomed_conceptid": 161891005,
+    "struct_id": 74,
+    "concept_id": 21002836,
+    "umls_cui": "C0004604",
+    "cui_semantic_type": "T184"
+  },
+  {
+    "relationship_name": "indication",
+    "id": 161824,
+    "concept_name": "Osteoarthritis",
+    "snomed_full_name": "Osteoarthritis",
+    "snomed_conceptid": 396275006,
+    "struct_id": 74,
+    "concept_id": 21002811,
+    "umls_cui": "C0029408",
+    "cui_semantic_type": "T047"
+  },
+  {
+    "relationship_name": "indication",
+    "id": 166690,
+    "concept_name": "Headache disorder",
+    "snomed_full_name": "Headache disorder",
+    "snomed_conceptid": 230461009,
+    "struct_id": 74,
+    "concept_id": 21003153,
+    "umls_cui": "C0393735",
+    "cui_semantic_type": "T047"
+  },
+  {
+    "relationship_name": "indication",
+    "id": 167240,
+    "concept_name": "Common cold",
+    "snomed_full_name": "Common cold",
+    "snomed_conceptid": 82272006,
+    "struct_id": 74,
+    "concept_id": 21001738,
+    "umls_cui": "C0009443",
+    "cui_semantic_type": "T047"
+  },
+  {
+    "relationship_name": "indication",
+    "id": 167657,
+    "concept_name": "Pain",
+    "snomed_full_name": "Pain",
+    "snomed_conceptid": 22253000,
+    "struct_id": 74,
+    "concept_id": 21003079,
+    "umls_cui": "C0030193",
+    "cui_semantic_type": "T184"
+  },
+  {
+    "relationship_name": "indication",
+    "id": 168441,
+    "concept_name": "Sinus headache",
+    "snomed_full_name": "Sinus headache",
+    "snomed_conceptid": 4969004,
+    "struct_id": 74,
+    "concept_id": 21003156,
+    "umls_cui": "C0037195",
+    "cui_semantic_type": "T184"
+  },
+  {
+    "relationship_name": "indication",
+    "id": 171455,
+    "concept_name": "Toothache",
+    "snomed_full_name": "Toothache",
+    "snomed_conceptid": 27355003,
+    "struct_id": 74,
+    "concept_id": 21001960,
+    "umls_cui": "C0040460",
+    "cui_semantic_type": "T184"
+  },
+  {
+    "relationship_name": "indication",
+    "id": 171456,
+    "concept_name": "Myocardial infarction",
+    "snomed_full_name": "Myocardial infarction",
+    "snomed_conceptid": 22298006,
+    "struct_id": 74,
+    "concept_id": 21001447,
+    "umls_cui": "C0027051",
+    "cui_semantic_type": "T047"
+  },
+  {
+    "relationship_name": "indication",
+    "id": 171918,
+    "concept_name": "Joint pain",
+    "snomed_full_name": "Joint pain",
+    "snomed_conceptid": 57676002,
+    "struct_id": 74,
+    "concept_id": 21002820,
+    "umls_cui": "C0003862",
+    "cui_semantic_type": "T184"
+  },
+  {
+    "relationship_name": "indication",
+    "id": 171919,
+    "concept_name": "Arthritic Pain",
+    "snomed_full_name": null,
+    "snomed_conceptid": null,
+    "struct_id": 74,
+    "concept_id": 21002821,
+    "umls_cui": null,
+    "cui_semantic_type": null
+  }
+]

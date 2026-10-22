@@ -1,0 +1,23 @@
+[
+  { "struct_id": 74, "atc_code": "A01AD05", "id": 33 },
+  { "struct_id": 74, "atc_code": "B01AC06", "id": 510 },
+  { "struct_id": 74, "atc_code": "N02BA01", "id": 2699 },
+  { "struct_id": 74, "atc_code": "B01AC56", "id": 4176 },
+  { "struct_id": 74, "atc_code": "B01AF51", "id": 4179 },
+  { "struct_id": 74, "atc_code": "C07FX02", "id": 4326 },
+  { "struct_id": 74, "atc_code": "C07FX03", "id": 4328 },
+  { "struct_id": 74, "atc_code": "C07FX04", "id": 4330 },
+  { "struct_id": 74, "atc_code": "C10BX01", "id": 4479 },
+  { "struct_id": 74, "atc_code": "C10BX02", "id": 4481 },
+  { "struct_id": 74, "atc_code": "C10BX04", "id": 4485 },
+  { "struct_id": 74, "atc_code": "C10BX05", "id": 4488 },
+  { "struct_id": 74, "atc_code": "C10BX06", "id": 4490 },
+  { "struct_id": 74, "atc_code": "C10BX08", "id": 4496 },
+  { "struct_id": 74, "atc_code": "C10BX12", "id": 4505 },
+  { "struct_id": 74, "atc_code": "M01BA03", "id": 4953 },
+  { "struct_id": 74, "atc_code": "N02AJ02", "id": 5027 },
+  { "struct_id": 74, "atc_code": "N02AJ07", "id": 5032 },
+  { "struct_id": 74, "atc_code": "N02AJ18", "id": 5046 },
+  { "struct_id": 74, "atc_code": "N02BA51", "id": 5055 },
+  { "struct_id": 74, "atc_code": "N02BA71", "id": 5060 }
+]

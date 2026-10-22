@@ -1,0 +1,184 @@
+[
+  {
+    "identifier": "4021191",
+    "id": 463710,
+    "id_type": "VUID",
+    "struct_id": 1122,
+    "parent_match": null
+  },
+  {
+    "identifier": "D01191",
+    "id": 281252,
+    "id_type": "KEGG_DRUG",
+    "struct_id": 382,
+    "parent_match": null
+  },
+  {
+    "identifier": "1191",
+    "id": 1913445,
+    "id_type": "RXNORM",
+    "struct_id": 74,
+    "parent_match": null
+  },
+  {
+    "identifier": "4021191",
+    "id": 1939869,
+    "id_type": "VANDF",
+    "struct_id": 1122,
+    "parent_match": null
+  },
+  {
+    "identifier": "C3711911",
+    "id": 1943252,
+    "id_type": "UMLSCUI",
+    "struct_id": 5208,
+    "parent_match": null
+  },
+  {
+    "identifier": "CHEMBL1191",
+    "id": 1956714,
+    "id_type": "ChEMBL_ID",
+    "struct_id": 2512,
+    "parent_match": null
+  },
+  {
+    "identifier": "CHEMBL1201191",
+    "id": 1957845,
+    "id_type": "ChEMBL_ID",
+    "struct_id": 1566,
+    "parent_match": null
+  },
+  {
+    "identifier": "DB11915",
+    "id": 1897163,
+    "id_type": "DRUGBANK_ID",
+    "struct_id": 5227,
+    "parent_match": null
+  },
+  {
+    "identifier": "DB01191",
+    "id": 1897876,
+    "id_type": "DRUGBANK_ID",
+    "struct_id": 832,
+    "parent_match": null
+  },
+  {
+    "identifier": "DB11191",
+    "id": 1900051,
+    "id_type": "DRUGBANK_ID",
+    "struct_id": 4404,
+    "parent_match": null
+  },
+  {
+    "identifier": "C011911",
+    "id": 1886960,
+    "id_type": "MESH_SUPPLEMENTAL_RECORD_UI",
+    "struct_id": 3343,
+    "parent_match": null
+  },
+  {
+    "identifier": "C119141",
+    "id": 1888284,
+    "id_type": "MESH_SUPPLEMENTAL_RECORD_UI",
+    "struct_id": 4749,
+    "parent_match": null
+  },
+  {
+    "identifier": "C511911",
+    "id": 1888347,
+    "id_type": "MESH_SUPPLEMENTAL_RECORD_UI",
+    "struct_id": 4949,
+    "parent_match": null
+  },
+  {
+    "identifier": "119182",
+    "id": 1891163,
+    "id_type": "PUBCHEM_CID",
+    "struct_id": 691,
+    "parent_match": null
+  },
+  {
+    "identifier": "1191",
+    "id": 1909020,
+    "id_type": "INN_ID",
+    "struct_id": 1642,
+    "parent_match": null
+  },
+  {
+    "identifier": "M911911U02",
+    "id": 1904868,
+    "id_type": "UNII",
+    "struct_id": 4217,
+    "parent_match": null
+  },
+  {
+    "identifier": "119171",
+    "id": 1892586,
+    "id_type": "PUBCHEM_CID",
+    "struct_id": 992,
+    "parent_match": null
+  },
+  {
+    "identifier": "DB11914",
+    "id": 1900865,
+    "id_type": "DRUGBANK_ID",
+    "struct_id": 5759,
+    "parent_match": null
+  },
+  {
+    "identifier": "121191",
+    "id": 1916326,
+    "id_type": "RXNORM",
+    "struct_id": 4975,
+    "parent_match": null
+  },
+  {
+    "identifier": "1191",
+    "id": 1923059,
+    "id_type": "MMSL",
+    "struct_id": 4518,
+    "parent_match": null
+  },
+  {
+    "identifier": "31191",
+    "id": 1924015,
+    "id_type": "MMSL",
+    "struct_id": 5037,
+    "parent_match": null
+  },
+  {
+    "identifier": "842825221000119100",
+    "id": 1938723,
+    "id_type": "SNOMEDCT_US",
+    "struct_id": 5474,
+    "parent_match": null
+  },
+  {
+    "identifier": "211914-51-1",
+    "id": 1913208,
+    "id_type": "SECONDARY_CAS_RN",
+    "struct_id": 776,
+    "parent_match": true
+  },
+  {
+    "identifier": "D11191",
+    "id": 1658544,
+    "id_type": "KEGG_DRUG",
+    "struct_id": 5651,
+    "parent_match": null
+  },
+  {
+    "identifier": "D11917",
+    "id": 1658639,
+    "id_type": "KEGG_DRUG",
+    "struct_id": 5699,
+    "parent_match": null
+  },
+  {
+    "identifier": "71811910",
+    "id": 1894016,
+    "id_type": "PUBCHEM_CID",
+    "struct_id": 5712,
+    "parent_match": null
+  }
+]

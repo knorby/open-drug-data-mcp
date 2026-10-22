@@ -1,0 +1,74 @@
+[
+  {
+    "id": 74,
+    "name": "acetylsalisylic acid",
+    "preferred_name": null,
+    "lname": "acetylsalisylic acid",
+    "syn_id": 928,
+    "parent_id": null
+  },
+  {
+    "id": 74,
+    "name": "aspirin",
+    "preferred_name": null,
+    "lname": "aspirin",
+    "syn_id": 2006,
+    "parent_id": null
+  },
+  {
+    "id": 74,
+    "name": "acetylsalicylic acid",
+    "preferred_name": 1,
+    "lname": "acetylsalicylic acid",
+    "syn_id": 2007,
+    "parent_id": null
+  },
+  {
+    "id": 74,
+    "name": "aspirin sodium",
+    "preferred_name": null,
+    "lname": "aspirin sodium",
+    "syn_id": 17224,
+    "parent_id": null
+  },
+  {
+    "id": 74,
+    "name": "aspirin magnesium",
+    "preferred_name": null,
+    "lname": "aspirin magnesium",
+    "syn_id": 19971,
+    "parent_id": null
+  },
+  {
+    "id": 74,
+    "name": "aspirin potassium",
+    "preferred_name": null,
+    "lname": "aspirin potassium",
+    "syn_id": 19972,
+    "parent_id": null
+  },
+  {
+    "id": 74,
+    "name": "aspirin calcium",
+    "preferred_name": null,
+    "lname": "aspirin calcium",
+    "syn_id": 19973,
+    "parent_id": null
+  },
+  {
+    "id": 74,
+    "name": "aspirin anhydride",
+    "preferred_name": null,
+    "lname": "aspirin anhydride",
+    "syn_id": 19974,
+    "parent_id": null
+  },
+  {
+    "id": 74,
+    "name": "aspirin lysine",
+    "preferred_name": null,
+    "lname": "aspirin lysine",
+    "syn_id": 19975,
+    "parent_id": null
+  }
+]

@@ -1,0 +1,28 @@
+[
+  {
+    "struct_id": 74,
+    "id": 6767033,
+    "meddra_name": "Abdominal distension",
+    "llr_threshold": 12.854,
+    "drug_no_ae": 707243,
+    "no_drug_no_ae": 41842357,
+    "meddra_code": 10000060,
+    "level": "PT",
+    "llr": 21.916,
+    "drug_ae": 971,
+    "no_drug_ae": 70764
+  },
+  {
+    "struct_id": 74,
+    "id": 6767217,
+    "meddra_name": "Abdominal pain",
+    "llr_threshold": 12.854,
+    "drug_no_ae": 705456,
+    "no_drug_no_ae": 41725408,
+    "meddra_code": 10000081,
+    "level": "PT",
+    "llr": 27.479,
+    "drug_ae": 2758,
+    "no_drug_ae": 187713
+  }
+]
