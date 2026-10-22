@@ -1,0 +1,28 @@
+{
+  "_note": "HAND-AUTHORED 2026-10-22 from @knorby/nih-dsld-client v0.1.1 documented v9 types (no data.gov key available; not a live capture). Brand browse response shape: BrowseBrandsResult. One hit uses brandName and one uses the spec's brand field to pin both readings.",
+  "total": {
+    "value": 2,
+    "relation": "eq"
+  },
+  "max_score": 1,
+  "hits": [
+    {
+      "_index": "brands",
+      "_type": "_doc",
+      "_id": "example-labs",
+      "_score": 1,
+      "_source": {
+        "brandName": "Example Labs"
+      }
+    },
+    {
+      "_index": "brands",
+      "_type": "_doc",
+      "_id": "natures-best",
+      "_score": 1,
+      "_source": {
+        "brand": "Nature's Best"
+      }
+    }
+  ]
+}

@@ -1,0 +1,93 @@
+{
+  "_note": "HAND-AUTHORED 2026-10-22 from @knorby/nih-dsld-client v0.1.1 documented v9 types (no data.gov key available; not a live capture). Search-filter response shape: SearchResult.",
+  "hits": [
+    {
+      "_index": "dsld-v9",
+      "_type": "_doc",
+      "_id": "82118",
+      "_score": 9.5,
+      "_source": {
+        "id": 82118,
+        "fullName": "Vitamin D3 1000 IU Softgels",
+        "brandName": "Nature's Best",
+        "upcSku": "0 33674 13941 7",
+        "physicalState": {
+          "langualCode": "E0161",
+          "langualCodeDescription": "Softgel Capsules"
+        },
+        "productType": {
+          "langualCode": "A1302",
+          "langualCodeDescription": "Vitamin"
+        },
+        "netContents": [
+          {
+            "order": 1,
+            "quantity": 90,
+            "unit": "Softgel(s)",
+            "display": "90 Softgel(s)"
+          }
+        ],
+        "allIngredients": [
+          {
+            "name": "Vitamin D3",
+            "category": "vitamin",
+            "ingredientGroup": "Vitamin D"
+          },
+          {
+            "name": "Calcium",
+            "category": "mineral",
+            "ingredientGroup": "Calcium"
+          },
+          {
+            "name": "Magnesium",
+            "category": "mineral",
+            "ingredientGroup": "Magnesium"
+          },
+          {
+            "name": "Zinc",
+            "category": "mineral",
+            "ingredientGroup": "Zinc"
+          },
+          {
+            "name": "Boron",
+            "category": "mineral",
+            "ingredientGroup": "Boron"
+          },
+          {
+            "name": "Silica",
+            "category": "other",
+            "ingredientGroup": "Silicon dioxide"
+          }
+        ],
+        "entryDate": "2023-05-01",
+        "offMarket": 0
+      }
+    },
+    {
+      "_index": "dsld-v9",
+      "_type": "_doc",
+      "_id": "90001",
+      "_score": 4.25,
+      "_source": {
+        "id": 90001,
+        "fullName": "Vitamin C 500 mg Tablets",
+        "brandName": "Example Labs",
+        "allIngredients": [
+          {
+            "name": "Vitamin C",
+            "category": "vitamin",
+            "ingredientGroup": "Vitamin C"
+          }
+        ],
+        "entryDate": "2021-11-15",
+        "offMarket": 0
+      }
+    }
+  ],
+  "stats": {
+    "count": {
+      "count": 2,
+      "pct": 1
+    }
+  }
+}

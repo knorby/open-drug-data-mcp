@@ -1,0 +1,114 @@
+{
+  "_note": "HAND-AUTHORED 2026-10-22 from @knorby/nih-dsld-client v0.1.1 documented v9 types (no data.gov key available; not a live capture). Full Label response shape: Label. Three ingredient rows: active with uniiCode, active without uniiCode (nutrient-info enrichment), and inactive.",
+  "src": "dsld",
+  "id": 82118,
+  "fullName": "Vitamin D3 1000 IU Softgels",
+  "brandName": "Nature's Best",
+  "upcSku": "0 33674 13941 7",
+  "pdf": "https://api.ods.od.nih.gov/dsld/s3/pdf/82118.pdf",
+  "thumbnail": "",
+  "servingsPerContainer": "90",
+  "netContents": [
+    {
+      "order": 1,
+      "quantity": 90,
+      "unit": "Softgel(s)",
+      "display": "90 Softgel(s)"
+    }
+  ],
+  "physicalState": {
+    "langualCode": "E0161",
+    "langualCodeDescription": "Softgel Capsules"
+  },
+  "servingSizes": [
+    {
+      "order": 1,
+      "minQuantity": 1,
+      "maxQuantity": 1,
+      "unit": "Softgel(s)",
+      "inSFB": true
+    }
+  ],
+  "targetGroups": ["Adult (18 - 50 Years)", "Adult (51 - 70 Years)"],
+  "productType": {
+    "langualCode": "A1302",
+    "langualCodeDescription": "Vitamin"
+  },
+  "claims": [
+    {
+      "langualCode": "P0065",
+      "langualCodeDescription": "Nutrient"
+    }
+  ],
+  "events": [
+    {
+      "date": "2023-05-01",
+      "type": "Entry Date"
+    }
+  ],
+  "ingredientRows": [
+    {
+      "order": 1,
+      "ingredientId": 101,
+      "name": "Vitamin D3",
+      "description": "Vitamin D3 (as cholecalciferol)",
+      "notes": "as cholecalciferol",
+      "category": "vitamin",
+      "ingredientGroup": "Vitamin D",
+      "uniiCode": "1C6V77Q43H",
+      "alternateNames": ["Cholecalciferol"],
+      "quantity": [
+        {
+          "servingSizeOrder": 1,
+          "servingSizeQuantity": 1,
+          "operator": "=",
+          "quantity": 25,
+          "unit": "mcg",
+          "dailyValueTargetGroup": [
+            {
+              "name": "Adult (18 - 50 Years)",
+              "operator": "=",
+              "percent": 125
+            }
+          ]
+        }
+      ],
+      "forms": [
+        {
+          "order": 1,
+          "ingredientId": "101",
+          "name": "Cholecalciferol"
+        }
+      ]
+    },
+    {
+      "order": 2,
+      "ingredientId": 102,
+      "name": "Calcium",
+      "description": "Calcium (as calcium carbonate)",
+      "ingredientGroup": "Calcium",
+      "quantity": [
+        {
+          "servingSizeOrder": 1,
+          "servingSizeQuantity": 1,
+          "quantity": 200,
+          "unit": "mg"
+        }
+      ]
+    }
+  ],
+  "otheringredients": {
+    "text": "Gelatin, glycerin, purified water.",
+    "ingredients": [
+      {
+        "order": 1,
+        "ingredientId": 201,
+        "name": "Gelatin",
+        "category": "other",
+        "ingredientGroup": "Gelatin"
+      }
+    ]
+  },
+  "offMarket": 0,
+  "entryDate": "2023-05-01"
+}
