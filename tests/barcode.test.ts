@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { parseBarcodeInput } from "../src/sources/identity/barcode.js";
+import {
+  ndcFromProductCode,
+  parseBarcodeInput,
+} from "../src/sources/identity/barcode.js";
 
 /**
  * Barcode input is the boundary between a scan or a typed code and the
@@ -70,6 +73,14 @@ describe("parseBarcodeInput", () => {
       });
     });
 
+    it("reduces a bare consumer GTIN-14 to its carried EAN", () => {
+      expect(parseBarcodeInput("00036674139417")).toEqual({
+        kind: "upc",
+        upc: "0036674139417",
+        upcVariants: ["0036674139417", "0 03667 413941 7"],
+      });
+    });
+
     it("returns unknown for an explicit non-drug case GTIN", () => {
       expect(parseBarcodeInput("(01)12345678901234")).toEqual({
         kind: "unknown",
@@ -122,14 +133,20 @@ describe("parseBarcodeInput", () => {
       });
     });
 
-    it("accepts a bare 10-digit NDC as its 4-4-2 reading", () => {
+    it("keeps the 5-3-2 and 5-4-1 readings of a bare 10-digit NDC", () => {
       expect(parseBarcodeInput("5815115577")).toEqual({
         kind: "ndc",
         ndcCandidates: [
+          // Canonical 4-4-2 reading and its un-padded variants.
           "05815-1155-77",
           "5815-1155-77",
           "05815-155-77",
           "05815-1155-7",
+          // Alternative 5-3-2 and 5-4-1 readings.
+          "58151-155-77",
+          "58151-1557-7",
+          "58151-0155-77",
+          "58151-1557-07",
         ],
       });
     });
@@ -187,11 +204,17 @@ describe("parseBarcodeInput", () => {
       });
     });
 
-    it("treats a bare non-drug 14-digit GTIN as a retail code", () => {
-      expect(parseBarcodeInput("12345678901234")).toEqual({
-        kind: "upc",
-        upc: "12345678901234",
-        upcVariants: ["12345678901234"],
+    it("derives NDC candidates from a 3-prefixed UPC-A", () => {
+      expect(parseBarcodeInput("312345678905")).toEqual({
+        kind: "ndc",
+        ndcCandidates: [
+          "1234-5678-90",
+          "12345-678-90",
+          "12345-6789-0",
+          "01234-5678-90",
+          "12345-0678-90",
+          "12345-6789-00",
+        ],
       });
     });
   });
@@ -210,6 +233,17 @@ describe("parseBarcodeInput", () => {
       }
     });
 
+    it("returns unknown for a bare non-drug, non-consumer GTIN-14", () => {
+      expect(parseBarcodeInput("12345678901234")).toEqual({
+        kind: "unknown",
+        raw: "12345678901234",
+      });
+      expect(parseBarcodeInput("1234 5678 9012 34")).toEqual({
+        kind: "unknown",
+        raw: "1234 5678 9012 34",
+      });
+    });
+
     it("returns unknown when only separators remain", () => {
       expect(parseBarcodeInput("---")).toEqual({
         kind: "unknown",
@@ -223,5 +257,25 @@ describe("parseBarcodeInput", () => {
         raw: "]d2hello",
       });
     });
+  });
+});
+
+describe("ndcFromProductCode", () => {
+  it("extracts the NDC from a US drug GTIN-14", () => {
+    expect(ndcFromProductCode("10312345678902")).toBe("1234567890");
+  });
+
+  it("extracts the NDC from a 3-prefixed UPC-A", () => {
+    expect(ndcFromProductCode("312345678905")).toBe("1234567890");
+  });
+
+  it("ignores product codes without the US drug prefix", () => {
+    expect(ndcFromProductCode("04312345678902")).toBeNull();
+    expect(ndcFromProductCode("033674139417")).toBeNull();
+    expect(ndcFromProductCode("0366741394177")).toBeNull();
+  });
+
+  it("rejects non-digit input", () => {
+    expect(ndcFromProductCode("31234abc")).toBeNull();
   });
 });

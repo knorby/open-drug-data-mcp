@@ -21,6 +21,9 @@ const AIM_PREFIX = /^\][A-Za-z][0-9]/;
 /** A complete GTIN-14 typed or read without an Application Identifier. */
 const BARE_GTIN = /^\d{14}$/;
 
+/** A bare 10-digit NDC has no segment boundaries to disambiguate. */
+const BARE_NDC_10 = /^\d{10}$/;
+
 /** AI 01 followed by its fixed-length 14-digit GTIN, at a group start. */
 const AI01_GTIN = /^01(\d{14})/;
 
@@ -36,25 +39,17 @@ export type BarcodeParse =
   | { kind: "upc"; upc: string; upcVariants: string[] }
   | { kind: "unknown"; raw: string };
 
-/** A recovered GTIN plus whether the input identified itself as GS1. */
-interface GtinMatch {
-  gtin: string;
-  /**
-   * True for AI 01, AIM-prefixed, or separator-delimited input; false for a
-   * bare 14-digit value, which could be either a GTIN or a retail code.
-   */
-  explicit: boolean;
-}
-
 /**
  * Parses a scanned or typed code into query candidates.
  *
  * - GS1 AI 01 with a US drug GTIN yields the embedded NDC-10 and every
  *   dashed layout openFDA might store it in.
  * - A dashed or bare NDC is normalized to the canonical 11-digit form and
- *   expanded into dashed layout candidates.
- * - A UPC-A/EAN-13 (or other retail digit string) yields its digits and the
- *   space-grouped form DSLD stores.
+ *   expanded into dashed layout candidates; a bare 10-digit value also keeps
+ *   its 5-3-2 and 5-4-1 readings, since it has no segment boundaries.
+ * - A 3-prefixed UPC-A carries an NDC-10 and yields NDC candidates.
+ * - Any other UPC-A/EAN-13 (or retail digit string) yields its digits and
+ *   the space-grouped form DSLD stores.
  * - Everything else is `unknown`; this function never throws.
  */
 export function parseBarcodeInput(raw: string): BarcodeParse {
@@ -63,23 +58,27 @@ export function parseBarcodeInput(raw: string): BarcodeParse {
 
   const gtin = gtinFromInput(trimmed);
   if (gtin !== null) {
-    const ndc = ndcFromGtin(gtin.gtin);
+    const ndc = ndcFromProductCode(gtin);
     if (ndc !== null) return ndcParse(ndc);
-    if (gtin.explicit) {
-      // Consumer units (indicator 0) carry a 13-digit EAN. Other indicator
-      // digits mark cases and pallets, which no consumer index keys on.
-      return gtin.gtin.startsWith("0")
-        ? upcParse(gtin.gtin.slice(1))
-        : { kind: "unknown", raw };
-    }
+    // Consumer units (indicator 0) carry a 13-digit EAN. Other indicator
+    // digits mark cases and pallets, which no consumer index keys on.
+    return gtin.startsWith("0")
+      ? upcParse(gtin.slice(1))
+      : { kind: "unknown", raw };
   }
 
   const ndc = normalizeNdc(trimmed);
-  if (ndc !== null) return ndcParse(ndc);
+  if (ndc !== null) {
+    // normalizeNdc reads bare 10 digits as 4-4-2. Keep that canonical
+    // candidate set but also probe the 5-3-2 and 5-4-1 readings.
+    return ndcParse(ndc, BARE_NDC_10.test(trimmed) ? trimmed : undefined);
+  }
 
   if (RETAIL_INPUT.test(trimmed)) {
     // The regex guarantees at least one digit after trimming.
-    return upcParse(trimmed.replace(/\D/g, ""));
+    const digits = trimmed.replace(/\D/g, "");
+    const productNdc = ndcFromProductCode(digits);
+    return productNdc !== null ? ndcParse(productNdc) : upcParse(digits);
   }
 
   return { kind: "unknown", raw };
@@ -95,45 +94,47 @@ export function parseBarcodeInput(raw: string): BarcodeParse {
  * it. A malformed or absent GTIN returns `null` so the caller can try the
  * typed-NDC and retail readings of the same input.
  */
-function gtinFromInput(input: string): GtinMatch | null {
+function gtinFromInput(input: string): string | null {
   let value = input;
-  let explicit = false;
 
   const aim = AIM_PREFIX.exec(value);
-  if (aim !== null) {
-    value = value.slice(aim[0].length);
-    explicit = true;
-  }
+  if (aim !== null) value = value.slice(aim[0].length);
 
-  while (value.startsWith(GS)) {
-    value = value.slice(1);
-    explicit = true;
-  }
+  while (value.startsWith(GS)) value = value.slice(1);
 
   const parenthesized = /\(01\)(\d{14})/.exec(value)?.[1];
-  if (parenthesized !== undefined) {
-    return { gtin: parenthesized, explicit: true };
-  }
+  if (parenthesized !== undefined) return parenthesized;
 
-  if (BARE_GTIN.test(value)) return { gtin: value, explicit };
+  if (BARE_GTIN.test(value)) return value;
+
+  // Space-grouped GTINs ("0003 66741394 17") are the same product code.
+  const compact = value.replace(/\s+/g, "");
+  if (BARE_GTIN.test(compact)) return compact;
 
   for (const group of value.split(GS)) {
     const streamed = AI01_GTIN.exec(group)?.[1];
-    if (streamed !== undefined) return { gtin: streamed, explicit: true };
+    if (streamed !== undefined) return streamed;
   }
 
   return null;
 }
 
 /**
- * NDC-10 embedded in a US drug GTIN-14.
+ * NDC-10 embedded in a US drug product code.
  *
- * DSCSA product codes put the NDC in positions 4–13, after the indicator
- * digit and the `03` GS1 US drug prefix. A GTIN without that prefix is not a
- * drug code, though indicator 0 may still make it a consumer unit.
+ * A GTIN-14 carries it in positions 4–13, after the indicator digit and the
+ * `03` GS1 US drug prefix. A UPC-A starting with `3` carries it in positions
+ * 2–11. A 13-digit EAN beginning `03` is deliberately not treated as a drug
+ * code: that prefix space is shared with ordinary GS1 US consumer items, so
+ * a bare EAN-13 cannot distinguish them.
+ *
+ * @returns The 10-digit NDC, or `null` when the code does not carry one.
  */
-function ndcFromGtin(gtin: string): string | null {
-  return gtin.slice(1, 3) === "03" ? gtin.slice(3, 13) : null;
+export function ndcFromProductCode(code: string): string | null {
+  if (!/^\d+$/.test(code)) return null;
+  if (code.length === 14 && code.slice(1, 3) === "03") return code.slice(3, 13);
+  if (code.length === 12 && code.startsWith("3")) return code.slice(1, 11);
+  return null;
 }
 
 /**
@@ -193,9 +194,18 @@ function groupBarcode(digits: string): string {
   return `${digits.slice(0, 1)} ${digits.slice(1, 6)} ${digits.slice(6, -1)} ${digits.slice(-1)}`;
 }
 
-/** Builds an NDC result with its dashed query candidates. */
-function ndcParse(digits: string): BarcodeParse {
-  return { kind: "ndc", ndcCandidates: ndcCandidates(digits) };
+/**
+ * Builds an NDC result. `extraDigits` adds the 10-digit candidate families
+ * for a bare NDC, whose segment boundaries normalization cannot recover.
+ */
+function ndcParse(digits: string, extraDigits?: string): BarcodeParse {
+  const candidates = ndcCandidates(digits);
+  if (extraDigits !== undefined) {
+    for (const candidate of ndcCandidates(extraDigits)) {
+      if (!candidates.includes(candidate)) candidates.push(candidate);
+    }
+  }
+  return { kind: "ndc", ndcCandidates: candidates };
 }
 
 /** Builds a retail-code result with its digits and grouped spelling. */
