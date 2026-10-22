@@ -455,6 +455,7 @@ function renderMarkdown(
       `## Label sections (${labelSections.sections.length}${
         labelSections.truncated ? ", truncated" : ""
       })`,
+      "_Verbatim SPL text; consult the current official labeling._",
     ];
     if (labelSections.sections.length === 0) {
       sectionBlocks.push("- No usage sections were found in this label.");
