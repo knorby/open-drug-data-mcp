@@ -182,6 +182,112 @@ export const nextStepSchema = z.object({
 /** A suggested follow-up call that continues the search → resolve → get loop. */
 export type NextStep = z.infer<typeof nextStepSchema>;
 
+/** How sure the identity chain is that a source link names the same substance. */
+export const linkConfidenceSchema = z.enum(["direct", "derived"]);
+
+/** How sure the identity chain is that a source link names the same substance. */
+export type LinkConfidence = z.infer<typeof linkConfidenceSchema>;
+
+/** One confident cross-source link in an identity graph. */
+export const sourceLinkSchema = z.object({
+  database: databaseIdSchema,
+  id: z.string().describe("Identifier of the linked record upstream."),
+  url: z.string().describe("Deep link to the linked record upstream."),
+  matchedVia: z
+    .string()
+    .describe("Which identifier or name established the link."),
+  confidence: linkConfidenceSchema,
+});
+
+/** One confident cross-source link in an identity graph. */
+export type SourceLink = z.infer<typeof sourceLinkSchema>;
+
+/** One ambiguous source result, never auto-linked. */
+export const candidateSetSchema = z.object({
+  database: databaseIdSchema,
+  matchedVia: z.string(),
+  reason: z.string().describe("Why the chain kept this as a candidate set."),
+  options: z
+    .array(ingredientRefSchema)
+    .describe("Ingredient records the caller must choose between."),
+});
+
+/** One ambiguous source result, never auto-linked. */
+export type CandidateSet = z.infer<typeof candidateSetSchema>;
+
+/** The resolved identity graph for one ingredient. */
+export const identityGraphSchema = z.object({
+  subject: z.object({
+    name: z.string().optional(),
+    inciName: z.string().optional(),
+  }),
+  identifiers: ingredientIdentifiersSchema,
+  links: z.array(sourceLinkSchema),
+  candidates: z.array(candidateSetSchema),
+});
+
+/** The resolved identity graph for one ingredient. */
+export type IdentityGraph = z.infer<typeof identityGraphSchema>;
+
+/** A compact count of the links and candidate sets in a result. */
+export const resolveConfidenceSchema = z.object({
+  directLinks: z.number().int().min(0),
+  derivedLinks: z.number().int().min(0),
+  candidateSets: z.number().int().min(0),
+});
+
+/** A compact count of the links and candidate sets in a result. */
+export type ResolveConfidence = z.infer<typeof resolveConfidenceSchema>;
+
+/** An ingredient-level resolution: one identity graph. */
+export const ingredientResolutionSchema = z.object({
+  kind: z.literal("ingredient"),
+  graph: identityGraphSchema,
+});
+
+/** An ingredient-level resolution: one identity graph. */
+export type IngredientResolution = z.infer<typeof ingredientResolutionSchema>;
+
+/** A product-level resolution: links plus the ingredient rows it carries. */
+export const productResolutionSchema = z.object({
+  kind: z.literal("product"),
+  links: z.array(sourceLinkSchema),
+  candidates: z.array(candidateSetSchema),
+  ingredients: z.array(ingredientRefSchema),
+  graphs: z
+    .array(identityGraphSchema)
+    .optional()
+    .describe(
+      "Graphs for an ordered prefix of `ingredients`, when resolve_ingredients was requested.",
+    ),
+});
+
+/** A product-level resolution: links plus the ingredient rows it carries. */
+export type ProductResolution = z.infer<typeof productResolutionSchema>;
+
+/**
+ * The `drugdata_resolve_identifiers` result.
+ *
+ * The briefed outcome union (`ingredient` graph or `product` links/ingredients)
+ * plus the shared `nextSteps` and a compact confidence count. The union is
+ * discriminated on `kind`, so a host can branch without inspecting fields.
+ */
+export const resolveIdentifiersResultSchema = z.discriminatedUnion("kind", [
+  ingredientResolutionSchema.extend({
+    nextSteps: z.array(nextStepSchema),
+    confidence: resolveConfidenceSchema,
+  }),
+  productResolutionSchema.extend({
+    nextSteps: z.array(nextStepSchema),
+    confidence: resolveConfidenceSchema,
+  }),
+]);
+
+/** The `drugdata_resolve_identifiers` result. */
+export type ResolveIdentifiersResult = z.infer<
+  typeof resolveIdentifiersResultSchema
+>;
+
 /**
  * Source-specific detail fields for one product.
  *
