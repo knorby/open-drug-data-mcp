@@ -16,6 +16,7 @@ import {
 import {
   type DatabaseId,
   ingredientRefSchema,
+  type LabelSections,
   labelSectionsSchema,
   type ProductDetails,
   type ProductIdentifiers,
@@ -360,6 +361,22 @@ function hasMoreOf<T>(
   return items !== undefined && items.length > page * pageSize;
 }
 
+/** "1 ingredient row" / "2 ingredient rows". */
+function countText(count: number, singular: string): string {
+  return `${count} ${count === 1 ? singular : `${singular}s`}`;
+}
+
+/** Whether bounding changed the label sections that will be returned. */
+function sectionsShortened(
+  before: LabelSections | undefined,
+  after: LabelSections | undefined,
+): boolean {
+  return (
+    JSON.stringify(before?.sections ?? []) !==
+    JSON.stringify(after?.sections ?? [])
+  );
+}
+
 /** Deep links for a product: its own record plus related database records. */
 function productLinks(product: SourceRecord["product"]) {
   const links = [
@@ -414,10 +431,12 @@ function renderMarkdown(
       ? ["- Ingredients omitted (include_ingredients: false)."]
       : output.ingredients.length === 0
         ? [
-            product.identifiers.splSetId !== undefined &&
-            !output.labelIngredientsIncluded
-              ? '- No ingredient rows were loaded from this record. Use source: "dailymed" with this SPL set id for the label\'s ingredient rows.'
-              : "- No ingredient rows are available for this product.",
+            output.pagination.ingredientsTotal > 0
+              ? `- No ingredient rows on page ${output.pagination.page}; the record has ${countText(output.pagination.ingredientsTotal, "ingredient row")}. Call again with page: 1.`
+              : product.identifiers.splSetId !== undefined &&
+                  !output.labelIngredientsIncluded
+                ? '- No ingredient rows were loaded from this record. Use source: "dailymed" with this SPL set id for the label\'s ingredient rows.'
+                : "- No ingredient rows are available for this product.",
           ]
         : output.ingredients.map((ingredient) => {
             const details = [`**${ingredient.name}**`];
@@ -458,7 +477,11 @@ function renderMarkdown(
       "_Verbatim SPL text; consult the current official labeling._",
     ];
     if (labelSections.sections.length === 0) {
-      sectionBlocks.push("- No usage sections were found in this label.");
+      sectionBlocks.push(
+        output.pagination.sectionsTotal > 0
+          ? `- No usage sections on page ${output.pagination.page}; the record has ${countText(output.pagination.sectionsTotal, "usage section")}. Call again with page: 1.`
+          : "- No usage sections were found in this label.",
+      );
     } else {
       for (const section of labelSections.sections) {
         sectionBlocks.push(`### ${section.heading}\n\n${section.text}`);
@@ -581,7 +604,9 @@ export function registerGetProductTool(
             include_ingredients && (record.labelIngredientsIncluded ?? false),
           pagination: {
             page,
+            ingredientsTotal: allIngredients?.length ?? 0,
             ingredientsHasMore,
+            sectionsTotal: allSections?.length ?? 0,
             sectionsHasMore,
           },
         });
@@ -601,9 +626,15 @@ export function registerGetProductTool(
         const final = boundStructured(withSteps);
         const truncated = bounded.truncated || final.truncated;
         // Bounding may shorten section text, so the section flag must reflect
-        // it even when the extractor itself did not hit its own caps.
+        // that — but an unrelated shortened field must not mark sections.
+        const sectionsWereShortened = sectionsShortened(
+          skeleton.labelSections,
+          final.value.labelSections,
+        );
         const value =
-          truncated && final.value.labelSections !== undefined
+          final.value.labelSections !== undefined &&
+          !final.value.labelSections.truncated &&
+          sectionsWereShortened
             ? productDetailSchema.parse({
                 ...final.value,
                 labelSections: {

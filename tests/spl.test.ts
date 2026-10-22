@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
   dailyMedLabelUrl,
@@ -369,6 +370,47 @@ describe("parseSplLabel", () => {
     ]);
   });
 
+  it("preserves word boundaries across inline markup in names and labelers", () => {
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<document xmlns="urn:hl7-org:v3">
+  <setId root="${SETID}"/>
+  <author>
+    <assignedEntity>
+      <representedOrganization>
+        <name>Example <content>Labeler</content></name>
+      </representedOrganization>
+    </assignedEntity>
+  </author>
+  <component>
+    <structuredBody>
+      <component>
+        <section>
+          <subject>
+            <manufacturedProduct>
+              <manufacturedProduct>
+                <name>ACETAMINOPHEN <content>500</content> MG</name>
+                <ingredient classCode="ACTI">
+                  <ingredientSubstance>
+                    <name>ACTIVE <content>THING</content></name>
+                  </ingredientSubstance>
+                </ingredient>
+              </manufacturedProduct>
+            </manufacturedProduct>
+          </subject>
+        </section>
+      </component>
+    </structuredBody>
+  </component>
+</document>`;
+
+    const label = parseSplLabel(xml);
+    expect(label.productName).toBe("ACETAMINOPHEN 500 MG");
+    expect(label.labeler).toBe("Example Labeler");
+    expect(label.ingredients).toEqual([
+      { name: "Active Thing", role: "active" },
+    ]);
+  });
+
   it("returns empty defaults when the document has no usable metadata", () => {
     expect(parseSplLabel("")).toEqual({ ndcs: [], ingredients: [] });
     expect(parseSplLabel("<document/>")).toEqual({
@@ -458,6 +500,20 @@ describe("extractSplUsageSections", () => {
     expect(SPL_USAGE_LOINC_CODES).toContain("34068-7");
   });
 
+  it("preserves the exact Directions text and <br/> boundary from a real SPL", () => {
+    const xml = readFileSync(
+      new URL("./fixtures/nlm/dailymed-spl-a1e07d5c.xml", import.meta.url),
+      "utf8",
+    );
+
+    expect(extractSplUsageSections(xml).sections).toEqual([
+      {
+        heading: "Directions",
+        text: "Clean affected area by thoroughly spraying it 1 to 3 times a day, oras needed to relieve symptoms, Cover with a bandage if needed.\nSafe on sensitive skin. May be used in conjunction with Sovereign Silver Homeopathic First Aid Gel.",
+      },
+    ]);
+  });
+
   it("ignores sections outside the usage LOINC set", () => {
     const xml = usageSpl(
       section(
@@ -500,9 +556,10 @@ describe("extractSplUsageSections", () => {
     expect(extraction.sections).toEqual([
       {
         heading: "Medication Guide",
-        text: "Take with food.\n\nDo not crush.",
+        text: "Take with food.\n\nDo not crush.\n\n[Table content omitted; open the hosted label for the table.]",
       },
     ]);
+    expect(extraction.truncated).toBe(true);
   });
 
   it("flags a table-only section and does not flatten the table", () => {
@@ -514,11 +571,37 @@ describe("extractSplUsageSections", () => {
       ),
     );
 
-    expect(extractSplUsageSections(xml).sections).toEqual([
+    const extraction = extractSplUsageSections(xml);
+    expect(extraction.sections).toEqual([
       {
         heading: "Directions",
         text: "[Table content omitted; open the hosted label for the table.]",
       },
+    ]);
+    expect(extraction.truncated).toBe(true);
+  });
+
+  it("keeps direct text when a usage section has no paragraphs or items", () => {
+    const xml = usageSpl(
+      section("34068-7", "Apply sparingly to the affected area.", "Directions"),
+    );
+
+    expect(extractSplUsageSections(xml).sections).toEqual([
+      { heading: "Directions", text: "Apply sparingly to the affected area." },
+    ]);
+  });
+
+  it("falls back to direct markup when a section has no text wrapper", () => {
+    const xml = usageSpl(
+      `<component><section>
+        <code code="34068-7" codeSystem="2.16.840.1.113883.6.1"/>
+        <title>Directions</title>
+        <content>Direct outside text.</content>
+      </section></component>`,
+    );
+
+    expect(extractSplUsageSections(xml).sections).toEqual([
+      { heading: "Directions", text: "Direct outside text." },
     ]);
   });
 
@@ -556,10 +639,15 @@ describe("extractSplUsageSections", () => {
         section("59845-8", "<paragraph>Use.</paragraph>", "   "),
     );
 
-    expect(extractSplUsageSections(xml).sections).toEqual([
-      { heading: "Directions", text: "Beforeafter\n\nUse as directed." },
+    const extraction = extractSplUsageSections(xml);
+    expect(extraction.sections).toEqual([
+      {
+        heading: "Directions",
+        text: "Before after\n\nUse as directed.\n\n[Table content omitted; open the hosted label for the table.]",
+      },
       { heading: "59845-8", text: "Use." },
     ]);
+    expect(extraction.truncated).toBe(true);
   });
 
   it("omits version fields when the document has none", () => {

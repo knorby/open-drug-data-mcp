@@ -999,7 +999,11 @@ describe("searchNextSteps", () => {
     );
     expect(dailyMed).toMatchObject({
       tool: "drugdata_get_product",
-      input: { source: "dailymed", id: "set-1" },
+      input: {
+        source: "dailymed",
+        id: "set-1",
+        include_label_sections: true,
+      },
     });
 
     const dsld = firstStep(

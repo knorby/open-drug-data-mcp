@@ -38,6 +38,9 @@ const parser = new XMLParser({
   ignoreAttributes: false,
   removeNSPrefix: true,
   parseTagValue: false,
+  // Whitespace between inline elements is a word boundary in SPL text.
+  // Trimming values would turn "if needed. <br/> Safe" into "needed.Safe".
+  trimValues: false,
 });
 
 /** Ordered-parser node: `{ tag: Node[], ":@": attrs }` or `{ "#text": s }`. */
@@ -100,10 +103,60 @@ function attrValue(node: Node, attr: string): string | undefined {
     : undefined;
 }
 
-/** Concatenated text content of a subtree. */
+/**
+ * Collapses formatting whitespace while preserving explicit line breaks.
+ *
+ * SPL documents wrap prose across indented lines and inline elements. Runs of
+ * spaces/tabs are formatting; a newline introduced by `<br>` is content. Spaces
+ * around a newline are trimmed so a break never leaves doubled indentation.
+ */
+function normalizeText(text: string): string {
+  return text
+    .replace(/[^\S\n]+/g, " ")
+    .replace(/ *\n */g, "\n")
+    .trim();
+}
+
+/**
+ * Serializes a subtree's text, preserving inline word boundaries.
+ *
+ * Text fragments are concatenated as they appear; `<br>` becomes a newline; a
+ * table can either be included as text (`skipTables: false`) or skipped while
+ * flagging that one was present. Nested sections are skipped because the
+ * caller emits them as their own entries.
+ */
+function serializeNodes(
+  nodes: Node[],
+  skipTables: boolean,
+): { text: string; hasTable: boolean } {
+  let text = "";
+  let hasTable = false;
+  for (const node of nodes) {
+    if (typeof node["#text"] === "string") {
+      // Source newlines in prose are formatting; only <br> is semantic.
+      text += node["#text"].replace(/\s+/g, " ");
+      continue;
+    }
+    const tag = tagName(node);
+    if (tag === "br") {
+      text += "\n";
+      continue;
+    }
+    if (skipTables && tag === "table") {
+      hasTable = true;
+      continue;
+    }
+    if (skipTables && tag === "section") continue;
+    const inner = serializeNodes(childrenOf(node), skipTables);
+    text += inner.text;
+    if (inner.hasTable) hasTable = true;
+  }
+  return { text, hasTable };
+}
+
+/** Normalized text content of a subtree (titles, names, labelers). */
 function textOf(node: Node): string {
-  if (typeof node["#text"] === "string") return node["#text"];
-  return childrenOf(node).map(textOf).join("");
+  return normalizeText(serializeNodes([node], false).text);
 }
 
 /** The first descendant node with the given tag, depth-first. */
@@ -486,27 +539,10 @@ function textSkippingTables(nodes: Node[]): {
   text: string;
   hasTable: boolean;
 } {
-  let text = "";
-  let hasTable = false;
-  for (const node of nodes) {
-    if (typeof node["#text"] === "string") {
-      text += node["#text"];
-      continue;
-    }
-    const tag = tagName(node);
-    if (tag === "table") {
-      hasTable = true;
-      continue;
-    }
-    if (tag === "section") continue; // nested sections are their own entries
-    const inner = textSkippingTables(childrenOf(node));
-    text += inner.text;
-    if (inner.hasTable) hasTable = true;
-  }
-  return { text, hasTable };
+  return serializeNodes(nodes, true);
 }
 
-/** Paragraph-level text of a matched section (paragraph/item only). */
+/** Paragraph-level text of a matched section. */
 function sectionBody(nodes: Node[]): { text: string; hasTables: boolean } {
   const paragraphs: string[] = [];
   let hasTables = false;
@@ -520,8 +556,8 @@ function sectionBody(nodes: Node[]): { text: string; hasTables: boolean } {
       if (tag === "section") continue;
       if (tag === "paragraph" || tag === "item") {
         const inner = textSkippingTables(childrenOf(node));
-        const trimmed = inner.text.trim();
-        if (trimmed.length > 0) paragraphs.push(trimmed);
+        const normalized = normalizeText(inner.text);
+        if (normalized.length > 0) paragraphs.push(normalized);
         if (inner.hasTable) hasTables = true;
         continue;
       }
@@ -529,6 +565,22 @@ function sectionBody(nodes: Node[]): { text: string; hasTables: boolean } {
     }
   };
   visit(nodes);
+
+  // Some labels put prose directly under <text>/<content> instead of wrapping
+  // it in paragraph/item. Fall back to the section subtree so that text is not
+  // silently lost.
+  if (paragraphs.length === 0) {
+    const textNode = nodes.find((node) => tagName(node) === "text");
+    const fallbackNodes =
+      textNode === undefined
+        ? nodes.filter((node) => tagName(node) !== "title")
+        : childrenOf(textNode);
+    const fallback = textSkippingTables(fallbackNodes);
+    const normalized = normalizeText(fallback.text);
+    if (normalized.length > 0) paragraphs.push(normalized);
+    if (fallback.hasTable) hasTables = true;
+  }
+
   return { text: paragraphs.join("\n\n"), hasTables };
 }
 
@@ -555,7 +607,10 @@ function walkUsageSections(
           titleNode === undefined ? code : textOf(titleNode).trim() || code;
         const body = sectionBody(children);
         let text = body.text;
-        if (body.hasTables && text.length === 0) text = TABLE_NOTE;
+        if (body.hasTables) {
+          text = text.length > 0 ? `${text}\n\n${TABLE_NOTE}` : TABLE_NOTE;
+          state.truncated = true;
+        }
         if (text.length > MAX_USAGE_SECTION_CHARS) {
           text = `${text.slice(0, MAX_USAGE_SECTION_CHARS)}…[truncated]`;
           state.truncated = true;

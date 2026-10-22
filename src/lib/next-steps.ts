@@ -144,7 +144,11 @@ function productStep(ref: ProductRef, type: SearchType): NextStep | null {
 
   return {
     tool: target.tool,
-    input: { source: target.source, id: ref.source.id },
+    input: {
+      source: target.source,
+      id: ref.source.id,
+      ...(target.source === "dailymed" ? { include_label_sections: true } : {}),
+    },
     why: `The ${type} search found ${target.what}; open its full record to continue the loop.`,
   };
 }
@@ -253,8 +257,12 @@ export function productDetailNextSteps(
   if (setid !== undefined && product.source.database !== "DailyMed") {
     add({
       tool: GET_PRODUCT,
-      input: { source: "dailymed", id: setid },
-      why: "The product carries a DailyMed SPL set id; open the label for its ingredient and usage detail.",
+      input: {
+        source: "dailymed",
+        id: setid,
+        include_label_sections: true,
+      },
+      why: "The product carries a DailyMed SPL set id; open the label with its usage sections for ingredient and dosing detail.",
     });
   }
 

@@ -249,7 +249,9 @@ export type ProductLink = z.infer<typeof productLinkSchema>;
 /** Collection paging state for one product lookup. */
 export const productPaginationSchema = z.object({
   page: z.number().int().min(1),
+  ingredientsTotal: z.number().int().min(0),
   ingredientsHasMore: z.boolean(),
+  sectionsTotal: z.number().int().min(0),
   sectionsHasMore: z.boolean(),
 });
 

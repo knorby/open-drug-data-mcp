@@ -126,7 +126,9 @@ interface ProductDetailOutput {
   labelIngredientsIncluded: boolean;
   pagination: {
     page: number;
+    ingredientsTotal: number;
     ingredientsHasMore: boolean;
+    sectionsTotal: number;
     sectionsHasMore: boolean;
   };
 }
@@ -306,7 +308,9 @@ describe("get_product tool", () => {
     expect(output.labelSections).toBeUndefined();
     expect(output.pagination).toEqual({
       page: 1,
+      ingredientsTotal: 2,
       ingredientsHasMore: false,
+      sectionsTotal: 0,
       sectionsHasMore: false,
     });
     expect(output.links[0]).toEqual({
@@ -382,6 +386,78 @@ describe("get_product tool", () => {
     expect(textOf(withoutSections)).not.toContain("## Label sections");
   });
 
+  it("distinguishes an empty page from an empty record", async () => {
+    const xml = textFixture("nlm/dailymed-spl-a1e07d5c.xml");
+    const client = nlmClient((url) =>
+      url.pathname.includes(SPL_SETID)
+        ? new Response(xml, {
+            headers: { "content-type": "application/xml" },
+          })
+        : new Response(null, { status: 404 }),
+    );
+
+    harness = await start(createRegistry([createNlmAdapter(client)], []));
+    const result = await harness.client.callTool({
+      name: "drugdata_get_product",
+      arguments: {
+        source: "dailymed",
+        id: SPL_SETID,
+        page: 2,
+        include_label_sections: true,
+      },
+    });
+
+    const output = result.structuredContent as ProductDetailOutput;
+    expect(output.ingredients).toEqual([]);
+    expect(output.labelSections?.sections).toEqual([]);
+    expect(output.pagination).toEqual({
+      page: 2,
+      ingredientsTotal: 2,
+      ingredientsHasMore: false,
+      sectionsTotal: 1,
+      sectionsHasMore: false,
+    });
+    const text = textOf(result);
+    expect(text).toContain(
+      "No ingredient rows on page 2; the record has 2 ingredient rows.",
+    );
+    expect(text).toContain(
+      "No usage sections on page 2; the record has 1 usage section.",
+    );
+  });
+
+  it("does not mark label sections truncated when only another field is shortened", async () => {
+    const adapter = lookupAdapter("nlm", ["DailyMed"], async () => ({
+      product: productRef(
+        "DailyMed",
+        "Bounded summary",
+        { splSetId: SPL_SETID },
+        { summary: "x".repeat(20_000) },
+      ),
+      ingredients: [],
+      labelSections: {
+        sections: [{ heading: "Directions", text: "Use as directed." }],
+        truncated: false,
+      },
+      summary: "y".repeat(20_000),
+    }));
+
+    harness = await start(createRegistry([adapter], []));
+    const result = await harness.client.callTool({
+      name: "drugdata_get_product",
+      arguments: {
+        source: "dailymed",
+        id: SPL_SETID,
+        include_label_sections: true,
+      },
+    });
+
+    const output = result.structuredContent as ProductDetailOutput;
+    expect(output.labelSections?.truncated).toBe(false);
+    expect(output.labelSections?.sections[0]?.text).toBe("Use as directed.");
+    expect(textOf(result)).toContain("Some fields were shortened");
+  });
+
   it("bounds a deliberately oversized label and notes the truncation", async () => {
     const xml = textFixture("nlm/dailymed-spl-oversized.xml");
     const client = nlmClient((url) =>
@@ -452,7 +528,9 @@ describe("get_product tool", () => {
     expect(output.ingredients?.map((item) => item.name)).not.toContain("Water");
     expect(output.pagination).toEqual({
       page: 1,
+      ingredientsTotal: 1,
       ingredientsHasMore: false,
+      sectionsTotal: 0,
       sectionsHasMore: false,
     });
     expect(output.links.map((link) => link.url)).toEqual(
@@ -929,7 +1007,9 @@ describe("get_product tool", () => {
     expect(firstOutput.labelSections?.sections).toHaveLength(10);
     expect(firstOutput.pagination).toEqual({
       page: 1,
+      ingredientsTotal: 30,
       ingredientsHasMore: true,
+      sectionsTotal: 15,
       sectionsHasMore: true,
     });
     expect(textOf(first)).toContain(
@@ -951,7 +1031,9 @@ describe("get_product tool", () => {
     expect(secondOutput.labelSections?.sections).toHaveLength(5);
     expect(secondOutput.pagination).toEqual({
       page: 2,
+      ingredientsTotal: 30,
       ingredientsHasMore: false,
+      sectionsTotal: 15,
       sectionsHasMore: false,
     });
 
@@ -1521,6 +1603,7 @@ describe("productDetailNextSteps", () => {
     expect(steps[1]?.input).toEqual({
       source: "dailymed",
       id: SPL_SETID,
+      include_label_sections: true,
     });
     expect(steps[2]?.input).toEqual({ source: "nlm", id: "1191" });
     for (const step of steps) expect(step.why.length).toBeGreaterThan(0);
