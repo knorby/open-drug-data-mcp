@@ -31,19 +31,16 @@ import type {
  *
  * **Search strategy**
  *
- * - Product `name` uses the site's combined search and maps the products tab
- *   (one request on page 1, one per tab on later pages).
+ * - Product `name` and `brand` use the site's combined search and map the
+ *   products tab (one request on page 1, one per tab on later pages). The
+ *   site has no brand entity, so a brand query is a product-name search; its
+ *   refs are labeled `brand-name match` rather than presented as brand data.
  * - Product `ingredient` uses the advanced include-ingredient filter. The site
  *   matches the ingredient display name, so a product can be found from an
  *   ingredient name without resolving a slug first.
  * - Ingredient `name` and `inci` use the ingredients tab. The site does not
  *   separate trade and INCI names, so both types search the same tab; the
  *   ref's `matchBasis` says which type found it.
- *
- * Product `brand` is deliberately not a supported product search type: the
- * site has no brand entity in search, and a product-name search already
- * surfaces brand-prefixed names. A caller that filters by `cosmetic` still
- * receives INKEEDecoder results for name and ingredient searches.
  *
  * **Cost.** A search maps only the search page; it never fetches a product or
  * ingredient page per hit. `get_product` fetches one product page and maps its
@@ -117,12 +114,17 @@ function identifierList(value: string | undefined): string[] {
 }
 
 /** Maps one product search hit to the unified product vocabulary. */
-function productRefOf(ref: ClientRef, retrievedAt: string): ProductRef {
+function productRefOf(
+  ref: ClientRef,
+  retrievedAt: string,
+  matchBasis?: string,
+): ProductRef {
   return {
     name: ref.name,
     category: "cosmetic",
     identifiers: { slug: ref.slug },
     source: sourceOf(ref.slug, ref.url, retrievedAt),
+    ...(matchBasis !== undefined ? { matchBasis } : {}),
   };
 }
 
@@ -365,17 +367,18 @@ function ikdFailure(context: string, error: unknown): Error {
   );
 }
 
-/** Runs one product-name search and maps the products tab. */
+/** Runs one product-name (or brand-as-name) search and maps the products tab. */
 async function productNameGroup(
   client: InkeedecoderClient,
   query: string,
   page: number,
   retrievedAt: string,
+  matchBasis: string,
   signal?: AbortSignal,
 ): Promise<ProductGroup> {
   try {
     const result = await client.search(query, { page, signal });
-    return productGroupOf(result.products, page, retrievedAt);
+    return productGroupOf(result.products, page, retrievedAt, matchBasis);
   } catch (error) {
     throw ikdFailure("The INKEEDecoder product search", error);
   }
@@ -405,10 +408,13 @@ function productGroupOf(
   result: Paginated<ClientRef>,
   page: number,
   retrievedAt: string,
+  matchBasis?: string,
 ): ProductGroup {
   return {
     source: "INKEEDecoder",
-    items: result.items.map((ref) => productRefOf(ref, retrievedAt)),
+    items: result.items.map((ref) =>
+      productRefOf(ref, retrievedAt, matchBasis),
+    ),
     page,
     hasMore: result.hasMore,
   };
@@ -470,7 +476,11 @@ export function createInkeedecoderAdapter(
 ): InkeedecoderAdapter {
   const clients = () => client ?? getClients().inkeedecoder;
 
-  const productSearchTypes: ProductSearchType[] = ["name", "ingredient"];
+  const productSearchTypes: ProductSearchType[] = [
+    "name",
+    "brand",
+    "ingredient",
+  ];
   const ingredientSearchTypes: IngredientSearchType[] = ["name", "inci"];
 
   return {
@@ -497,7 +507,27 @@ export function createInkeedecoderAdapter(
       switch (type) {
         case "name":
           return [
-            await productNameGroup(ikd, trimmed, page, retrievedAt, signal),
+            await productNameGroup(
+              ikd,
+              trimmed,
+              page,
+              retrievedAt,
+              "name match",
+              signal,
+            ),
+          ];
+        case "brand":
+          // The site has no brand search: a brand query is a product-name
+          // search and is labeled as such rather than presented as brand data.
+          return [
+            await productNameGroup(
+              ikd,
+              trimmed,
+              page,
+              retrievedAt,
+              "brand-name match",
+              signal,
+            ),
           ];
         case "ingredient":
           return [

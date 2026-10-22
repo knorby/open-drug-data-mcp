@@ -128,6 +128,12 @@ export const productRefSchema = z.object({
   category: productCategorySchema.optional(),
   identifiers: productIdentifiersSchema,
   source: sourceRefSchema,
+  matchBasis: z
+    .string()
+    .optional()
+    .describe(
+      "How the product was matched, for weak or name-based hits (for example a brand query answered as a name search).",
+    ),
   summary: z.string().optional(),
 });
 

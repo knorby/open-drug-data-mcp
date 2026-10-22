@@ -135,6 +135,7 @@ describe("INKEEDecoder adapter capabilities", () => {
     expect(inkeedecoderAdapter.databases).toEqual(["INKEEDecoder"]);
     expect(inkeedecoderAdapter.productSearchTypes).toEqual([
       "name",
+      "brand",
       "ingredient",
     ]);
     expect(inkeedecoderAdapter.ingredientSearchTypes).toEqual(["name", "inci"]);
@@ -190,6 +191,7 @@ describe("INKEEDecoder product name search", () => {
     expect(first?.brand).toBeUndefined();
     expect(first?.category).toBe("cosmetic");
     expect(first?.identifiers).toEqual({ slug: "wellwell-niacinamide" });
+    expect(first?.matchBasis).toBe("name match");
     expect(first?.source.database).toBe("INKEEDecoder");
     expect(first?.source.id).toBe("wellwell-niacinamide");
     expect(first?.source.url).toBe(
@@ -207,6 +209,30 @@ describe("INKEEDecoder product name search", () => {
     expect(url.searchParams.get("query")).toBe("niacinamide");
     expect(url.searchParams.get("activetab")).toBeNull();
     expect(url.searchParams.get("ppage")).toBeNull();
+  });
+
+  it("declares brand and routes it through the same name search", async () => {
+    const { client, fetchMock } = clientFor(
+      routeTo(fixture("search-niacinamide.html")),
+    );
+    const adapter = createInkeedecoderAdapter(client);
+
+    const [brand] = await adapter.searchProducts("brand", "niacinamide", 1);
+    const [name] = await adapter.searchProducts("name", "niacinamide", 1);
+
+    expect(brand?.items.map((item) => item.source.id)).toEqual(
+      name?.items.map((item) => item.source.id),
+    );
+    expect(brand?.items[0]?.matchBasis).toBe("brand-name match");
+    expect(name?.items[0]?.matchBasis).toBe("name match");
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const [brandRequest, nameRequest] = requests(fetchMock);
+    expect(brandRequest?.url.pathname).toBe("/search");
+    expect(brandRequest?.url.search).toBe(nameRequest?.url.search);
+    expect(brandRequest?.url.searchParams.get("query")).toBe("niacinamide");
+    expect(brandRequest?.url.searchParams.get("activetab")).toBeNull();
+    expect(brandRequest?.url.searchParams.get("ppage")).toBeNull();
   });
 
   it("pages the combined search and reports the requested page", async () => {
@@ -252,7 +278,7 @@ describe("INKEEDecoder product name search", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it.each(["brand", "barcode", "ndc"] as const)(
+  it.each(["barcode", "ndc"] as const)(
     "returns an empty group for an undeclared %s search without a request",
     async (type) => {
       const { client, fetchMock } = clientFor(() => {

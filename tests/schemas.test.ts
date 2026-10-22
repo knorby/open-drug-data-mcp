@@ -82,6 +82,7 @@ describe("productRefSchema", () => {
       slug: "norvasc-5-mg",
     },
     source: openFdaSource,
+    matchBasis: "name match",
     summary: "Calcium channel blocker.",
   };
 
