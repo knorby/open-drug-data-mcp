@@ -81,8 +81,8 @@ function matchBasisOf(match: CosingMatch<CosingIngredient>): string {
 /**
  * A short, source-faithful summary: assigned functions, inventory status,
  * annex numbers, and restriction references. Labels are ours; every value is
- * CosIng's, and restriction text keeps its wording (only its line breaks are
- * collapsed for display).
+ * CosIng's, and restriction text is preserved verbatim, including any line
+ * breaks.
  */
 function summaryOf(item: CosingIngredient): string | undefined {
   const parts: string[] = [];
@@ -94,9 +94,11 @@ function summaryOf(item: CosingIngredient): string | undefined {
   if (item.annexNumbers.length > 0) {
     parts.push(`Annex: ${item.annexNumbers.join(", ")}`);
   }
-  const restriction = nonEmpty(item.cosmeticRestriction);
-  if (restriction !== undefined) {
-    parts.push(`Restriction: ${restriction.replace(/\s+/g, " ").trim()}`);
+  if (
+    item.cosmeticRestriction !== undefined &&
+    item.cosmeticRestriction.trim().length > 0
+  ) {
+    parts.push(`Restriction (verbatim): ${item.cosmeticRestriction}`);
   }
   return parts.length > 0 ? parts.join(" · ") : undefined;
 }
@@ -219,19 +221,22 @@ export function createCosingAdapter(client?: CosingClient): SourceAdapter {
       const trimmed = query.trim();
       if (trimmed.length === 0) return [emptyIngredientGroup(page)];
 
-      try {
-        const search = (criteria: IngredientSearchCriteria) =>
-          clients().ingredients.search({
-            ...criteria,
-            page,
-            pageSize: PAGE_SIZE,
-            signal,
-          });
+      // Resolve the client before the failure boundary: configuration errors
+      // are actionable as-is and must not be reworded as a CosIng outage.
+      const cosing = clients();
+      const search = (criteria: IngredientSearchCriteria) =>
+        cosing.ingredients.search({
+          ...criteria,
+          page,
+          pageSize: PAGE_SIZE,
+          signal,
+        });
 
+      try {
         switch (type) {
           case "inci": {
             const exact = await search({ inciName: trimmed.toUpperCase() });
-            if (exact.items.length > 0) return [groupOf(exact)];
+            if (exact.total > 0) return [groupOf(exact)];
             return [groupOf(await search({ text: trimmed }))];
           }
           case "cas":

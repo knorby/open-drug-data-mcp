@@ -149,6 +149,10 @@ export const ingredientRefSchema = z.object({
     .string()
     .optional()
     .describe("How the ingredient was matched, for weak or name-based hits."),
+  summary: z
+    .string()
+    .optional()
+    .describe("Short source-faithful summary, including regulatory notes."),
 });
 
 /** An ingredient found in one upstream database. */

@@ -358,7 +358,10 @@ describe("getClients", () => {
     process.env.OPENFDA_API_KEY = "openfda-test-key";
     process.env.DSLD_API_KEY = "dsld-test-key";
     resetConfig();
-    const fetchMock = vi.fn(async () => jsonResponse({ results: [] }));
+    const fetchMock = vi.fn(
+      async (_input: RequestInfo | URL, _init?: RequestInit) =>
+        jsonResponse({ results: [] }),
+    );
     vi.stubGlobal("fetch", fetchMock);
 
     const clients = getClients();

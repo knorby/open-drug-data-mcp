@@ -3,6 +3,7 @@ import { CosingClient, type FetchLike } from "@knorby/eu-cosing-client";
 import { describe, expect, it, vi } from "vitest";
 import { resetClients } from "../src/clients.js";
 import { resetConfig } from "../src/config.js";
+import { ingredientRefSchema } from "../src/lib/schemas.js";
 import { cosingAdapter, createCosingAdapter } from "../src/sources/cosing.js";
 import { jsonResponse } from "./helpers.js";
 
@@ -74,6 +75,18 @@ function requests(fetchMock: {
     url: new URL(String(input)),
     init: init ?? {},
   }));
+}
+
+/** Reads one request, failing the test when the client made too few. */
+function requestAt(
+  fetchMock: Parameters<typeof requests>[0],
+  index = 0,
+): { url: URL; init: RequestInit } {
+  const request = requests(fetchMock)[index];
+  if (request === undefined) {
+    throw new Error(`expected a request at index ${index}`);
+  }
+  return request;
 }
 
 /** A minimal EU Search envelope around hand-authored metadata records. */
@@ -160,7 +173,7 @@ describe("CosIng INCI search", () => {
       /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/,
     );
 
-    const [{ url, init }] = requests(fetchMock);
+    const { url, init } = requestAt(fetchMock);
     expect(url?.pathname).toBe("/es/search-api/rest/search");
     expect(url?.searchParams.get("text")).toBe("");
     expect(url?.searchParams.get("pageSize")).toBe("20");
@@ -196,15 +209,38 @@ describe("CosIng INCI search", () => {
     expect(group?.hasMore).toBe(true);
     expect(group?.items[0]?.matchBasis).toBe("fuzzy name match");
 
-    const [{ url, init }, fallback] = requests(fetchMock);
-    expect(url?.searchParams.get("text")).toBe("");
-    expect(searchQuery(init as RequestInit).bool.must).toContainEqual({
+    const first = requestAt(fetchMock);
+    const fallback = requestAt(fetchMock, 1);
+    expect(first.url.searchParams.get("text")).toBe("");
+    expect(searchQuery(first.init).bool.must).toContainEqual({
       term: { inciName: "NIACINAMIDE" },
     });
-    expect(fallback?.url.searchParams.get("text")).toBe("niacinamide");
-    expect(searchQuery(fallback?.init as RequestInit)).toEqual({
+    expect(fallback.url.searchParams.get("text")).toBe("niacinamide");
+    expect(searchQuery(fallback.init)).toEqual({
       bool: { must: [{ term: { itemType: "ingredient" } }] },
     });
+  });
+
+  it("does not fall through to fuzzy results on a later exact page", async () => {
+    const pageTwo = {
+      ...fixture<Record<string, unknown>>("ingredient-inci-niacinamide.json"),
+      totalResults: 1,
+      pageNumber: 2,
+      results: [],
+    };
+    const { client, fetchMock } = clientFor(routeTo(pageTwo));
+    const adapter = createCosingAdapter(client);
+
+    const [group] =
+      (await adapter.searchIngredients?.("inci", "niacinamide", 2)) ?? [];
+
+    expect(group).toEqual({
+      source: "CosIng",
+      items: [],
+      page: 2,
+      hasMore: false,
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it("returns an empty group when both the exact and fuzzy searches miss", async () => {
@@ -248,7 +284,7 @@ describe("CosIng name search", () => {
       "fuzzy name match",
     ]);
 
-    const [{ url, init }] = requests(fetchMock);
+    const { url, init } = requestAt(fetchMock);
     expect(url?.searchParams.get("text")).toBe("niacinamide");
     expect(url?.searchParams.get("pageSize")).toBe("20");
     expect(url?.searchParams.get("pageNumber")).toBe("1");
@@ -270,7 +306,7 @@ describe("CosIng name search", () => {
 
     expect(group?.page).toBe(2);
     expect(group?.hasMore).toBe(true);
-    const [{ url }] = requests(fetchMock);
+    const { url } = requestAt(fetchMock);
     expect(url?.searchParams.get("pageNumber")).toBe("2");
     expect(url?.searchParams.get("pageSize")).toBe("20");
   });
@@ -321,9 +357,9 @@ describe("CosIng CAS and EC search", () => {
     expect(group?.items[0]?.identifiers.ec).toEqual(["202-713-4"]);
     expect(group?.items[0]?.matchBasis).toBe("cas-substring");
 
-    const [{ url, init }] = requests(fetchMock);
+    const { url, init } = requestAt(fetchMock);
     expect(url?.searchParams.get("text")).toBe("");
-    const clause = searchQuery(init as RequestInit).bool.must[1]?.text;
+    const clause = searchQuery(init).bool.must[1]?.text;
     expect(clause?.fields).toEqual(["casNo", "ecNo"]);
     expect(clause?.query.replace(/\\/g, "")).toBe("*98-92-0*");
   });
@@ -340,8 +376,8 @@ describe("CosIng CAS and EC search", () => {
     expect(group?.items[0]?.name).toBe("NIACINAMIDE");
     expect(group?.items[0]?.matchBasis).toBe("ec-substring");
 
-    const [{ init }] = requests(fetchMock);
-    const clause = searchQuery(init as RequestInit).bool.must[1]?.text;
+    const { init } = requestAt(fetchMock);
+    const clause = searchQuery(init).bool.must[1]?.text;
     expect(clause?.fields).toEqual(["casNo", "ecNo"]);
     expect(clause?.query.replace(/\\/g, "")).toBe("*202-713-4*");
   });
@@ -376,8 +412,11 @@ describe("CosIng CAS and EC search", () => {
       ec: ["200-712-3"],
     });
     expect(item?.summary).toBe(
-      "Functions: ANTI-SEBORRHEIC, HAIR CONDITIONING, KERATOLYTIC, FRAGRANCE, PRESERVATIVE, SKIN CONDITIONING · Status: Active · Restriction: III/98 V/3",
+      "Functions: ANTI-SEBORRHEIC, HAIR CONDITIONING, KERATOLYTIC, FRAGRANCE, PRESERVATIVE, SKIN CONDITIONING · Status: Active · Restriction (verbatim): III/98\r\nV/3",
     );
+
+    const parsed = ingredientRefSchema.parse(item);
+    expect(parsed.summary).toBe(item?.summary);
   });
 });
 
@@ -421,7 +460,15 @@ describe("CosIng ingredient mapping", () => {
 
   it("falls back to the id for an unnamed record and omits empty fields", async () => {
     const { client } = clientFor(
-      routeTo(envelope([{ substanceId: ["12345"] }])),
+      routeTo(
+        envelope([
+          {
+            substanceId: ["12345"],
+            inciName: ["   "],
+            cosmeticRestriction: ["   "],
+          },
+        ]),
+      ),
     );
     const adapter = createCosingAdapter(client);
 
@@ -503,5 +550,23 @@ describe("CosIng failures", () => {
     await expect(
       adapter.searchIngredients?.("inci", "niacinamide", 1),
     ).rejects.toThrow(/rejected the request/);
+  });
+
+  it("does not disguise an invalid configuration as a CosIng outage", async () => {
+    vi.stubEnv("DRUGDATA_TIMEOUT_MS", "not-a-number");
+    resetClients();
+    resetConfig();
+    try {
+      await expect(
+        cosingAdapter.searchIngredients?.("name", "niacinamide", 1),
+      ).rejects.toThrow(/DRUGDATA_TIMEOUT_MS/);
+      await expect(
+        cosingAdapter.searchIngredients?.("name", "niacinamide", 1),
+      ).rejects.not.toThrow(/CosIng did not return a usable response/);
+    } finally {
+      vi.unstubAllEnvs();
+      resetClients();
+      resetConfig();
+    }
   });
 });

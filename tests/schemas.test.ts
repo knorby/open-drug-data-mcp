@@ -147,6 +147,7 @@ describe("ingredientRefSchema", () => {
       retrievedAt: "2026-10-21T12:00:00.000Z",
     },
     matchBasis: "INCI name match",
+    summary: "Preservative; see Annex V.",
   };
 
   it("parses a fully populated ingredient reference", () => {
