@@ -2,6 +2,17 @@ import { CHARACTER_LIMIT } from "../constants.js";
 
 /** Rendering and response-bounding helpers shared by the tools. */
 
+/** Output formats tools offer: human-readable markdown or machine-readable JSON. */
+export const RESPONSE_FORMATS = ["markdown", "json"] as const;
+
+/** Output formats tools offer: human-readable markdown or machine-readable JSON. */
+export type ResponseFormat = (typeof RESPONSE_FORMATS)[number];
+
+/** Serializes a value as indented JSON for a tool's text block. */
+export function formatJson(value: unknown): string {
+  return JSON.stringify(value, null, 2);
+}
+
 /**
  * Truncates text that exceeds the character limit, appending a note telling
  * the model how to get the rest: narrow the request, turn off a costly flag,

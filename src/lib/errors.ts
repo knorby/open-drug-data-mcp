@@ -45,6 +45,24 @@ export class SourceRoutingError extends Error {
   }
 }
 
+/**
+ * Client-library references that must never reach a model.
+ *
+ * The sourcing policy credits the upstream database, never the npm package
+ * that fetched the data. Adapters reword their own failures, but a search can
+ * receive an error group or a rejection from any adapter, so the tool layer
+ * applies this last-line scrub before returning text.
+ */
+const CLIENT_PACKAGE = /@knorby\/[a-z0-9._-]+/gi;
+const CLIENT_WORD = /\bclient\b/gi;
+
+/** Rewords client-library names so output names only upstream databases. */
+export function sanitizeSourceText(text: string): string {
+  return text
+    .replace(CLIENT_PACKAGE, "the upstream service")
+    .replace(CLIENT_WORD, "upstream service");
+}
+
 export function toUserMessage(error: unknown, context: string): string {
   const raw = error instanceof Error ? error.message : String(error);
   const status = readStatus(error, raw);
