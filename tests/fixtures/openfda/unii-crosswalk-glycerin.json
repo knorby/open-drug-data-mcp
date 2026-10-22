@@ -1,0 +1,35 @@
+{
+  "meta": {
+    "disclaimer": "Do not rely on openFDA to make decisions regarding medical care. While we make every effort to ensure that data is accurate, you should assume all results are unvalidated. We may limit or otherwise restrict your access to the API in line with our Terms of Service.",
+    "terms": "https://open.fda.gov/terms/",
+    "license": "https://open.fda.gov/license/",
+    "last_updated": "2026-10-22",
+    "results": {
+      "skip": 0,
+      "limit": 5,
+      "total": 13
+    }
+  },
+  "results": [
+    {
+      "substance_name": "GLYCERIN METHYL ETHER",
+      "unii": "42ESM1DR47"
+    },
+    {
+      "substance_name": "TRIMETHYLPENTANEDIOL/ADIPIC ACID/GLYCERIN CROSSPOLYMER (25000 MPA.S)",
+      "unii": "587WKM3S9Q"
+    },
+    {
+      "substance_name": "CAPRYLOYL GLYCERIN/SEBACIC ACID COPOLYMER (2000 MPA.S)",
+      "unii": "N7YC58165T"
+    },
+    {
+      "substance_name": "MENTHONE GLYCERIN ACETAL",
+      "unii": "7QQ1EE6RCP"
+    },
+    {
+      "substance_name": "PEG/PPG-60/11 GLYCERIN",
+      "unii": "913VR40115"
+    }
+  ]
+}
