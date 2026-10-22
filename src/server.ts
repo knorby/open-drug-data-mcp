@@ -1,8 +1,6 @@
 import { McpServer } from "@modelcontextprotocol/server";
 import { SERVER_NAME, SERVER_VERSION } from "./constants.js";
-import { registerSummarizePrompt } from "./prompts/summarize.js";
 import { registerInfoResource } from "./resources/info.js";
-import { registerSearchItemsTool } from "./tools/example-api.js";
 import { registerPingTool } from "./tools/ping.js";
 
 /**
@@ -16,13 +14,13 @@ import { registerPingTool } from "./tools/ping.js";
  * Per-connection state (an API client holding credentials, for example) belongs
  * in here too — `serveStdio` calls the factory once per connection.
  */
+
+/** Builds the server and registers every tool, resource, and prompt. */
 export function createServer(): McpServer {
   const server = new McpServer({ name: SERVER_NAME, version: SERVER_VERSION });
 
   registerPingTool(server);
-  registerSearchItemsTool(server);
   registerInfoResource(server);
-  registerSummarizePrompt(server);
 
   return server;
 }

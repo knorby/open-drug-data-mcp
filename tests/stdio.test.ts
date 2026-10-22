@@ -37,10 +37,10 @@ describe.skipIf(!distExists)("stdio entrypoint", () => {
     );
 
     const { tools } = await client.listTools();
-    expect(tools.map((tool) => tool.name)).toContain("example_ping");
+    expect(tools.map((tool) => tool.name)).toContain("drugdata_ping");
 
     const result = await client.callTool({
-      name: "example_ping",
+      name: "drugdata_ping",
       arguments: {},
     });
     expect(result.structuredContent).toMatchObject({ ok: true });
