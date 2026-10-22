@@ -9,18 +9,20 @@ import type {
 import { type CosingBridges, cosingBridges } from "../cosing.js";
 import { type DrugCentralBridges, dcBridges } from "../drugcentral.js";
 import { type DsldBridges, dsldBridges } from "../dsld.js";
-import { type IkdBridges, ikdBridges } from "../inkeedecoder.js";
+import {
+  type IkdBridges,
+  identifierList,
+  ikdBridges,
+} from "../inkeedecoder.js";
 import { type NlmBridges, nlmBridges } from "../nlm.js";
 import {
+  ingredientKey,
   type OpenFdaBridges,
   type OpenFdaSubstanceHit,
   openfdaBridges,
+  splIngredientRefs,
 } from "../openfda.js";
-import {
-  dailyMedLabelUrl,
-  parseSplIngredients,
-  type SplIngredient,
-} from "./spl-ingredients.js";
+import { dailyMedLabelUrl, parseSplIngredients } from "./spl-ingredients.js";
 import { effectiveUnii } from "./unii.js";
 
 /**
@@ -97,6 +99,12 @@ export interface ProductResolution {
   links: SourceLink[];
   candidates: CandidateSet[];
   ingredients: IngredientRef[];
+  /**
+   * Graphs for a **prefix** of {@link ingredients}, in the same order, when
+   * `resolveIngredients` was requested. At most 20 ingredient graphs are
+   * built; the briefed result shape has no truncation flag, so the full
+   * `ingredients[]` list remains the authoritative row set.
+   */
   graphs?: IdentityGraph[];
 }
 
@@ -260,21 +268,11 @@ function drugCentralRef(
   };
 }
 
-/** Splits a CosIng panel CAS/EC string into identifier entries. */
-function panelIdentifiers(value: string | undefined): string[] {
-  if (value === undefined) return [];
-  return sortedValues(
-    value
-      .split(/[,;]/)
-      .map((part) => part.trim())
-      .filter((part) => part.length > 0),
-  );
-}
-
 /** The slug INKEEDecoder uses for an ingredient name, as a best-effort guess. */
 function slugGuess(name: string): string {
   return name
     .normalize("NFKD")
+    .replace(/\p{M}+/gu, "")
     .toLowerCase()
     .replace(/[^\p{L}\p{N}]+/gu, "-")
     .replace(/^-+/, "")
@@ -292,6 +290,8 @@ interface ChainState {
   candidates: CandidateSet[];
   identifiers: IngredientIdentifiers[];
   openfdaUnii: string | undefined;
+  /** The normalized UNII/CAS value openFDA's direct probe already used. */
+  directProbe: string | undefined;
   inputUnii: string | undefined;
   nlmRxcui: string | undefined;
   linked: Set<ChainStepId>;
@@ -376,9 +376,10 @@ function applyLinked(
   applySubject(
     state,
     outcome.name ??
-      (outcome.ref.source.database === "DrugCentral"
-        ? undefined
-        : outcome.ref.name),
+      (outcome.ref.source.database === "openFDA" ||
+      outcome.ref.source.database === "CosIng"
+        ? outcome.ref.name
+        : undefined),
     outcome.inciName ?? outcome.ref.inciName,
   );
   if (
@@ -409,11 +410,31 @@ function applyCandidates(
 /** Runs the openFDA step: direct UNII/CAS first, then the name crosswalk. */
 async function openfdaStep(state: ChainState): Promise<StepOutcome> {
   const { input } = state;
-  const direct = input.unii
-    ? await state.deps.openfda.substanceByUnii(input.unii, state.signal)
-    : input.cas
-      ? await state.deps.openfda.substanceByCas(input.cas, state.signal)
-      : null;
+  const probe =
+    input.unii !== undefined
+      ? {
+          key: `unii:${input.unii.trim().toUpperCase()}`,
+          run: () =>
+            state.deps.openfda.substanceByUnii(
+              input.unii as string,
+              state.signal,
+            ),
+        }
+      : input.cas !== undefined
+        ? {
+            key: `cas:${input.cas.trim()}`,
+            run: () =>
+              state.deps.openfda.substanceByCas(
+                input.cas as string,
+                state.signal,
+              ),
+          }
+        : undefined;
+  let direct: IngredientRef | null = null;
+  if (probe !== undefined && state.directProbe !== probe.key) {
+    state.directProbe = probe.key;
+    direct = await probe.run();
+  }
   if (direct !== null) {
     return {
       status: "linked",
@@ -465,24 +486,30 @@ async function cosingStep(state: ChainState): Promise<StepOutcome> {
   const cas = nonEmpty(input.cas);
   if (cas !== undefined) {
     const hits = await state.deps.cosing.byCas(cas, state.signal);
-    if (hits.length > 0) {
-      if (!confidentCosing(hits)) {
-        return {
-          status: "candidates",
-          database: "CosIng",
-          matchedVia: "cas",
-          reason: "multiple-cas-matches",
-          options: hits.map((hit) => hit.ingredient),
-        };
-      }
-      const top = hits[0] as (typeof hits)[number];
+    // CosIng's CAS query is a wildcard/substring search and reports no exact
+    // flag, so only a record that actually carries this CAS is a match.
+    const exact = hits.filter((hit) =>
+      (hit.ingredient.identifiers.cas ?? []).some(
+        (value) => value.trim() === cas,
+      ),
+    );
+    if (exact.length === 0) return { status: "none" };
+    if (exact.length > 1) {
       return {
-        status: "linked",
-        ref: top.ingredient,
+        status: "candidates",
+        database: "CosIng",
         matchedVia: "cas",
-        confidence: "direct",
+        reason: "multiple-cas-matches",
+        options: exact.map((hit) => hit.ingredient),
       };
     }
+    const top = exact[0] as (typeof exact)[number];
+    return {
+      status: "linked",
+      ref: top.ingredient,
+      matchedVia: "cas",
+      confidence: "direct",
+    };
   }
 
   const hint = input.inciName ?? state.subject.inciName ?? state.subject.name;
@@ -505,11 +532,19 @@ async function cosingStep(state: ChainState): Promise<StepOutcome> {
     status: "linked",
     ref: top.ingredient,
     matchedVia: "inci",
-    confidence: input.inciName !== undefined ? "direct" : "derived",
+    confidence:
+      top.matchedOn === "inciName" && top.exact ? "direct" : "derived",
   };
 }
 
-/** Runs the RxNorm step: a direct RxCUI, or the effective UNII crosswalk. */
+/**
+ * Runs the RxNorm step from identifiers only: a direct RxCUI, or the
+ * effective UNII crosswalk.
+ *
+ * Divergence from ritualog: its RxNorm name fallback is deliberately not
+ * ported in v1. Name-based RxNorm hits were review-only there, and this chain
+ * does not turn a name into a confident RxNorm link.
+ */
 async function nlmStep(state: ChainState): Promise<StepOutcome> {
   const direct = nonEmpty(state.input.rxcui);
   if (direct !== undefined) {
@@ -869,8 +904,8 @@ async function terminalCandidates(
   }
   if (item === null || item === undefined) return;
 
-  const cas = panelIdentifiers(item.cosing?.cas);
-  const ec = panelIdentifiers(item.cosing?.ec);
+  const cas = sortedValues(identifierList(item.cosing?.cas));
+  const ec = sortedValues(identifierList(item.cosing?.ec));
   const knownCas = new Set(
     state.identifiers.flatMap((patch) => patch.cas ?? []),
   );
@@ -932,6 +967,7 @@ async function resolveIngredientGraph(
     candidates: [],
     identifiers: [],
     openfdaUnii: undefined,
+    directProbe: undefined,
     inputUnii,
     nlmRxcui: undefined,
     linked: new Set(),
@@ -965,11 +1001,6 @@ function isProductInput(input: ResolveInput): boolean {
   );
 }
 
-/** Normalizes a value for ingredient-name strength matching. */
-function ingredientKey(value: string): string {
-  return value.toLowerCase().replace(/[^a-z0-9]/g, "");
-}
-
 /** Directory strengths keyed by normalized ingredient name. */
 function strengthsByIngredient(
   ingredients: readonly IngredientRef[],
@@ -981,34 +1012,6 @@ function strengthsByIngredient(
     }
   }
   return strengths;
-}
-
-/** Maps parsed SPL rows, filling a missing strength from the directory. */
-function splRefs(
-  entries: readonly SplIngredient[],
-  setid: string,
-  retrievedAt: string,
-  strengths: ReadonlyMap<string, string>,
-): IngredientRef[] {
-  return entries.map((entry) => {
-    const strength = entry.strength ?? strengths.get(ingredientKey(entry.name));
-    const role = entry.role === "unknown" ? undefined : entry.role;
-    return {
-      name: entry.name,
-      ...(role !== undefined ? { role } : {}),
-      ...(strength !== undefined ? { quantity: strength } : {}),
-      ...(entry.form !== undefined ? { form: entry.form } : {}),
-      identifiers: {
-        ...(entry.unii !== undefined ? { unii: entry.unii } : {}),
-      },
-      source: {
-        database: "DailyMed",
-        id: setid,
-        url: dailyMedLabelUrl(setid),
-        retrievedAt,
-      },
-    };
-  });
 }
 
 /** Reads one SPL label's ingredient rows, empty on any failure. */
@@ -1027,7 +1030,7 @@ async function splIngredients(
   }
   const entries = parseSplIngredients(xml);
   if (entries.length === 0) return [];
-  return splRefs(
+  return splIngredientRefs(
     entries,
     setid,
     retrievedAt,
@@ -1102,7 +1105,11 @@ function dailyMedLink(
   };
 }
 
-/** Runs per-ingredient graphs for a product's discovered ingredients. */
+/**
+ * Runs per-ingredient graphs for the first {@link MAX_INGREDIENT_GRAPHS}
+ * ingredients. The returned array is a prefix of the product's ingredient
+ * rows, never a claim of complete per-ingredient coverage.
+ */
 async function ingredientGraphs(
   ingredients: readonly IngredientRef[],
   opts: ResolveOptions,

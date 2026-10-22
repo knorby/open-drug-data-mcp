@@ -933,7 +933,7 @@ function directoryIngredients(
 }
 
 /** Normalized ingredient key for strength matching across SPL and the NDC directory. */
-function ingredientKey(value: string): string {
+export function ingredientKey(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9]/g, "");
 }
 

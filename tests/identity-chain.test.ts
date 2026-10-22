@@ -335,7 +335,7 @@ describe("identity chain (a): confident cross-source links", () => {
     ]);
     expect(graph.links.map((link) => link.confidence)).toEqual([
       "direct",
-      "derived",
+      "direct",
       "direct",
       "direct",
     ]);
@@ -390,6 +390,13 @@ describe("identity chain (a): confident cross-source links", () => {
     );
     expect(graph.identifiers.rxcui).toEqual(["1191"]);
     expect(graph.identifiers.structId).toBe(74);
+    expect(graph.subject.name).toBe("aspirin");
+  });
+
+  it("does not adopt an RxCUI as the subject name", async () => {
+    const graph = await resolveIngredient({ rxcui: "1191" });
+    expect(graph.subject).toEqual({});
+    expect(graph.links[0]?.database).toBe("RxNorm");
   });
 });
 
@@ -718,14 +725,14 @@ describe("two-pass invalidation", () => {
       ],
     );
     const graph = await resolveIngredient(
-      { cas: "69-72-7" },
+      { cas: "50-78-2" },
       {
         openfda: { substanceByCas: byCas, substancesByName },
         cosing: { byCas: async () => [cosingHit("SALICYLIC ACID")] },
       },
     );
 
-    expect(byCas).toHaveBeenCalledTimes(2);
+    expect(byCas).toHaveBeenCalledTimes(1);
     expect(substancesByName).toHaveBeenCalledWith("SALICYLIC ACID", undefined);
     expect(graph.links.map((link) => link.database)).toEqual([
       "openFDA",
@@ -939,6 +946,55 @@ describe("edge paths", () => {
       },
     );
     expect(inciGraph.links[0]?.confidence).toBe("direct");
+  });
+
+  it("ignores a single CosIng CAS hit that does not carry the input CAS", async () => {
+    const byInci = vi.fn(async () => [cosingHit("OTHER")]);
+    const wrong = cosingHit("OTHER", "casNo", false);
+    wrong.ingredient.identifiers.cas = ["150-78-2"];
+    const graph = await resolveIngredient(
+      { cas: "50-78-2" },
+      { cosing: { byCas: async () => [wrong], byInci } },
+    );
+    expect(graph.links).toEqual([]);
+    expect(graph.candidates).toEqual([]);
+    expect(graph.identifiers.cas).toEqual(["50-78-2"]);
+    expect(byInci).not.toHaveBeenCalled();
+  });
+
+  it("ignores a CosIng CAS hit with no CAS identifiers", async () => {
+    const noCas = cosingHit("NO CAS", "casNo", false);
+    delete noCas.ingredient.identifiers.cas;
+    const graph = await resolveIngredient(
+      { cas: "50-78-2" },
+      { cosing: { byCas: async () => [noCas] } },
+    );
+    expect(graph.links).toEqual([]);
+    expect(graph.candidates).toEqual([]);
+  });
+
+  it("marks a single fuzzy INCI hit as derived rather than direct", async () => {
+    const graph = await resolveIngredient(
+      { inciName: "NIACINAMIDE" },
+      {
+        cosing: {
+          byInci: async () => [cosingHit("NIACINAMIDE", "text", false)],
+        },
+      },
+    );
+    expect(graph.links[0]?.matchedVia).toBe("inci");
+    expect(graph.links[0]?.confidence).toBe("derived");
+  });
+
+  it("strips combining marks before guessing an INKEEDecoder slug", async () => {
+    const getIngredient = vi.fn(async () =>
+      ikdIngredient({ slug: "tocopherol", name: "Tocopherol" }),
+    );
+    await resolveIngredient(
+      { substanceName: "Tocophérol" },
+      { inkeedecoder: { getIngredient } },
+    );
+    expect(getIngredient).toHaveBeenCalledWith("tocopherol", undefined);
   });
 
   it("falls back to the rxcui as a candidate option name", async () => {
@@ -1319,7 +1375,7 @@ describe("edge paths", () => {
     expect(new Set(graph.identifiers.cas)).toEqual(new Set(["50-78-2"]));
   });
 
-  it("continues to the INCI search when a CAS search is empty", async () => {
+  it("returns a zero match when the CAS search is empty", async () => {
     const graph = await resolveIngredient(
       { cas: "00-00-0" },
       {

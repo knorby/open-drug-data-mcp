@@ -104,7 +104,7 @@ function sourceOf(id: string, url: string, retrievedAt: string): SourceRef {
 }
 
 /** Splits a CosIng CAS/EC value into identifier entries. */
-function identifierList(value: string | undefined): string[] {
+export function identifierList(value: string | undefined): string[] {
   if (value === undefined) return [];
   const parts = value
     .split(IDENTIFIER_SEPARATOR)
