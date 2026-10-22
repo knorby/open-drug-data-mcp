@@ -12,7 +12,9 @@ import { SERVER_NAME, SERVER_VERSION } from "./constants.js";
 import { logError, logInfo } from "./lib/log.js";
 import { createServer } from "./server.js";
 
-const handle = serveStdio(createServer, {
+// `serveStdio` hands its factory a per-request context. This server keeps no
+// cross-call state, so the wrapper ignores it and builds a fresh instance.
+const handle = serveStdio(() => createServer(), {
   onerror: (error) => logError("stdio transport error", error),
 });
 

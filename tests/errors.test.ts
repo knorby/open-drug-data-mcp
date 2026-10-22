@@ -1,5 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { sanitizeSourceText, toUserMessage } from "../src/lib/errors.js";
+import {
+  SourceRoutingError,
+  sanitizeSourceText,
+  toUserMessage,
+} from "../src/lib/errors.js";
 
 /** An `Error` carrying an HTTP status the way the clients' API errors do. */
 function statusError(status: unknown, message = "upstream failure"): Error {
@@ -93,6 +97,15 @@ describe("toUserMessage", () => {
     const message = toUserMessage(new Error("fetch failed"), "Search");
 
     expect(message).toContain("could not reach the upstream service");
+  });
+
+  it("returns a routing error's actionable message verbatim", () => {
+    const message =
+      'Source "DrugCentral" is disabled for this process. Its adapter id is listed in DRUGDATA_DISABLED_SOURCES; remove it there to use this source.';
+
+    expect(toUserMessage(new SourceRoutingError(message), "Lookup")).toBe(
+      message,
+    );
   });
 
   it("falls back generically for a non-Error value and logs it", () => {

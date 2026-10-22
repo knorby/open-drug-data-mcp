@@ -89,6 +89,10 @@ export function sanitizeSourceText(text: string): string {
 }
 
 export function toUserMessage(error: unknown, context: string): string {
+  // A routing error already carries an actionable, database-only message; the
+  // registry wrote it for the model, so pass it through untouched.
+  if (error instanceof SourceRoutingError) return error.message;
+
   const raw = error instanceof Error ? error.message : String(error);
   const status = readStatus(error, raw);
   const name = errorName(error);

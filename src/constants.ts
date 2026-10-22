@@ -18,6 +18,17 @@ export const SERVER_NAME = "open-drug-data-mcp";
 export const SERVER_VERSION = readPackageVersion();
 
 /**
+ * The one-line disclaimer every agent-facing discovery surface carries.
+ *
+ * It appears verbatim in the server `instructions` (handed to a host at
+ * initialization), the `server://info` resource, and the research prompt, so a
+ * model sees it whichever path it reads first. The full boilerplate and source
+ * terms live in `docs/SOURCES.md`.
+ */
+export const DISCLAIMER =
+  "Informational/research use only — not medical advice; see docs/SOURCES.md for source terms.";
+
+/**
  * Maximum characters a tool response may contain before it is bounded — the
  * text block by truncation, and `structuredContent` by `boundStructured`.
  */
