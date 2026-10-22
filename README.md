@@ -45,6 +45,30 @@ The loop is **search → resolve → get**. Every search and resolution ends wit
 
 ## Quick start
 
+**Not yet published.** The manifest is still `0.0.0` and the release workflow
+is staged, so install from a local checkout for now. The `npx` configuration
+is the intended setup once the first release is published.
+
+### From a local checkout (current option)
+
+```bash
+npm install
+npm run build
+```
+
+```json
+{
+  "mcpServers": {
+    "open-drug-data": {
+      "command": "node",
+      "args": ["/absolute/path/to/open-drug-data-mcp/dist/index.js"]
+    }
+  }
+}
+```
+
+### After the first release
+
 Add the server to an MCP host. Most hosts accept a JSON block shaped like
 this (see your host's documentation if it nests servers under a different
 key):
@@ -67,24 +91,6 @@ key):
 Both keys are optional. Omit the `env` block entirely if you have neither;
 keyless access works at a lower upstream rate limit.
 
-To run a local checkout instead of the published package:
-
-```bash
-npm install
-npm run build
-```
-
-```json
-{
-  "mcpServers": {
-    "open-drug-data": {
-      "command": "node",
-      "args": ["/absolute/path/to/open-drug-data-mcp/dist/index.js"]
-    }
-  }
-}
-```
-
 Run `drugdata_ping` after connecting. It reports the server version, which
 sources are enabled, and whether each source's optional key is configured —
 never a key value.
@@ -95,12 +101,13 @@ never a key value.
 | --- | --- | --- |
 | `OPENFDA_API_KEY` | unset | Optional openFDA key. Raises the upstream rate limit; keyless requests work. |
 | `DSLD_API_KEY` | unset | Optional NIH DSLD key (from data.gov). Raises the limit from 1,000 to 10,000 requests per hour. Keyless requests work. |
-| `DRUGDATA_TIMEOUT_MS` | `30000` | Per-request upstream timeout in milliseconds. |
+| `DRUGDATA_TIMEOUT_MS` | `30000` | Per-request upstream timeout in milliseconds. Must be a positive integer. |
 | `DRUGDATA_DISABLED_SOURCES` | unset | Comma-separated adapter ids to switch off: `openfda`, `cosing`, `nlm`, `drugcentral`, `dsld`, `inkeedecoder`. `nlm` covers both RxNorm and DailyMed. Unknown ids are a configuration error. |
 
 Configuration is read lazily when a tool runs, never at startup. A
 misconfigured server still answers `tools/list` and explains the problem
-through a tool result. Blank values count as unset.
+through a tool result. Blank API-key values count as unset;
+`DRUGDATA_TIMEOUT_MS` must be a positive integer.
 
 ## Tools
 
@@ -156,9 +163,9 @@ abridged.
 - CosIng `100042` — matched via inci (direct)
 - RxNorm `1191` — matched via unii (direct)
 ## Candidates (2)
-## DSLD — matched via ingredient-name (name-match)
+### DSLD — matched via ingredient-name (name-match)
 - Acetylsalicylic acid — https://dsld.od.nih.gov/ingredient/Acetylsalicylic%20acid
-## INKEEDecoder — matched via slug (name-match)
+### INKEEDecoder — matched via slug (name-match)
 - Acetylsalicylic Acid · slug: acetylsalicylic-acid — https://inkeedecoder.com/ingredients/acetylsalicylic-acid
 ## Confidence
 - 3 direct · 0 derived · 2 candidate sets

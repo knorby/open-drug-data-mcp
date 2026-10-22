@@ -221,7 +221,7 @@ the terms and conditions of license." The linked license is **CC BY-SA 4.0**
 (<https://creativecommons.org/licenses/by-sa/4.0/legalcode>): attribution and
 share-alike apply to redistributed or adapted DrugCentral data.
 
-**Requested citation:** the site links
+**Requested citation:** the About page links
 <https://doi.org/10.1093/nar/gkac1085>. The paper is: Avram S, Wilson TB,
 Curpan R, Halip L, Borota A, Bora A, Bologa CG, Holmes J, Knockel J, Yang JJ,
 Oprea TI. DrugCentral 2023 extends human clinical data and integrates
@@ -278,7 +278,7 @@ can be incomplete or inaccurate, and inclusion is not an endorsement.
 | **Coverage** | Cosmetic product pages with INCI ingredient lists, and ingredient pages with functions, irritancy and comedogenicity ratings, editorial write-ups, references, and an optional CosIng CAS/EC/IUPAC panel. Editorial content, not a regulatory database. |
 | **Identifiers** | Product slug, ingredient slug, INCI name; CAS and EC numbers from the CosIng panel. |
 | **Search types** | Products: name, brand (a name search — the site has no brand entity), ingredient. Ingredients: name, INCI. |
-| **Lookups** | `drugdata_get_product` (`inkeedecoder`) by product slug or URL; `drugdata_get_ingredient` (`inkeedecoder`) by ingredient slug or URL. `include_cosing_panel` adds one upstream request. |
+| **Lookups** | `drugdata_get_product` (`inkeedecoder`) by product slug or URL; `drugdata_get_ingredient` (`inkeedecoder`) by ingredient slug or URL. `include_cosing_panel` includes the CosIng CAS/EC/IUPAC panel in the response. |
 | **Update cadence** | Editorial and continuous; no published schedule. |
 
 **Terms verified 2026-10-22:** <https://inkeedecoder.com/termsofservice>. The
@@ -329,7 +329,7 @@ All pages below were fetched on **2026-10-22**.
 | RxNorm | <https://www.nlm.nih.gov/research/umls/rxnorm/docs/termsofservice.html> | Fetched. Public-domain normalized names/codes; requested statement and citation; UMLS license for full release. |
 | NLM (RxNorm, DailyMed) | <https://www.nlm.nih.gov/databases/download/terms_and_conditions.html> | Fetched. Acknowledgement, no endorsement, currency disclosure. |
 | DailyMed | <https://dailymed.nlm.nih.gov/dailymed/about-dailymed.cfm> | Fetched. Coverage and "in use" labeling caveats; no separate license terms. |
-| DrugCentral | <https://drugcentral.org/privacy> | Fetched. CC BY-SA 4.0; citation DOI. |
+| DrugCentral | <https://drugcentral.org/privacy> and <https://drugcentral.org/about> | Fetched. CC BY-SA 4.0 on `/privacy`; citation DOI 10.1093/nar/gkac1085 linked from `/about`. |
 | DSLD | <https://dsld.od.nih.gov/api-guide> | Fetched. CC0 1.0; source listing requested; suggested citation; rate limits. |
 | DSLD | <https://dsld.od.nih.gov/terms-and-conditions> | **Could not be verified:** the URL returned no content on 2026-10-22. Licensing was taken from the API guide instead. |
 | INKEEDecoder | <https://inkeedecoder.com/termsofservice> | Fetched. All rights reserved; no copying, republishing, derivative works, or commercial use; non-commercial personal use only. |
