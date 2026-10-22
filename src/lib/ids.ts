@@ -78,6 +78,24 @@ export function normalizeNdc(input: string): string | null {
 const UNII = /^[A-Za-z0-9]{10}$/;
 
 /**
+ * DailyMed SPL set ids are UUID-shaped: the label identity the DailyMed API
+ * keys on. The shape check only decides which lookup a caller means; an
+ * unassigned but well-formed id still reaches the upstream service.
+ */
+const SPL_SET_ID =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Whether a value has the shape of a DailyMed SPL set id.
+ *
+ * Set ids are case-insensitive; callers that need the canonical spelling
+ * lowercase a value after checking it.
+ */
+export function isSplSetId(value: string): boolean {
+  return SPL_SET_ID.test(value.trim());
+}
+
+/**
  * Whether a value has the shape of a UNII.
  *
  * This is a shape check, not a registry lookup: a well-formed but unassigned

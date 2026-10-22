@@ -1,18 +1,26 @@
 import type {
   NlmDrugsClient,
   RxApproximateMatch,
+  RxConcept,
   SplPage,
   SplSearch,
   SplSummary,
 } from "@knorby/nlm-drugs-client";
 import { getClients } from "../clients.js";
-import { isUnii, normalizeNdc } from "../lib/ids.js";
+import { isSplSetId, isUnii, normalizeNdc } from "../lib/ids.js";
 import type {
   IngredientIdentifiers,
   IngredientRef,
+  IngredientRole,
   ProductIdentifiers,
   ProductRef,
+  SourceRef,
 } from "../lib/schemas.js";
+import {
+  dailyMedLabelUrl,
+  parseSplLabel,
+  type SplIngredient,
+} from "./identity/spl.js";
 import type {
   IngredientGroup,
   IngredientSearchType,
@@ -585,6 +593,168 @@ function nlmFailure(
   );
 }
 
+/** The detail fields an NLM product lookup exposes. */
+export interface NlmProductDetails {
+  version?: string;
+  effectiveTime?: string;
+  dosageForm?: string;
+  labeler?: string;
+  tty?: string;
+  synonym?: string;
+}
+
+/** A full DailyMed or RxNorm product record in the unified vocabulary. */
+export interface NlmProductRecord {
+  product: ProductRef;
+  ingredients: IngredientRef[];
+  details: NlmProductDetails;
+  summary?: string;
+  labelIngredientsIncluded: boolean;
+}
+
+/** A not-found error the tool layer renders as an ordinary 404. */
+function nlmProductNotFound(database: string, id: string): Error {
+  return Object.assign(
+    new Error(`${database} has no product record for "${id}".`),
+    { status: 404 },
+  );
+}
+
+/** A DailyMed source ref for one SPL label. */
+function dailyMedSource(setid: string, retrievedAt: string): SourceRef {
+  return {
+    database: "DailyMed",
+    id: setid,
+    url: dailyMedLabelUrl(setid),
+    retrievedAt,
+  };
+}
+
+/** Maps parsed SPL ingredients to the unified ingredient vocabulary. */
+function splIngredientRefs(
+  entries: readonly SplIngredient[],
+  source: SourceRef,
+): IngredientRef[] {
+  return entries.map((entry) => {
+    const role: IngredientRole | undefined =
+      entry.role === "unknown" ? undefined : entry.role;
+    return {
+      name: entry.name,
+      ...(role !== undefined ? { role } : {}),
+      ...(entry.strength !== undefined ? { quantity: entry.strength } : {}),
+      ...(entry.form !== undefined ? { form: entry.form } : {}),
+      identifiers: {
+        ...(entry.unii !== undefined ? { unii: entry.unii } : {}),
+      },
+      source,
+    };
+  });
+}
+
+/** A DailyMed SPL product: identity from the XML plus its ingredient rows. */
+async function dailyMedProduct(
+  client: NlmDrugsClient,
+  setid: string,
+  retrievedAt: string,
+  signal: AbortSignal | undefined,
+): Promise<NlmProductRecord> {
+  let xml: string;
+  try {
+    xml = await client.dailyMed.getSplXml(setid, { signal });
+  } catch (error) {
+    throw nlmFailure("The DailyMed product lookup", "DailyMed", error);
+  }
+
+  const label = parseSplLabel(xml);
+  const source = dailyMedSource(setid, retrievedAt);
+  const ndc = unique(
+    label.ndcs
+      .map((value) => normalizeNdc(value))
+      .filter((value): value is string => value !== null),
+  );
+  const parts: string[] = [];
+  if (label.version !== undefined) parts.push(`SPL version ${label.version}`);
+  if (label.effectiveTime !== undefined) {
+    parts.push(`effective ${label.effectiveTime}`);
+  }
+  if (label.dosageForm !== undefined) parts.push(label.dosageForm);
+  if (label.labeler !== undefined) parts.push(`labeler ${label.labeler}`);
+  const summary = parts.length > 0 ? parts.join(" · ") : undefined;
+
+  const product: ProductRef = {
+    name: label.productName ?? setid,
+    category: "medication",
+    identifiers: {
+      splSetId: setid,
+      ...(ndc.length > 0 ? { ndc } : {}),
+    },
+    source,
+    ...(summary !== undefined ? { summary } : {}),
+  };
+
+  return {
+    product,
+    ingredients: splIngredientRefs(label.ingredients, source),
+    details: {
+      version: label.version,
+      effectiveTime: label.effectiveTime,
+      dosageForm: label.dosageForm,
+      labeler: label.labeler,
+    },
+    ...(summary !== undefined ? { summary } : {}),
+    labelIngredientsIncluded: true,
+  };
+}
+
+/** An RxNorm concept product: the concept plus its NDC crosswalk. */
+async function rxNormProduct(
+  client: NlmDrugsClient,
+  rxcui: string,
+  retrievedAt: string,
+  signal: AbortSignal | undefined,
+): Promise<NlmProductRecord> {
+  let concept: RxConcept | undefined;
+  try {
+    concept = await client.rxNorm.getConcept(rxcui, { signal });
+  } catch (error) {
+    throw nlmFailure("The RxNorm product lookup", "RxNorm", error);
+  }
+  if (concept === undefined) throw nlmProductNotFound("RxNorm", rxcui);
+
+  let ndc: string[];
+  try {
+    ndc = unique(await client.rxNorm.getNdcs(rxcui, { signal }));
+  } catch (error) {
+    throw nlmFailure("The RxNorm product lookup", "RxNorm", error);
+  }
+
+  const summary = `RxNorm term type ${concept.tty}`;
+  return {
+    product: {
+      name: concept.name,
+      category: "medication",
+      identifiers: {
+        rxcui: [rxcui],
+        ...(ndc.length > 0 ? { ndc } : {}),
+      },
+      source: {
+        database: "RxNorm",
+        id: rxcui,
+        url: rxNormUrl(rxcui),
+        retrievedAt,
+      },
+      summary,
+    },
+    ingredients: [],
+    details: {
+      tty: concept.tty,
+      synonym: concept.synonym,
+    },
+    summary,
+    labelIngredientsIncluded: false,
+  };
+}
+
 /**
  * Builds the NLM adapter.
  *
@@ -712,6 +882,32 @@ export function createNlmAdapter(client?: NlmDrugsClient): SourceAdapter {
       } catch (error) {
         throw nlmFailure("The ingredient search", "RxNorm", error);
       }
+    },
+
+    async getProduct(
+      id: string,
+      _opts: Record<string, unknown>,
+      signal?: AbortSignal,
+    ): Promise<NlmProductRecord> {
+      const trimmed = id.trim();
+      const retrievedAt = new Date().toISOString();
+      const nlm = clients();
+
+      if (isSplSetId(trimmed)) {
+        return await dailyMedProduct(
+          nlm,
+          trimmed.toLowerCase(),
+          retrievedAt,
+          signal,
+        );
+      }
+      if (RXCUI.test(trimmed)) {
+        return await rxNormProduct(nlm, trimmed, retrievedAt, signal);
+      }
+
+      throw new Error(
+        `Expected a DailyMed SPL set id or an RxNorm rxcui, but got "${trimmed}". Pass identifiers.splSetId or identifiers.rxcui from an NLM result; use drugdata_search_products to find a label or drugdata_search_ingredients to find a concept.`,
+      );
     },
   };
 }

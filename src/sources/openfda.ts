@@ -1,5 +1,6 @@
 import {
   and,
+  type DrugLabel,
   type DrugNdc,
   exact,
   field,
@@ -12,13 +13,22 @@ import {
   type UniiRecord,
 } from "@knorby/openfda-client";
 import { getClients } from "../clients.js";
+import { isSplSetId } from "../lib/ids.js";
 import type {
   IngredientIdentifiers,
   IngredientRef,
+  IngredientRole,
   ProductIdentifiers,
   ProductRef,
+  SourceRef,
 } from "../lib/schemas.js";
 import { parseBarcodeInput } from "./identity/barcode.js";
+import {
+  dailyMedLabelUrl,
+  parseSplIngredients,
+  type SplIngredient,
+} from "./identity/spl.js";
+import { type NlmBridges, nlmBridges } from "./nlm.js";
 import type {
   IngredientGroup,
   IngredientSearchType,
@@ -95,6 +105,11 @@ function nonEmpty(value: string | undefined): string | undefined {
   return value !== undefined && value.trim().length > 0 ? value : undefined;
 }
 
+/** Deduplicates values without altering their spelling or order. */
+function unique<T>(values: readonly T[]): T[] {
+  return [...new Set(values)];
+}
+
 /** Whether a page came back full (the caller may request another page). */
 function hasMore(count: number, pageSize: number): boolean {
   return count === pageSize;
@@ -161,7 +176,7 @@ function currentListingClause(clause: string): string {
  * two-segment product NDC is already the product-level spelling and needs no
  * expansion.
  */
-function ndcQueryCandidates(raw: string): {
+export function ndcQueryCandidates(raw: string): {
   packageNdc: string[];
   productNdc: string[];
 } {
@@ -612,13 +627,222 @@ async function crosswalkIngredients(
   };
 }
 
+/** The detail fields an openFDA product lookup exposes. */
+export interface OpenFdaProductDetails {
+  source: "ndc" | "label";
+  labeler?: string;
+  marketingCategory?: string;
+  applicationNumber?: string;
+  productType?: string;
+  splSetId?: string;
+  effectiveTime?: string;
+  version?: string;
+}
+
+/** A full openFDA product record in the unified vocabulary. */
+export interface OpenFdaProductRecord {
+  product: ProductRef;
+  ingredients: IngredientRef[];
+  details: OpenFdaProductDetails;
+  summary?: string;
+  labelIngredientsIncluded: boolean;
+}
+
+/** A not-found error the tool layer renders as an ordinary 404. */
+function openFdaNotFound(id: string): Error {
+  return Object.assign(
+    new Error(`No openFDA product record was found for "${id}".`),
+    { status: 404 },
+  );
+}
+
+/** Deep link to an FDA label record by set id. */
+function openFdaLabelUrl(setid: string): string {
+  return `https://api.fda.gov/drug/label.json?search=${encodeURIComponent(
+    `set_id:"${setid}"`,
+  )}&limit=1`;
+}
+
+/**
+ * Runs one openFDA product query and returns its first record.
+ *
+ * A zero-match 404 is a normal "no record", not a failure; anything else is
+ * reworded to name only openFDA.
+ */
+async function firstNdcRecord(
+  client: OpenFdaClient,
+  search: string,
+): Promise<DrugNdc | undefined> {
+  try {
+    const response = await client.drug.ndc.search({ search, limit: 5 });
+    return response.results[0];
+  } catch (error) {
+    if (error instanceof OpenFdaNotFoundError) return undefined;
+    throw openFdaFailure("The openFDA product lookup", error);
+  }
+}
+
+/** Runs one FDA label query and returns its first record. */
+async function firstLabelRecord(
+  client: OpenFdaClient,
+  search: string,
+): Promise<DrugLabel | undefined> {
+  try {
+    const response = await client.drug.label.search({ search, limit: 1 });
+    return response.results[0];
+  } catch (error) {
+    if (error instanceof OpenFdaNotFoundError) return undefined;
+    throw openFdaFailure("The openFDA label lookup", error);
+  }
+}
+
+/** A label's product ref, keyed by its SPL set id. */
+function labelProductRef(
+  label: DrugLabel,
+  requestedSetid: string,
+  retrievedAt: string,
+): ProductRef {
+  const openfda = label.openfda;
+  const setid = nonEmpty(label.set_id) ?? requestedSetid;
+  const name =
+    nonEmpty(openfda?.brand_name?.[0]) ??
+    nonEmpty(openfda?.generic_name?.[0]) ??
+    `openFDA label ${setid}`;
+  const brand = nonEmpty(openfda?.manufacturer_name?.[0]);
+  const ndc = unique(
+    [...(openfda?.product_ndc ?? []), ...(openfda?.package_ndc ?? [])]
+      .map((value) => nonEmpty(value))
+      .filter((value): value is string => value !== undefined),
+  );
+  const rxcui = openfda?.rxcui ?? [];
+  const upc = openfda?.upc ?? [];
+  const effectiveTime = nonEmpty(label.effective_time);
+  const version = nonEmpty(label.version);
+  const parts: string[] = [];
+  if (effectiveTime !== undefined) {
+    parts.push(`FDA label effective ${effectiveTime}`);
+  }
+  if (version !== undefined) parts.push(`version ${version}`);
+
+  return {
+    name,
+    ...(brand !== undefined ? { brand } : {}),
+    category: "medication",
+    identifiers: {
+      ...(ndc.length > 0 ? { ndc } : {}),
+      ...(rxcui.length > 0 ? { rxcui } : {}),
+      ...(upc.length > 0 ? { upc } : {}),
+      splSetId: setid,
+    },
+    source: {
+      database: "openFDA",
+      id: setid,
+      url: openFdaLabelUrl(setid),
+      retrievedAt,
+    },
+    ...(parts.length > 0 ? { summary: parts.join(" · ") } : {}),
+  };
+}
+
+/** Maps directory active ingredients to label-style ingredient refs. */
+function directoryIngredients(
+  raw: DrugNdc,
+  source: SourceRef,
+): IngredientRef[] {
+  const items: IngredientRef[] = [];
+  for (const ingredient of raw.active_ingredients ?? []) {
+    const name = nonEmpty(ingredient.name);
+    if (name === undefined) continue;
+    const strength = nonEmpty(ingredient.strength);
+    items.push({
+      name,
+      role: "active",
+      ...(strength !== undefined ? { quantity: strength } : {}),
+      identifiers: {},
+      source,
+    });
+  }
+  return items;
+}
+
+/** Normalized ingredient key for strength matching across SPL and the NDC directory. */
+function ingredientKey(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+/** Strength text from the NDC directory, keyed by normalized ingredient name. */
+function directoryStrengths(raw: DrugNdc): Map<string, string> {
+  const strengths = new Map<string, string>();
+  for (const ingredient of raw.active_ingredients ?? []) {
+    const name = nonEmpty(ingredient.name);
+    const strength = nonEmpty(ingredient.strength);
+    if (name !== undefined && strength !== undefined) {
+      strengths.set(ingredientKey(name), strength);
+    }
+  }
+  return strengths;
+}
+
+/** Maps parsed SPL ingredients to ingredient refs, crediting DailyMed. */
+function splIngredients(
+  entries: readonly SplIngredient[],
+  setid: string,
+  retrievedAt: string,
+  strengths: ReadonlyMap<string, string>,
+): IngredientRef[] {
+  const source: SourceRef = {
+    database: "DailyMed",
+    id: setid,
+    url: dailyMedLabelUrl(setid),
+    retrievedAt,
+  };
+  return entries.map((entry) => {
+    const directoryStrength = strengths.get(ingredientKey(entry.name));
+    const strength = entry.strength ?? directoryStrength;
+    const role: IngredientRole | undefined =
+      entry.role === "unknown" ? undefined : entry.role;
+    return {
+      name: entry.name,
+      ...(role !== undefined ? { role } : {}),
+      ...(strength !== undefined ? { quantity: strength } : {}),
+      ...(entry.form !== undefined ? { form: entry.form } : {}),
+      identifiers: {
+        ...(entry.unii !== undefined ? { unii: entry.unii } : {}),
+      },
+      source,
+    };
+  });
+}
+
+/** The record shape shared by both openFDA product paths. */
+function openFdaRecord(
+  product: ProductRef,
+  ingredients: IngredientRef[],
+  details: OpenFdaProductDetails,
+  summary: string | undefined,
+  labelIngredientsIncluded: boolean,
+): OpenFdaProductRecord {
+  return {
+    product,
+    ingredients,
+    details,
+    ...(summary !== undefined ? { summary } : {}),
+    labelIngredientsIncluded,
+  };
+}
+
 /**
  * Builds the openFDA adapter.
  *
  * @param client Optional client override. Tests inject one backed by fixtures;
  *   production falls back to the process-wide shared openFDA client.
+ * @param bridges SPL bridge used by `include_label_ingredients`; defaults to
+ *   the shared NLM bridge and is injectable for tests.
  */
-export function createOpenFdaAdapter(client?: OpenFdaClient): SourceAdapter {
+export function createOpenFdaAdapter(
+  client?: OpenFdaClient,
+  bridges: Pick<NlmBridges, "getSplXml"> = nlmBridges,
+): SourceAdapter {
   const clients = () => client ?? getClients().openfda;
 
   const productSearchTypes: ProductSearchType[] = [
@@ -634,6 +858,175 @@ export function createOpenFdaAdapter(client?: OpenFdaClient): SourceAdapter {
     "unii",
     "cas",
   ];
+
+  /** Parses SPL ingredients for a label-backed product, when requested. */
+  async function labelIngredients(
+    setid: string,
+    retrievedAt: string,
+    strengths: ReadonlyMap<string, string>,
+  ): Promise<IngredientRef[]> {
+    const xml = await bridges.getSplXml(setid);
+    return splIngredients(
+      parseSplIngredients(xml),
+      setid,
+      retrievedAt,
+      strengths,
+    );
+  }
+
+  /** Builds a record from a directory record, optionally enriching with SPL. */
+  async function ndcProductRecord(
+    raw: DrugNdc,
+    product: ProductRef,
+    includeLabelIngredients: boolean,
+    retrievedAt: string,
+    knownSetid?: string,
+  ): Promise<OpenFdaProductRecord> {
+    let setid = knownSetid ?? nonEmpty(raw.openfda?.spl_set_id?.[0]);
+    let ingredients = directoryIngredients(raw, product.source);
+    let included = false;
+
+    if (includeLabelIngredients) {
+      if (setid === undefined) {
+        const label = await firstLabelRecord(
+          clients(),
+          field("openfda.product_ndc", product.source.id),
+        );
+        setid = nonEmpty(label?.set_id);
+      }
+      if (setid !== undefined) {
+        const parsed = await labelIngredients(
+          setid,
+          retrievedAt,
+          directoryStrengths(raw),
+        );
+        if (parsed.length > 0) ingredients = parsed;
+        included = true;
+      }
+    }
+
+    const details: OpenFdaProductDetails = {
+      source: "ndc",
+      labeler: nonEmpty(raw.labeler_name),
+      marketingCategory: nonEmpty(raw.marketing_category),
+      applicationNumber: nonEmpty(raw.application_number),
+      ...(setid !== undefined ? { splSetId: setid } : {}),
+    };
+
+    return openFdaRecord(
+      product,
+      ingredients,
+      details,
+      productSummary(raw),
+      included,
+    );
+  }
+
+  /** Builds a record from a drug label record. */
+  async function labelProductRecord(
+    label: DrugLabel,
+    setid: string,
+    includeLabelIngredients: boolean,
+    retrievedAt: string,
+  ): Promise<OpenFdaProductRecord> {
+    const product = labelProductRef(label, setid, retrievedAt);
+    let ingredients: IngredientRef[] = [];
+    let included = false;
+    if (includeLabelIngredients) {
+      ingredients = await labelIngredients(setid, retrievedAt, new Map());
+      included = true;
+    }
+
+    const openfda = label.openfda;
+    const details: OpenFdaProductDetails = {
+      source: "label",
+      labeler: nonEmpty(openfda?.manufacturer_name?.[0]),
+      productType: nonEmpty(openfda?.product_type?.[0]),
+      applicationNumber: nonEmpty(openfda?.application_number?.[0]),
+      splSetId: setid,
+      effectiveTime: nonEmpty(label.effective_time),
+      version: nonEmpty(label.version),
+    };
+
+    return openFdaRecord(
+      product,
+      ingredients,
+      details,
+      product.summary,
+      included,
+    );
+  }
+
+  /** Resolves a set id through the NDC directory, then the label endpoint. */
+  async function productBySetid(
+    setid: string,
+    includeLabelIngredients: boolean,
+    retrievedAt: string,
+  ): Promise<OpenFdaProductRecord> {
+    const ndc = await firstNdcRecord(
+      clients(),
+      field("openfda.spl_set_id", setid),
+    );
+    if (ndc !== undefined) {
+      const base = mapProduct(ndc, retrievedAt);
+      if (base !== null) {
+        const product: ProductRef = {
+          ...base,
+          source: {
+            database: "openFDA",
+            id: setid,
+            url: openFdaLabelUrl(setid),
+            retrievedAt,
+          },
+        };
+        return await ndcProductRecord(
+          ndc,
+          product,
+          includeLabelIngredients,
+          retrievedAt,
+          setid,
+        );
+      }
+    }
+
+    const label = await firstLabelRecord(clients(), field("set_id", setid));
+    if (label === undefined) throw openFdaNotFound(setid);
+    return await labelProductRecord(
+      label,
+      setid,
+      includeLabelIngredients,
+      retrievedAt,
+    );
+  }
+
+  /** Resolves a product NDC through the NDC directory. */
+  async function productByNdc(
+    id: string,
+    includeLabelIngredients: boolean,
+    retrievedAt: string,
+  ): Promise<OpenFdaProductRecord> {
+    const { packageNdc, productNdc } = ndcQueryCandidates(id);
+    const clauses = [
+      ...productNdc.map((value) => field("product_ndc", value)),
+      ...packageNdc.map((value) => field("package_ndc", value)),
+    ];
+    if (clauses.length === 0) {
+      throw new Error(
+        `Expected an openFDA product NDC or SPL set id, but got "${id}". Pass an NDC such as "00093-1046", an 11-digit NDC, or a UUID-shaped set id from an openFDA result.`,
+      );
+    }
+
+    const raw = await firstNdcRecord(clients(), or(...clauses));
+    if (raw === undefined) throw openFdaNotFound(id);
+    const product = mapProduct(raw, retrievedAt);
+    if (product === null) throw openFdaNotFound(id);
+    return await ndcProductRecord(
+      raw,
+      product,
+      includeLabelIngredients,
+      retrievedAt,
+    );
+  }
 
   return {
     id: "openfda",
@@ -723,6 +1116,25 @@ export function createOpenFdaAdapter(client?: OpenFdaClient): SourceAdapter {
       }
 
       return [emptyIngredientGroup(page)];
+    },
+
+    async getProduct(
+      id: string,
+      opts: Record<string, unknown>,
+      _signal?: AbortSignal,
+    ): Promise<OpenFdaProductRecord> {
+      const trimmed = id.trim();
+      const retrievedAt = new Date().toISOString();
+      const includeLabelIngredients = opts.includeLabelIngredients === true;
+
+      if (isSplSetId(trimmed)) {
+        return await productBySetid(
+          trimmed.toLowerCase(),
+          includeLabelIngredients,
+          retrievedAt,
+        );
+      }
+      return await productByNdc(trimmed, includeLabelIngredients, retrievedAt);
     },
   };
 }

@@ -329,11 +329,11 @@ describe("search tools", () => {
     expect(output.nextSteps).toHaveLength(2);
     expect(output.nextSteps[0]).toMatchObject({
       tool: "drugdata_get_product",
-      input: { source: "openfda", id: "00000000001" },
+      input: { source: "openFDA", id: "00000000001" },
     });
     expect(output.nextSteps[1]).toMatchObject({
       tool: "drugdata_get_product",
-      input: { source: "dsld", id: "82118" },
+      input: { source: "DSLD", id: "82118" },
     });
     expect(output.nextSteps[0]?.why).toContain("name search");
 
@@ -984,7 +984,7 @@ describe("searchNextSteps", () => {
     );
     expect(openfda).toMatchObject({
       tool: "drugdata_get_product",
-      input: { source: "openfda", id: "00000000001" },
+      input: { source: "openFDA", id: "00000000001" },
     });
 
     const dailyMed = firstStep(
@@ -999,7 +999,7 @@ describe("searchNextSteps", () => {
     );
     expect(dailyMed).toMatchObject({
       tool: "drugdata_get_product",
-      input: { source: "dailymed", id: "set-1" },
+      input: { source: "DailyMed", id: "set-1" },
     });
 
     const dsld = firstStep(
@@ -1014,7 +1014,7 @@ describe("searchNextSteps", () => {
     );
     expect(dsld).toMatchObject({
       tool: "drugdata_get_product",
-      input: { source: "dsld", id: "42" },
+      input: { source: "DSLD", id: "42" },
     });
 
     const inkeedecoder = firstStep(
@@ -1036,7 +1036,7 @@ describe("searchNextSteps", () => {
     );
     expect(inkeedecoder).toMatchObject({
       tool: "drugdata_get_product",
-      input: { source: "inkeedecoder", id: "product" },
+      input: { source: "INKEEDecoder", id: "product" },
     });
 
     const rxnorm = firstStep(

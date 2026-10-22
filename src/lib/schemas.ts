@@ -149,6 +149,10 @@ export const ingredientRefSchema = z.object({
     .string()
     .optional()
     .describe("Strength or concentration as the source states it."),
+  form: z
+    .string()
+    .optional()
+    .describe("Dosage or physical form as the source states it."),
   identifiers: ingredientIdentifiersSchema,
   source: sourceRefSchema,
   matchBasis: z
@@ -177,6 +181,82 @@ export const nextStepSchema = z.object({
 
 /** A suggested follow-up call that continues the search → resolve → get loop. */
 export type NextStep = z.infer<typeof nextStepSchema>;
+
+/**
+ * One ingredient row on a product detail.
+ *
+ * This is a flatter view than {@link ingredientRefSchema}: a product detail
+ * lists what the label or record states about the ingredient in the product,
+ * while an ingredient ref is a first-class record in its own source. `source`
+ * is present whenever the row came from a different fetched document than the
+ * product (for example SPL ingredients parsed for an openFDA NDC record).
+ */
+export const productIngredientSchema = z.object({
+  name: z.string(),
+  unii: z
+    .string()
+    .optional()
+    .describe("FDA Unique Ingredient Identifier when the source states one."),
+  cas: z
+    .string()
+    .optional()
+    .describe("CAS Registry Number when the source states one."),
+  role: z
+    .enum(["active", "inactive", "unknown"])
+    .optional()
+    .describe(
+      "How the ingredient participates in the product; 'unknown' means the source does not say.",
+    ),
+  strength: z
+    .string()
+    .optional()
+    .describe("Strength or concentration as the source states it."),
+  form: z
+    .string()
+    .optional()
+    .describe("Dosage or physical form as the source states it."),
+  source: sourceRefSchema
+    .optional()
+    .describe(
+      "Where this ingredient row came from, when it differs from the product.",
+    ),
+});
+
+/** One ingredient row on a product detail. */
+export type ProductIngredient = z.infer<typeof productIngredientSchema>;
+
+/** A follow-up link on a product detail. */
+export const productLinkSchema = z.object({
+  label: z.string().describe("Short human-readable label for the link."),
+  url: z.string().describe("Deep link to the related record."),
+});
+
+/** A follow-up link on a product detail. */
+export type ProductLink = z.infer<typeof productLinkSchema>;
+
+/**
+ * A full product record: the unified product ref plus its ingredient rows,
+ * related links, a source-faithful summary, and suggested follow-up calls.
+ *
+ * Closed like every result schema: an adapter's stray field cannot reach
+ * `structuredContent`. `labelIngredientsIncluded` says whether the ingredient
+ * rows came from parsing a drug label's SPL XML (as opposed to structured
+ * rows the source already publishes).
+ */
+export const productDetailSchema = z.object({
+  product: productRefSchema,
+  ingredients: z.array(productIngredientSchema),
+  links: z.array(productLinkSchema),
+  summary: z
+    .string()
+    .optional()
+    .describe("Source-faithful overview assembled from the record."),
+  nextSteps: z.array(nextStepSchema),
+  labelIngredientsIncluded: z.boolean(),
+});
+
+/** A full product record in the unified vocabulary. */
+export type ProductDetail = z.infer<typeof productDetailSchema>;
 
 /**
  * Pagination fields shared by grouped results.
