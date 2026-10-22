@@ -29,6 +29,22 @@ const TIMEOUT = /timed out|timeout/i;
 /** Caller-cancellation wording used when a client wraps the DOMException. */
 const ABORT = /\babort(?:ed)?\b/i;
 
+/**
+ * Thrown when a lookup cannot be routed to an adapter.
+ *
+ * The registry throws this instead of returning an empty result: a caller that
+ * named a database the server cannot serve made a request error, not a search
+ * that found nothing. Tool handlers catch it and return `isError` text, so the
+ * message is model-facing and names only upstream databases and configuration
+ * variables — never a client library.
+ */
+export class SourceRoutingError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "SourceRoutingError";
+  }
+}
+
 export function toUserMessage(error: unknown, context: string): string {
   const raw = error instanceof Error ? error.message : String(error);
   const status = readStatus(error, raw);
