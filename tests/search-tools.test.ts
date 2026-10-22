@@ -97,6 +97,24 @@ function productRef(
   };
 }
 
+/** Enough product data to push both compact and rendered output over the cap. */
+function oversizedProductItems(): ProductRef[] {
+  return Array.from({ length: 300 }, (_, index) =>
+    productRef(
+      "openFDA",
+      `Product ${index} with a long descriptive name`,
+      { ndc: [`0000000000${index}`] },
+      {
+        category: "medication",
+        summary:
+          "A deliberately long summary used to exercise response bounding. ".repeat(
+            2,
+          ),
+      },
+    ),
+  );
+}
+
 function ingredientRef(
   database: DatabaseId,
   name: string,
@@ -194,6 +212,7 @@ describe("search tools", () => {
     harness = undefined;
     clearEnv();
     resetConfig();
+    vi.restoreAllMocks();
   });
 
   it("advertises both tools as read-only open-world searches with paging semantics", async () => {
@@ -480,6 +499,30 @@ describe("search tools", () => {
     expect(textOf(result)).toContain("drugdata_ping");
   });
 
+  it("omits filter advice when a product search has no category", async () => {
+    harness = await start(createRegistry([], []));
+
+    const result = await harness.client.callTool({
+      name: "drugdata_search_products",
+      arguments: { type: "name", query: "vitamin" },
+    });
+
+    expect(textOf(result)).toContain("No source covers this search type.");
+    expect(textOf(result)).not.toContain("and filter");
+  });
+
+  it("explains when no source covers an ingredient search type", async () => {
+    harness = await start(createRegistry([], []));
+
+    const result = await harness.client.callTool({
+      name: "drugdata_search_ingredients",
+      arguments: { type: "name", query: "niacinamide" },
+    });
+
+    expect(textOf(result)).toContain("No source covers this search type.");
+    expect(textOf(result)).not.toContain("and filter");
+  });
+
   it("applies the category filter and page to the fan-out", async () => {
     const searchProducts = vi.fn(async () => [
       productGroup("openFDA", [productRef("openFDA", "Aspirin")], 2),
@@ -548,6 +591,65 @@ describe("search tools", () => {
 
     const text = textOf(result);
     expect(JSON.parse(text)).toEqual(result.structuredContent);
+  });
+
+  it("returns parseable JSON for an oversized product result", async () => {
+    const adapter = fakeAdapter({
+      id: "openfda",
+      databases: ["openFDA"],
+      productTypes: ["name"],
+      categories: ["medication"],
+      searchProducts: vi.fn(async () => [
+        productGroup("openFDA", oversizedProductItems()),
+      ]),
+    });
+
+    harness = await start(createRegistry([adapter], []));
+
+    const result = await harness.client.callTool({
+      name: "drugdata_search_products",
+      arguments: {
+        type: "name",
+        query: "product",
+        response_format: "json",
+      },
+    });
+
+    const text = textOf(result);
+    expect(text.length).toBeLessThanOrEqual(CHARACTER_LIMIT);
+    expect(JSON.parse(text)).toEqual(result.structuredContent);
+  });
+
+  it("adds empty-result guidance as a separate JSON block", async () => {
+    const adapter = fakeAdapter({
+      id: "openfda",
+      databases: ["openFDA"],
+      productTypes: ["name"],
+      categories: ["medication"],
+      searchProducts: vi.fn(async () => [productGroup("openFDA", [])]),
+    });
+
+    harness = await start(createRegistry([adapter], []));
+
+    const result = await harness.client.callTool({
+      name: "drugdata_search_products",
+      arguments: {
+        type: "name",
+        query: "unobtainium",
+        category: "medication",
+        response_format: "json",
+      },
+    });
+
+    const blocks = result.content as { type: string; text: string }[];
+    const jsonBlock = blocks[0];
+    const guidance = blocks[1];
+    if (jsonBlock === undefined || guidance === undefined) {
+      throw new Error("expected a JSON block and a guidance block");
+    }
+    expect(JSON.parse(jsonBlock.text)).toEqual(result.structuredContent);
+    expect(guidance.text).toContain("No matches found.");
+    expect(guidance.text).toContain("remove the category filter");
   });
 
   it("renders ingredient results and suggests resolving a UNII", async () => {
@@ -637,6 +739,36 @@ describe("search tools", () => {
     });
 
     expect(JSON.parse(textOf(result))).toEqual(result.structuredContent);
+  });
+
+  it("gives ingredient-specific empty guidance without a category filter", async () => {
+    const adapter = fakeAdapter({
+      id: "cosing",
+      databases: ["CosIng"],
+      ingredientTypes: ["name"],
+      searchIngredients: vi.fn(async () => [ingredientGroup("CosIng", [])]),
+    });
+
+    harness = await start(createRegistry([adapter], []));
+
+    const result = await harness.client.callTool({
+      name: "drugdata_search_ingredients",
+      arguments: {
+        type: "name",
+        query: "unobtainium",
+        response_format: "json",
+      },
+    });
+
+    const blocks = result.content as { type: string; text: string }[];
+    const jsonBlock = blocks[0];
+    const guidance = blocks[1];
+    if (jsonBlock === undefined || guidance === undefined) {
+      throw new Error("expected a JSON block and a guidance block");
+    }
+    expect(JSON.parse(jsonBlock.text)).toEqual(result.structuredContent);
+    expect(guidance.text).toContain("name search");
+    expect(guidance.text).not.toContain("category filter");
   });
 
   it("renders single-result, empty, and oversized ingredient groups", async () => {
@@ -729,6 +861,9 @@ describe("search tools", () => {
         throw Object.assign(new Error("upstream unavailable"), { status: 503 });
       }),
     } as unknown as Registry;
+    const write = vi
+      .spyOn(process.stderr, "write")
+      .mockImplementation(() => true);
 
     harness = await start(failing);
 
@@ -740,6 +875,8 @@ describe("search tools", () => {
     expect(textOf(products)).toContain("failed unexpectedly");
     expect(textOf(products)).toContain("upstream service");
     expect(textOf(products)).not.toMatch(/@knorby|client/i);
+    // The raw failure is logged for the operator, never returned to the model.
+    expect(String(write.mock.calls[0]?.[0])).toContain("exploded");
 
     const ingredients = await harness.client.callTool({
       name: "drugdata_search_ingredients",
@@ -750,26 +887,14 @@ describe("search tools", () => {
   });
 
   it("bounds an oversized search and says so in the text", async () => {
-    const items = Array.from({ length: 300 }, (_, index) =>
-      productRef(
-        "openFDA",
-        `Product ${index} with a long descriptive name`,
-        { ndc: [`0000000000${index}`] },
-        {
-          category: "medication",
-          summary:
-            "A deliberately long summary used to exercise response bounding. ".repeat(
-              2,
-            ),
-        },
-      ),
-    );
     const adapter = fakeAdapter({
       id: "openfda",
       databases: ["openFDA"],
       productTypes: ["name"],
       categories: ["medication"],
-      searchProducts: vi.fn(async () => [productGroup("openFDA", items)]),
+      searchProducts: vi.fn(async () => [
+        productGroup("openFDA", oversizedProductItems()),
+      ]),
     });
 
     harness = await start(createRegistry([adapter], []));
@@ -784,6 +909,52 @@ describe("search tools", () => {
       CHARACTER_LIMIT,
     );
     expect(textOf(result)).toContain("Some fields were shortened");
+  });
+
+  it("derives paging advice from the rendered groups after bounding", async () => {
+    const sources: DatabaseId[] = [
+      "openFDA",
+      "DSLD",
+      "INKEEDecoder",
+      "RxNorm",
+      "CosIng",
+      "DrugCentral",
+    ];
+    const groups = sources.map((source, index) =>
+      productGroup(
+        source,
+        Array.from({ length: 8 }, (_, itemIndex) =>
+          productRef(
+            source,
+            `${source} product ${itemIndex} with a long descriptive name`,
+            { ndc: [`00000000${itemIndex}`] },
+            {
+              category: "medication",
+              summary: "x".repeat(2_000),
+            },
+          ),
+        ),
+        1,
+        index === 3,
+      ),
+    );
+    const adapter = fakeAdapter({
+      id: "openfda",
+      databases: sources,
+      productTypes: ["name"],
+      searchProducts: vi.fn(async () => groups),
+    });
+
+    harness = await start(createRegistry([adapter], []));
+
+    const result = await harness.client.callTool({
+      name: "drugdata_search_products",
+      arguments: { type: "name", query: "product" },
+    });
+
+    const output = result.structuredContent as ProductSearchOutput;
+    expect(output.groups.length).toBeLessThan(sources.length);
+    expect(textOf(result)).not.toContain("More results available");
   });
 
   it("builds the default registry from valid configuration", () => {

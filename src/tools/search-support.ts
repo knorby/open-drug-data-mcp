@@ -1,6 +1,7 @@
 import type { CallToolResult } from "@modelcontextprotocol/server";
 import { readConfig } from "../config.js";
 import { sanitizeSourceText, toUserMessage } from "../lib/errors.js";
+import { formatJson } from "../lib/format.js";
 import type { NextStep } from "../lib/schemas.js";
 import { cosingAdapter } from "../sources/cosing.js";
 import { drugcentralAdapter } from "../sources/drugcentral.js";
@@ -107,16 +108,31 @@ export function sanitizeGroups<T extends ErrorCarrier>(
   );
 }
 
+/** What the caller needs to know to word empty-result guidance correctly. */
+export interface ZeroResultsContext {
+  /** Which search tool produced the result. */
+  kind: "product" | "ingredient";
+  /** Whether the product search actually used a category filter. */
+  hasCategory: boolean;
+}
+
 /**
  * Guidance appended when a search returned no items at all.
  *
  * Empty results are normal, so the tool succeeds; the note distinguishes four
  * situations the agent should react to differently: a filter that excluded
  * every source, a total outage, a partial outage, and ordinary zero matches.
+ * Advice is tool-specific: only the product tool accepts a category filter,
+ * and an ingredient search can suggest a name search as a fallback.
  */
-export function zeroResultsNote(groups: readonly ErrorCarrier[]): string {
+export function zeroResultsNote(
+  groups: readonly ErrorCarrier[],
+  context: ZeroResultsContext,
+): string {
   if (groups.length === 0) {
-    return "No source covers this search type and filter. Check DRUGDATA_DISABLED_SOURCES with drugdata_ping, or try a different type or category.";
+    const filter =
+      context.kind === "product" && context.hasCategory ? " and filter" : "";
+    return `No source covers this search type${filter}. Check DRUGDATA_DISABLED_SOURCES with drugdata_ping, or try a different type.`;
   }
   if (groups.every((group) => group.error !== undefined)) {
     return "Every searched source failed. Retry, or run drugdata_ping to check the configuration.";
@@ -124,7 +140,33 @@ export function zeroResultsNote(groups: readonly ErrorCarrier[]): string {
   if (groups.some((group) => group.error !== undefined)) {
     return "No matches from the sources that answered. Retry to include the source(s) that failed.";
   }
-  return "No matches found. Try a different type, a shorter or broader query, or remove the category filter.";
+  if (context.kind === "ingredient") {
+    return "No matches found. Try a different search type or a name search, or a shorter or broader query.";
+  }
+  return context.hasCategory
+    ? "No matches found. Try a different type, a shorter or broader query, or remove the category filter."
+    : "No matches found. Try a different type or a shorter or broader query.";
+}
+
+/**
+ * Text blocks for a JSON result: the compact JSON first, then optional
+ * guidance as a separate block. Guidance is never appended to the JSON
+ * string, so `JSON.parse` always succeeds.
+ */
+export function jsonTextBlocks(
+  value: { groups: readonly (ProductGroup | IngredientGroup)[] },
+  context: ZeroResultsContext,
+): Array<{ type: "text"; text: string }> {
+  const blocks: Array<{ type: "text"; text: string }> = [
+    { type: "text", text: formatJson(value) },
+  ];
+  if (itemCount(value.groups) === 0) {
+    blocks.push({
+      type: "text",
+      text: zeroResultsNote(value.groups, context),
+    });
+  }
+  return blocks;
 }
 
 /** A label and zod-safe key for one identifier field. */

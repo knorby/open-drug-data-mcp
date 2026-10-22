@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { toUserMessage } from "../src/lib/errors.js";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { sanitizeSourceText, toUserMessage } from "../src/lib/errors.js";
 
 /** An `Error` carrying an HTTP status the way the clients' API errors do. */
 function statusError(status: unknown, message = "upstream failure"): Error {
@@ -95,21 +95,68 @@ describe("toUserMessage", () => {
     expect(message).toContain("could not reach the upstream service");
   });
 
-  it("falls back for a non-Error value", () => {
-    expect(toUserMessage("boom", "Search")).toContain(
-      "failed unexpectedly: boom",
-    );
+  it("falls back generically for a non-Error value and logs it", () => {
+    const write = vi
+      .spyOn(process.stderr, "write")
+      .mockImplementation(() => true);
+
+    const message = toUserMessage("boom", "Search");
+
+    expect(message).toContain("failed unexpectedly");
+    expect(message).not.toContain("boom");
+    expect(String(write.mock.calls[0]?.[0])).toContain("boom");
+    write.mockRestore();
   });
 
   it("ignores a non-numeric status property", () => {
-    expect(
-      toUserMessage(statusError("404", "odd failure"), "Search"),
-    ).toContain("failed unexpectedly: odd failure");
+    const write = vi
+      .spyOn(process.stderr, "write")
+      .mockImplementation(() => true);
+
+    const message = toUserMessage(statusError("404", "odd failure"), "Search");
+
+    expect(message).toContain("failed unexpectedly");
+    expect(message).not.toContain("odd failure");
+    expect(String(write.mock.calls[0]?.[0])).toContain("odd failure");
+    write.mockRestore();
   });
 
   it("handles null", () => {
-    expect(toUserMessage(null, "Search")).toContain(
-      "failed unexpectedly: null",
+    const write = vi
+      .spyOn(process.stderr, "write")
+      .mockImplementation(() => true);
+
+    const message = toUserMessage(null, "Search");
+
+    expect(message).toContain("failed unexpectedly");
+    expect(message).not.toContain("null");
+    expect(String(write.mock.calls[0]?.[0])).toContain("null");
+    write.mockRestore();
+  });
+});
+
+describe("sanitizeSourceText", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("scrubs scoped package names", () => {
+    const text = sanitizeSourceText("@knorby/openfda-client rejected the call");
+
+    expect(text).toContain("the upstream service");
+    expect(text).not.toMatch(/@knorby|client/i);
+  });
+
+  it("scrubs a camel-case client class name", () => {
+    const text = sanitizeSourceText("OpenFdaClient: request failed");
+
+    expect(text).toContain("upstream service");
+    expect(text).not.toMatch(/client/i);
+  });
+
+  it("scrubs a benign standalone client phrase", () => {
+    expect(sanitizeSourceText("The client asked for data.")).toBe(
+      "The upstream service asked for data.",
     );
   });
 });

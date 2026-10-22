@@ -12,6 +12,8 @@
  * model's context.
  */
 
+import { logError } from "./log.js";
+
 /**
  * The clients report HTTP failures in two shapes: an error with a numeric
  * `status` property, or a message embedding the status (for example
@@ -54,7 +56,15 @@ export class SourceRoutingError extends Error {
  * applies this last-line scrub before returning text.
  */
 const CLIENT_PACKAGE = /@knorby\/[a-z0-9._-]+/gi;
-const CLIENT_WORD = /\bclient\b/gi;
+
+/**
+ * A client-library reference may appear as its own word (`client`) or inside a
+ * camel-case class name (`OpenFdaClient`). Match the whole token so the
+ * replacement leaves no fragment of the name behind, and do not use word
+ * boundaries around the word itself: there is no boundary before `Client` in
+ * a camel-case name.
+ */
+const CLIENT_WORD = /\b[\w.-]*client[\w.-]*\b/gi;
 
 /** Rewords client-library names so output names only upstream databases. */
 export function sanitizeSourceText(text: string): string {
@@ -91,7 +101,10 @@ export function toUserMessage(error: unknown, context: string): string {
     return `Error: ${context} — could not reach the upstream service. Check connectivity and retry.`;
   }
 
-  return `Error: ${context} failed unexpectedly: ${raw}`;
+  // Raw failure text can carry client-library class names and upstream
+  // internals; it belongs in the operator's log, not in the model's context.
+  logError(`${context} failed unexpectedly: ${raw}`);
+  return `Error: ${context} failed unexpectedly. The upstream service returned an unusable response; retry once, then check the server logs.`;
 }
 
 /** Reads a numeric `status` property, falling back to the error message. */

@@ -3,7 +3,6 @@ import * as z from "zod/v4";
 import {
   applyCharacterLimit,
   boundStructured,
-  formatJson,
   morePagesNote,
   RESPONSE_FORMATS,
   truncationNote,
@@ -27,11 +26,13 @@ import {
   type IdentifierField,
   identifierText,
   itemCount,
+  jsonTextBlocks,
   messageError,
   nextStepsText,
   resolveRegistry,
   sanitizeGroups,
   toolError,
+  type ZeroResultsContext,
   zeroResultsNote,
 } from "./search-support.js";
 
@@ -139,10 +140,10 @@ export function registerSearchProductsTool(
       page,
       response_format,
     }: ProductSearchInput) => {
-      const resolved = resolveRegistry(registry);
-      if (!resolved.ok) return messageError(resolved.error);
-
       try {
+        const resolved = resolveRegistry(registry);
+        if (!resolved.ok) return messageError(resolved.error);
+
         const groups = sanitizeGroups(
           await resolved.registry.searchProducts(type, query, {
             category,
@@ -156,22 +157,36 @@ export function registerSearchProductsTool(
           nextSteps: searchNextSteps(type, groups),
         });
         const bounded = boundStructured(output);
-        const anyHasMore = groups.some((group) => group.hasMore);
+        // Paging advice must describe what the rendered groups actually show,
+        // so read `hasMore` after bounding rather than from the raw fan-out.
+        const anyHasMore = bounded.value.groups.some((group) => group.hasMore);
+        const context: ZeroResultsContext = {
+          kind: "product",
+          hasCategory: category !== undefined,
+        };
 
-        const text =
-          response_format === "json"
-            ? applyCharacterLimit(formatJson(bounded.value))
-            : applyCharacterLimit(
+        if (response_format === "json") {
+          return {
+            content: jsonTextBlocks(bounded.value, context),
+            structuredContent: bounded.value,
+          };
+        }
+
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: applyCharacterLimit(
                 renderMarkdown(
                   type,
                   bounded.value,
                   anyHasMore,
                   bounded.truncated,
+                  context,
                 ),
-              );
-
-        return {
-          content: [{ type: "text" as const, text }],
+              ),
+            },
+          ],
           structuredContent: bounded.value,
         };
       } catch (error) {
@@ -187,6 +202,7 @@ function renderMarkdown(
   output: ProductSearchOutput,
   anyHasMore: boolean,
   truncated: boolean,
+  context: ZeroResultsContext,
 ): string {
   const sections = [
     `Product search for ${JSON.stringify(output.query)} (type: ${type}) — page ${output.page}.`,
@@ -194,7 +210,7 @@ function renderMarkdown(
   ];
 
   if (itemCount(output.groups) === 0) {
-    sections.push(zeroResultsNote(output.groups));
+    sections.push(zeroResultsNote(output.groups, context));
   }
 
   const steps = nextStepsText(output.nextSteps);

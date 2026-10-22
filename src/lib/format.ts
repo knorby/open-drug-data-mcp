@@ -8,9 +8,16 @@ export const RESPONSE_FORMATS = ["markdown", "json"] as const;
 /** Output formats tools offer: human-readable markdown or machine-readable JSON. */
 export type ResponseFormat = (typeof RESPONSE_FORMATS)[number];
 
-/** Serializes a value as indented JSON for a tool's text block. */
+/**
+ * Serializes a value as compact JSON for a tool's text block.
+ *
+ * Compact output is deliberate: `boundStructured` measures its result with
+ * compact JSON, so pretty-printing would make the text block longer than the
+ * bound and force `applyCharacterLimit` to cut the JSON mid-document. Compact
+ * JSON is guaranteed to fit and stays parseable.
+ */
 export function formatJson(value: unknown): string {
-  return JSON.stringify(value, null, 2);
+  return JSON.stringify(value);
 }
 
 /**

@@ -3,7 +3,6 @@ import * as z from "zod/v4";
 import {
   applyCharacterLimit,
   boundStructured,
-  formatJson,
   morePagesNote,
   RESPONSE_FORMATS,
   truncationNote,
@@ -26,11 +25,13 @@ import {
   type IdentifierField,
   identifierText,
   itemCount,
+  jsonTextBlocks,
   messageError,
   nextStepsText,
   resolveRegistry,
   sanitizeGroups,
   toolError,
+  type ZeroResultsContext,
   zeroResultsNote,
 } from "./search-support.js";
 
@@ -97,6 +98,12 @@ type IngredientSearchInput = z.infer<typeof inputSchema>;
 type IngredientSearchOutput = z.infer<typeof outputSchema>;
 type IngredientGroupOutput = IngredientSearchOutput["groups"][number];
 
+/** Empty-result advice for a tool that has no category filter. */
+const ZERO_CONTEXT: ZeroResultsContext = {
+  kind: "ingredient",
+  hasCategory: false,
+};
+
 /** Identifier labels in the order the markdown text shows them. */
 const IDENTIFIER_FIELDS: ReadonlyArray<IdentifierField<IngredientIdentifiers>> =
   [
@@ -130,10 +137,10 @@ export function registerSearchIngredientsTool(
       },
     },
     async ({ type, query, page, response_format }: IngredientSearchInput) => {
-      const resolved = resolveRegistry(registry);
-      if (!resolved.ok) return messageError(resolved.error);
-
       try {
+        const resolved = resolveRegistry(registry);
+        if (!resolved.ok) return messageError(resolved.error);
+
         const groups = sanitizeGroups(
           await resolved.registry.searchIngredients(type, query, { page }),
         );
@@ -144,22 +151,31 @@ export function registerSearchIngredientsTool(
           nextSteps: searchNextSteps(type, groups),
         });
         const bounded = boundStructured(output);
-        const anyHasMore = groups.some((group) => group.hasMore);
+        // Paging advice must describe what the rendered groups actually show,
+        // so read `hasMore` after bounding rather than from the raw fan-out.
+        const anyHasMore = bounded.value.groups.some((group) => group.hasMore);
 
-        const text =
-          response_format === "json"
-            ? applyCharacterLimit(formatJson(bounded.value))
-            : applyCharacterLimit(
+        if (response_format === "json") {
+          return {
+            content: jsonTextBlocks(bounded.value, ZERO_CONTEXT),
+            structuredContent: bounded.value,
+          };
+        }
+
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: applyCharacterLimit(
                 renderMarkdown(
                   type,
                   bounded.value,
                   anyHasMore,
                   bounded.truncated,
                 ),
-              );
-
-        return {
-          content: [{ type: "text" as const, text }],
+              ),
+            },
+          ],
           structuredContent: bounded.value,
         };
       } catch (error) {
@@ -182,7 +198,7 @@ function renderMarkdown(
   ];
 
   if (itemCount(output.groups) === 0) {
-    sections.push(zeroResultsNote(output.groups));
+    sections.push(zeroResultsNote(output.groups, ZERO_CONTEXT));
   }
 
   const steps = nextStepsText(output.nextSteps);
