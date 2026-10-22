@@ -1,6 +1,7 @@
 import {
   and,
   type DrugNdc,
+  exact,
   field,
   not,
   type OpenFdaClient,
@@ -390,9 +391,11 @@ function mapIngredient(
       (entry) => entry.preferred === true || entry.display_name === true,
     ) ?? named[0];
   const name = nonEmpty(primary?.name) ?? unii;
-  const inciName = named.find((entry) =>
-    (entry.name_orgs ?? []).some((org) => org.name_org === "INCI"),
-  )?.name;
+  const inciName = nonEmpty(
+    named.find((entry) =>
+      (entry.name_orgs ?? []).some((org) => org.name_org === "INCI"),
+    )?.name,
+  );
   const cas = [
     ...new Set(
       (raw.codes ?? [])
@@ -504,6 +507,59 @@ async function fetchIngredients(
   }
 }
 
+/** Runs one page of a UNII crosswalk query. */
+async function fetchCrosswalkPage(
+  client: OpenFdaClient,
+  search: string,
+  page: number,
+): Promise<UniiRecord[]> {
+  const response = await client.other.unii.search({
+    search,
+    limit: CROSSWALK_LIMIT,
+    skip: (page - 1) * CROSSWALK_LIMIT,
+  });
+  return response.results;
+}
+
+/**
+ * Resolves the crosswalk entries for a name.
+ *
+ * `substance_name` is analyzed, so a term query ranks partial names ahead of
+ * the exact substance (for example GLYCERIN METHYL ETHER before GLYCERIN).
+ * Try the exact field first; only when it has no match fall back to the
+ * analyzed query so partial-name searches still work. Zero matches at either
+ * level are an ordinary empty list.
+ */
+async function crosswalkEntries(
+  client: OpenFdaClient,
+  query: string,
+  page: number,
+): Promise<UniiRecord[]> {
+  const name = query.toUpperCase();
+  try {
+    return await fetchCrosswalkPage(
+      client,
+      exact("substance_name", name),
+      page,
+    );
+  } catch (error) {
+    if (!(error instanceof OpenFdaNotFoundError)) {
+      throw openFdaFailure("The openFDA ingredient search", error);
+    }
+  }
+
+  try {
+    return await fetchCrosswalkPage(
+      client,
+      field("substance_name", name),
+      page,
+    );
+  } catch (error) {
+    if (error instanceof OpenFdaNotFoundError) return [];
+    throw openFdaFailure("The openFDA ingredient search", error);
+  }
+}
+
 /**
  * Name/INCI search: the UNII crosswalk, then one substance fetch per hit.
  *
@@ -518,20 +574,7 @@ async function crosswalkIngredients(
   page: number,
   retrievedAt: string,
 ): Promise<IngredientGroup> {
-  let entries: UniiRecord[];
-  try {
-    const response = await client.other.unii.search({
-      search: field("substance_name", query.toUpperCase()),
-      limit: CROSSWALK_LIMIT,
-      skip: (page - 1) * CROSSWALK_LIMIT,
-    });
-    entries = response.results;
-  } catch (error) {
-    if (error instanceof OpenFdaNotFoundError) {
-      return emptyIngredientGroup(page);
-    }
-    throw openFdaFailure("The openFDA ingredient search", error);
-  }
+  const entries = await crosswalkEntries(client, query, page);
 
   const records: Substance[] = [];
   for (const entry of entries) {
@@ -654,14 +697,32 @@ export function createOpenFdaAdapter(client?: OpenFdaClient): SourceAdapter {
         ];
       }
 
-      const search =
-        type === "unii"
-          ? field("unii", trimmed.toUpperCase())
-          : and(
+      if (type === "unii") {
+        return [
+          await fetchIngredients(
+            clients(),
+            field("unii", trimmed.toUpperCase()),
+            page,
+            retrievedAt,
+          ),
+        ];
+      }
+
+      if (type === "cas") {
+        return [
+          await fetchIngredients(
+            clients(),
+            and(
               field("codes.code", trimmed),
               field("codes.code_system", "CAS"),
-            );
-      return [await fetchIngredients(clients(), search, page, retrievedAt)];
+            ),
+            page,
+            retrievedAt,
+          ),
+        ];
+      }
+
+      return [emptyIngredientGroup(page)];
     },
   };
 }

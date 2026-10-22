@@ -493,7 +493,7 @@ describe("openFDA ingredient search", () => {
         { names: [{ name: "No UNII" }] },
         {
           unii: "BBBBBBBBBB",
-          names: [{}, { name: "" }],
+          names: [{}, { name: "", name_orgs: [{ name_org: "INCI" }] }],
           codes: [
             { code: "56-81-5" },
             { code_system: "CAS" },
@@ -513,6 +513,7 @@ describe("openFDA ingredient search", () => {
     expect(group?.items[0]?.inciName).toBeUndefined();
     expect(group?.items[0]?.identifiers).toEqual({ unii: "AAAAAAAAAA" });
     expect(group?.items[1]?.name).toBe("BBBBBBBBBB");
+    expect(group?.items[1]?.inciName).toBeUndefined();
     expect(group?.items[1]?.identifiers.cas).toEqual(["999-99-9"]);
   });
 
@@ -526,6 +527,83 @@ describe("openFDA ingredient search", () => {
       { source: "openFDA", items: [], page: 1, hasMore: false },
     ]);
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it.each(["ec", "rxcui"] as const)(
+    "returns an empty group for undeclared %s searches without a request",
+    async (type) => {
+      const { client, fetchMock } = clientFor(() => jsonResponse({}));
+      const adapter = createOpenFdaAdapter(client);
+
+      const groups = await adapter.searchIngredients?.(type, "123", 1);
+
+      expect(groups).toEqual([
+        { source: "openFDA", items: [], page: 1, hasMore: false },
+      ]);
+      expect(fetchMock).not.toHaveBeenCalled();
+    },
+  );
+
+  it("prefers the exact substance-name crosswalk hit", async () => {
+    const { client, fetchMock } = clientFor((url) => {
+      if (url.pathname === "/other/unii.json") {
+        return jsonResponse(fixture("unii-crosswalk-glycerin-exact.json"));
+      }
+      if (url.pathname === "/other/substance.json") {
+        return jsonResponse(fixture("substance-unii-glycerin.json"));
+      }
+      return notFound();
+    });
+    const adapter = createOpenFdaAdapter(client);
+
+    const [group] =
+      (await adapter.searchIngredients?.("name", "glycerin", 1)) ?? [];
+
+    expect(group?.items).toHaveLength(1);
+    expect(group?.items[0]?.name).toBe("Glycerin");
+    expect(group?.items[0]?.identifiers.unii).toBe("PDC6A3C0OX");
+    expect(group?.items[0]?.matchBasis).toBe("INCI name match");
+    expect(group?.hasMore).toBe(false);
+
+    const urls = requests(fetchMock);
+    expect(urls).toHaveLength(2);
+    expect(searchOf(urls[0] as URL)).toContain("substance_name.exact:GLYCERIN");
+    expect(urls[0]?.searchParams.get("limit")).toBe("5");
+    expect(urls[0]?.searchParams.get("skip")).toBe("0");
+    expect(urls[1]?.pathname).toBe("/other/substance.json");
+  });
+
+  it("falls back to the analyzed crosswalk and finds the exact substance", async () => {
+    const { client, fetchMock } = clientFor((url) => {
+      if (url.pathname === "/other/unii.json") {
+        return searchOf(url).includes("substance_name.exact:")
+          ? notFound()
+          : jsonResponse(fixture("unii-crosswalk-glycerin-page2.json"));
+      }
+      if (url.pathname === "/other/substance.json") {
+        return searchOf(url).includes("PDC6A3C0OX")
+          ? jsonResponse(fixture("substance-unii-glycerin.json"))
+          : notFound();
+      }
+      return notFound();
+    });
+    const adapter = createOpenFdaAdapter(client);
+
+    const [group] =
+      (await adapter.searchIngredients?.("name", "GLYCERIN", 2)) ?? [];
+
+    expect(group?.items).toHaveLength(1);
+    expect(group?.items[0]?.name).toBe("Glycerin");
+    expect(group?.items[0]?.identifiers.unii).toBe("PDC6A3C0OX");
+    expect(group?.page).toBe(2);
+    expect(group?.hasMore).toBe(true);
+
+    const urls = requests(fetchMock);
+    expect(searchOf(urls[0] as URL)).toContain("substance_name.exact:GLYCERIN");
+    expect(urls[1]?.pathname).toBe("/other/unii.json");
+    expect(searchOf(urls[1] as URL)).toContain("substance_name:GLYCERIN");
+    expect(searchOf(urls[1] as URL)).not.toContain("substance_name.exact:");
+    expect(urls[1]?.searchParams.get("skip")).toBe("5");
   });
 
   it("ranks name hits by INCI, exact, then prefix match", async () => {
@@ -548,7 +626,10 @@ describe("openFDA ingredient search", () => {
     };
 
     const { client, fetchMock } = clientFor((url) => {
-      if (url.pathname === "/other/unii.json") return jsonResponse(crosswalk);
+      if (url.pathname === "/other/unii.json") {
+        if (searchOf(url).includes("substance_name.exact:")) return notFound();
+        return jsonResponse(crosswalk);
+      }
       if (url.pathname !== "/other/substance.json") return notFound();
       const search = searchOf(url);
       const unii = search.replace(/^unii:/, "");
@@ -580,8 +661,10 @@ describe("openFDA ingredient search", () => {
 
     const urls = requests(fetchMock);
     expect(urls[0]?.pathname).toBe("/other/unii.json");
-    expect(urls[0]?.searchParams.get("skip")).toBe("5");
-    expect(urls[0]?.searchParams.get("limit")).toBe("5");
+    expect(searchOf(urls[0] as URL)).toContain("substance_name.exact:GLYCERIN");
+    expect(urls[1]?.pathname).toBe("/other/unii.json");
+    expect(urls[1]?.searchParams.get("skip")).toBe("5");
+    expect(urls[1]?.searchParams.get("limit")).toBe("5");
   });
 
   it("skips crosswalk entries without a UNII and missing substance records", async () => {
@@ -620,7 +703,7 @@ describe("openFDA ingredient search", () => {
     expect(groups).toEqual([
       { source: "openFDA", items: [], page: 1, hasMore: false },
     ]);
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it.each([
@@ -638,6 +721,20 @@ describe("openFDA ingredient search", () => {
       await expect(failure).rejects.not.toThrow(/@knorby|api_key/);
     },
   );
+
+  it("sanitizes a fallback crosswalk failure", async () => {
+    const { client } = clientFor((url) => {
+      if (!url.pathname.endsWith("/unii.json")) return notFound();
+      return searchOf(url).includes("substance_name.exact:")
+        ? notFound()
+        : new Response(null, { status: 400 });
+    });
+    const adapter = createOpenFdaAdapter(client);
+
+    await expect(
+      adapter.searchIngredients?.("name", "GLYCERIN", 1),
+    ).rejects.toThrow(/rejected the request/);
+  });
 
   it("sanitizes a per-UNII failure", async () => {
     const { client } = clientFor((url) => {
