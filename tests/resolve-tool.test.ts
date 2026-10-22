@@ -2,10 +2,12 @@ import { readFileSync } from "node:fs";
 import { McpServer } from "@modelcontextprotocol/server";
 import { afterEach, describe, expect, it } from "vitest";
 import { SERVER_NAME, SERVER_VERSION } from "../src/constants.js";
-import type {
-  IngredientRef,
-  NextStep,
-  ProductRef,
+import {
+  type GraphCoverage,
+  type IngredientRef,
+  type NextStep,
+  type ProductRef,
+  resolveIdentifiersResultSchema,
 } from "../src/lib/schemas.js";
 import type { CosingBridgeHit } from "../src/sources/cosing.js";
 import type { DrugCentralBridges } from "../src/sources/drugcentral.js";
@@ -391,6 +393,7 @@ describe("resolve_identifiers input validation", () => {
   it.each([
     ["unii", { unii: "too-short" }, "10 letters or digits"],
     ["ndc", { ndc: "not-an-ndc" }, "10- or 11-digit NDC"],
+    ["ndc", { ndc: "1234-567" }, "10- or 11-digit NDC"],
     ["rxcui", { rxcui: "abc" }, "numeric RxCUI"],
     ["cas", { cas: "50-78" }, "dashed CAS"],
     ["inci_name", { inci_name: "   " }, "non-empty name"],
@@ -403,6 +406,7 @@ describe("resolve_identifiers input validation", () => {
       { dsld_id: Number.MAX_SAFE_INTEGER + 2 },
       "positive integer DSLD",
     ],
+    ["dsld_id", { dsld_id: "not-a-dsld-id" }, "positive integer DSLD"],
   ])(
     "rejects a malformed %s before calling the engine",
     async (_key, args, expected) => {
@@ -417,6 +421,20 @@ describe("resolve_identifiers input validation", () => {
     },
   );
 
+  it("bounds a very long malformed value in the error text", async () => {
+    const client = await connect(panicResolver);
+
+    const result = await call(client.client, {
+      substance_name: "x".repeat(5_000),
+    });
+
+    expect(result.isError).toBe(true);
+    const text = textOf(result);
+    expect(text.length).toBeLessThan(1_000);
+    expect(text).toContain("…");
+    expect(text).not.toContain("x".repeat(81));
+  });
+
   it.each([
     [{ unii: " r16co5y76e " }, { unii: "R16CO5Y76E" }],
     [{ ndc: "00093104601" }, { ndc: "00093104601" }],
@@ -428,6 +446,7 @@ describe("resolve_identifiers input validation", () => {
     [{ substance_name: " Aspirin " }, { substanceName: "Aspirin" }],
     [{ spl_setid: ` ${SETID.toUpperCase()} ` }, { splSetId: SETID }],
     [{ dsld_id: 82118 }, { dsldId: 82118 }],
+    [{ dsld_id: "82118" }, { dsldId: 82118 }],
   ])("normalizes %j before calling the engine", async (args, expected) => {
     const recording = recordingResolver();
     const client = await connect(recording.resolver);
@@ -508,6 +527,9 @@ describe("resolve_identifiers ingredient resolution", () => {
     const result = await call(client.client, { unii: "R16CO5Y76E" });
 
     expect(result.isError).toBeUndefined();
+    expect(
+      resolveIdentifiersResultSchema.parse(result.structuredContent),
+    ).toEqual(result.structuredContent);
     const output = result.structuredContent as IngredientResolution & {
       nextSteps: NextStep[];
       confidence: {
@@ -732,6 +754,22 @@ describe("resolve_identifiers ingredient resolution", () => {
     );
   });
 
+  it("renders an INCI-only subject and its INCI line", async () => {
+    const client = await connect({
+      resolve: async () =>
+        ingredientResolution({
+          subject: { inciName: "Niacinamide" },
+          identifiers: { ec: ["200-584-9"] },
+        }),
+    });
+
+    const result = await call(client.client, { inci_name: "Niacinamide" });
+
+    const text = textOf(result);
+    expect(text).toContain("## Identity — Niacinamide");
+    expect(text).toContain("- INCI: Niacinamide");
+  });
+
   it("serializes the result as JSON when asked", async () => {
     const client = await connect(createIdentityResolver(fullChainDeps()));
 
@@ -879,9 +917,16 @@ describe("resolve_identifiers product resolution", () => {
 
     const output = result.structuredContent as ProductResolution & {
       nextSteps: NextStep[];
+      graphCoverage: GraphCoverage;
     };
     expect(output.graphs).toHaveLength(1);
     expect(output.graphs?.[0]?.identifiers.unii).toBe("A0JWA85V8F");
+    expect(output.graphCoverage).toEqual({
+      included: 1,
+      total: 1,
+      cap: 20,
+      capped: false,
+    });
     const text = textOf(result);
     expect(text).toContain("## Per-ingredient graphs (1 of 1)");
     expect(text).not.toContain("Set `resolve_ingredients: true`");
@@ -901,11 +946,34 @@ describe("resolve_identifiers product resolution", () => {
       resolve_ingredients: true,
     });
 
-    const output = result.structuredContent as ProductResolution;
+    const output = result.structuredContent as ProductResolution & {
+      graphCoverage: GraphCoverage;
+    };
     expect(output.graphs).toHaveLength(20);
+    expect(output.graphCoverage).toEqual({
+      included: 20,
+      total: 22,
+      cap: 20,
+      capped: true,
+    });
     const text = textOf(result);
     expect(text).toContain("only the first 20 of 22 ingredient rows");
     expect(text).toContain("caps per-call graphs at 20");
+
+    const json = await call(client.client, {
+      ndc: "00093-1046",
+      resolve_ingredients: true,
+      response_format: "json",
+    });
+    const parsed = JSON.parse(textOf(json)) as {
+      graphCoverage: {
+        included: number;
+        total: number;
+        cap: number;
+        capped: boolean;
+      };
+    };
+    expect(parsed.graphCoverage).toEqual(output.graphCoverage);
   });
 
   it("parses SPL XML for ingredient UNIIs when include_label_ingredients is on", async () => {
@@ -1047,6 +1115,44 @@ describe("resolve_identifiers product resolution", () => {
         why: expect.any(String),
       },
     ]);
+    expect(textOf(result)).toContain("INCI: Niacinamide");
+  });
+
+  it("truncates a long ingredient name in the name follow-up", async () => {
+    const name = "n".repeat(250);
+    const client = await connect({
+      resolve: async () =>
+        productResolution({ ingredients: [ingredient(name)] }),
+    });
+
+    const result = await call(client.client, { ndc: "00093-1046" });
+
+    const output = result.structuredContent as ProductResolution & {
+      nextSteps: NextStep[];
+    };
+    expect(output.nextSteps).toEqual([
+      {
+        tool: "drugdata_resolve_identifiers",
+        input: { substance_name: name.slice(0, 200) },
+        why: expect.any(String),
+      },
+    ]);
+  });
+
+  it("skips an ingredient name that cannot become a valid follow-up", async () => {
+    const client = await connect({
+      resolve: async () =>
+        productResolution({
+          ingredients: [ingredient("", { inciName: "   " })],
+        }),
+    });
+
+    const result = await call(client.client, { ndc: "00093-1046" });
+
+    const output = result.structuredContent as ProductResolution & {
+      nextSteps: NextStep[];
+    };
+    expect(output.nextSteps).toEqual([]);
   });
 
   it("renders a product with no links, ingredients, or graphs", async () => {

@@ -248,6 +248,23 @@ export const ingredientResolutionSchema = z.object({
 /** An ingredient-level resolution: one identity graph. */
 export type IngredientResolution = z.infer<typeof ingredientResolutionSchema>;
 
+/**
+ * How much of a product's ingredient list the emitted graphs cover.
+ *
+ * `included` and `total` are counts of ingredient rows; `cap` is the chain's
+ * per-call graph bound. `capped` is true when the result carries fewer graphs
+ * than rows, whether from the chain cap or response bounding.
+ */
+export const graphCoverageSchema = z.object({
+  included: z.number().int().min(0),
+  total: z.number().int().min(0),
+  cap: z.number().int().min(1),
+  capped: z.boolean(),
+});
+
+/** How much of a product's ingredient list the emitted graphs cover. */
+export type GraphCoverage = z.infer<typeof graphCoverageSchema>;
+
 /** A product-level resolution: links plus the ingredient rows it carries. */
 export const productResolutionSchema = z.object({
   kind: z.literal("product"),
@@ -259,6 +276,11 @@ export const productResolutionSchema = z.object({
     .optional()
     .describe(
       "Graphs for an ordered prefix of `ingredients`, when resolve_ingredients was requested.",
+    ),
+  graphCoverage: graphCoverageSchema
+    .optional()
+    .describe(
+      "Present with `graphs`: how many ingredient rows the graphs cover, the total, the chain cap, and whether coverage is partial.",
     ),
 });
 

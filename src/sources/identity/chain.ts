@@ -150,7 +150,7 @@ export type ChainStepId = "openfda" | "cosing" | "nlm" | "drugcentral";
 const DEFAULT_MAX_CANDIDATES = 10;
 
 /** Ingredient graphs resolved per product call; a bound, not completeness. */
-const MAX_INGREDIENT_GRAPHS = 20;
+export const MAX_INGREDIENT_GRAPHS = 20;
 
 /** Stable source order for links and candidate sets. */
 const DATABASE_ORDER: Readonly<Record<DatabaseId, number>> = {

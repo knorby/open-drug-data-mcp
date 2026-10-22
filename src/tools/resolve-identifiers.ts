@@ -10,6 +10,7 @@ import {
 import { isSplSetId, isUnii, normalizeNdc } from "../lib/ids.js";
 import {
   type DatabaseId,
+  type GraphCoverage,
   type IngredientIdentifiers,
   type IngredientRef,
   type NextStep,
@@ -21,6 +22,7 @@ import {
   createIdentityResolver,
   type IdentityGraph,
   type IdentityResolver,
+  MAX_INGREDIENT_GRAPHS,
   type ResolveInput,
   type ResolveOptions,
   type SourceLink,
@@ -66,8 +68,8 @@ type IdentifierKey = (typeof IDENTIFIER_KEYS)[number];
 /** Text listing every accepted identifier key. */
 const IDENTIFIER_LIST = IDENTIFIER_KEYS.join(", ");
 
-/** A product NDC: labeler-product, with no package segment. */
-const PRODUCT_NDC = /^\d{4,5}-\d{3,4}$/;
+/** A product NDC: labeler-product, in a 4-4, 5-3, or 5-4 layout. */
+const PRODUCT_NDC = /^(?:\d{4}-\d{4}|\d{5}-\d{3}|\d{5}-\d{4})$/;
 
 /** A CAS Registry Number in the conventional dashed spelling. */
 const CAS_NUMBER = /^\d{2,7}-\d{2}-\d$/;
@@ -86,6 +88,12 @@ const SEARCH_INGREDIENTS = "drugdata_search_ingredients";
 
 /** Follow-up calls stay short so a rich answer stays actionable. */
 const MAX_NEXT_STEPS = 3;
+
+/** Longest name the next-step tools accept. */
+const MAX_NAME_LENGTH = 200;
+
+/** Longest raw value echoed in a validation refusal. */
+const MAX_PREVIEW_LENGTH = 80;
 
 /** Identifier labels in the order the markdown shows them. */
 const INGREDIENT_FIELDS: ReadonlyArray<IdentifierField<IngredientIdentifiers>> =
@@ -144,9 +152,9 @@ const identifierFields = {
       'DailyMed Structured Product Label set id — UUID-shaped, for example "a1e07d5c-2056-46f3-8737-f03ed0b4bae8".',
     ),
   dsld_id: z
-    .number()
+    .union([z.number(), z.string()])
     .optional()
-    .describe("NIH DSLD label id — a positive integer."),
+    .describe("NIH DSLD label id — a positive integer, as a number or digits."),
 };
 
 /**
@@ -231,6 +239,14 @@ function exactlyOneMessage(present: readonly IdentifierKey[]): string {
   return `Error: ${RESOLVE_IDENTIFIERS} — pass exactly one identifier: ${IDENTIFIER_LIST}. ${detail} Resolve each identifier in a separate call.`;
 }
 
+/** A bounded preview of a caller-supplied value. */
+function preview(value: unknown): string {
+  const text = String(value);
+  return text.length > MAX_PREVIEW_LENGTH
+    ? `${text.slice(0, MAX_PREVIEW_LENGTH)}…`
+    : text;
+}
+
 /** A shape refusal naming the expected spelling and where to find a good one. */
 function invalidIdentifier(
   key: IdentifierKey,
@@ -240,7 +256,7 @@ function invalidIdentifier(
 ): { ok: false; error: string } {
   return {
     ok: false,
-    error: `Error: ${RESOLVE_IDENTIFIERS} — "${key}" ${expected}. Received "${String(received)}". ${advice}`,
+    error: `Error: ${RESOLVE_IDENTIFIERS} — "${key}" ${expected}. Received "${preview(received)}". ${advice}`,
   };
 }
 
@@ -268,7 +284,7 @@ const IDENTIFIER_ADVICE: Readonly<Record<IdentifierKey, string>> = {
  * malformed CAS number fails with the search tool that finds the right value
  * instead of an empty upstream answer.
  */
-export function prepareResolveInput(input: ResolveToolInput): PreparedInput {
+function prepareResolveInput(input: ResolveToolInput): PreparedInput {
   const key = IDENTIFIER_KEYS.find(
     (candidate) => input[candidate] !== undefined,
   ) as IdentifierKey;
@@ -394,12 +410,12 @@ export function prepareResolveInput(input: ResolveToolInput): PreparedInput {
       };
     }
     case "dsld_id": {
-      const value = input.dsld_id as number;
+      const value = Number(input.dsld_id);
       if (!Number.isSafeInteger(value) || value <= 0) {
         return invalidIdentifier(
           key,
           "expects a positive integer DSLD label id",
-          value,
+          input.dsld_id,
           IDENTIFIER_ADVICE.dsld_id,
         );
       }
@@ -542,9 +558,16 @@ function uniiStep(unii: string): NextStep {
   };
 }
 
+/** A trimmed name the follow-up tools will accept, or undefined. */
+function usableName(value: string | undefined): string | undefined {
+  const name = value?.trim();
+  if (name === undefined || name.length === 0) return undefined;
+  return name.slice(0, MAX_NAME_LENGTH);
+}
+
 /** The resolve-by-name follow-up for a product ingredient without a UNII. */
-function ingredientStep(ingredient: IngredientRef): NextStep {
-  const inciName = ingredient.inciName;
+function ingredientStep(ingredient: IngredientRef): NextStep | null {
+  const inciName = usableName(ingredient.inciName);
   if (inciName !== undefined) {
     return {
       tool: RESOLVE_IDENTIFIERS,
@@ -552,10 +575,12 @@ function ingredientStep(ingredient: IngredientRef): NextStep {
       why: `The product lists ${ingredient.name} with INCI ${inciName}; resolve the INCI name across the other databases.`,
     };
   }
+  const name = usableName(ingredient.name);
+  if (name === undefined) return null;
   return {
     tool: RESOLVE_IDENTIFIERS,
-    input: { substance_name: ingredient.name },
-    why: `The product lists ${ingredient.name}; resolve it by name to identify the ingredient across databases.`,
+    input: { substance_name: name },
+    why: `The product lists ${name}; resolve it by name to identify the ingredient across databases.`,
   };
 }
 
@@ -638,6 +663,26 @@ export function confidenceOf(result: ResolveOutput): ResolveConfidence {
   };
 }
 
+/**
+ * Adds graph coverage to a product result that carries graphs.
+ *
+ * Recomputed after every bounding pass, so the counts describe the graphs a
+ * host actually receives rather than the pre-bounding prefix. The cap comes
+ * from the chain's own constant.
+ */
+function withGraphCoverage(value: ResolveOutput): ResolveOutput {
+  if (value.kind !== "product" || value.graphs === undefined) return value;
+  return {
+    ...value,
+    graphCoverage: {
+      included: value.graphs.length,
+      total: value.ingredients.length,
+      cap: MAX_INGREDIENT_GRAPHS,
+      capped: value.ingredients.length > value.graphs.length,
+    },
+  };
+}
+
 /** A database-ordered list of links as markdown bullets. */
 function linkBlocks(
   links: readonly SourceLink[],
@@ -688,9 +733,9 @@ function graphBlocks(
   level: string,
 ): string[] {
   const inci =
-    graph.subject.name !== undefined && graph.subject.inciName !== undefined
-      ? [`- INCI: ${graph.subject.inciName}`]
-      : [];
+    graph.subject.inciName === undefined
+      ? []
+      : [`- INCI: ${graph.subject.inciName}`];
   const identifiers = identifierText(graph.identifiers, INGREDIENT_FIELDS);
   return [
     title,
@@ -711,6 +756,9 @@ function ingredientLine(ingredient: IngredientRef): string {
   const identifiers = identifierText(ingredient.identifiers, INGREDIENT_FIELDS);
   const details = [
     `**${ingredient.name}**`,
+    ...(ingredient.inciName === undefined
+      ? []
+      : [`INCI: ${ingredient.inciName}`]),
     ...(ingredient.role === undefined ? [] : [`role: ${ingredient.role}`]),
     ...(ingredient.quantity === undefined
       ? []
@@ -721,13 +769,13 @@ function ingredientLine(ingredient: IngredientRef): string {
   return `- ${details.join(" · ")}`;
 }
 
-/** The per-ingredient graph section, including the prefix disclosure. */
+/** The per-ingredient graph section, including coverage counts. */
 function graphSection(
   graphs: readonly IdentityGraph[],
-  total: number,
+  coverage: GraphCoverage,
 ): string[] {
   return [
-    `## Per-ingredient graphs (${graphs.length} of ${total})`,
+    `## Per-ingredient graphs (${coverage.included} of ${coverage.total})`,
     ...(graphs.length === 0
       ? ["- No per-ingredient graphs were returned."]
       : []),
@@ -741,8 +789,16 @@ function graphSection(
   ];
 }
 
+/** The prefix disclosure shown when graph coverage is partial. */
+function graphCoverageNote(coverage: GraphCoverage): string[] {
+  if (!coverage.capped) return [];
+  return [
+    `_Graphs cover only the first ${coverage.included} of ${coverage.total} ingredient rows: the chain caps per-call graphs at ${coverage.cap}, and the response limit can reduce that further. Resolve the remaining ingredients individually with ${RESOLVE_IDENTIFIERS}._`,
+  ];
+}
+
 /** Renders one identity resolution as markdown. */
-export function renderMarkdown(
+function renderMarkdown(
   value: ResolveOutput,
   query: string,
   truncated: boolean,
@@ -777,13 +833,11 @@ export function renderMarkdown(
                 "- Set `resolve_ingredients: true` to run the full chain for each ingredient. That is many requests on multi-ingredient products.",
               ]
             : [
-                ...graphSection(value.graphs, value.ingredients.length),
-                ...(value.graphs.length > 0 &&
-                value.ingredients.length > value.graphs.length
-                  ? [
-                      `_Graphs cover only the first ${value.graphs.length} of ${value.ingredients.length} ingredient rows: the chain caps per-call graphs at 20, and the response limit can reduce that further. Resolve the remaining ingredients individually with ${RESOLVE_IDENTIFIERS}._`,
-                    ]
-                  : []),
+                ...graphSection(
+                  value.graphs,
+                  value.graphCoverage as GraphCoverage,
+                ),
+                ...graphCoverageNote(value.graphCoverage as GraphCoverage),
               ],
           candidateBlocks(value.candidates, "##"),
         ].flat();
@@ -835,28 +889,32 @@ export function registerResolveIdentifiersTool(
           prepared.input,
           prepared.opts,
         );
-        const skeleton = resolveIdentifiersResultSchema.parse({
-          ...resolution,
-          nextSteps: [],
-          confidence: {
-            directLinks: 0,
-            derivedLinks: 0,
-            candidateSets: 0,
-          },
-        });
+        const skeleton = withGraphCoverage(
+          resolveIdentifiersResultSchema.parse({
+            ...resolution,
+            nextSteps: [],
+            confidence: {
+              directLinks: 0,
+              derivedLinks: 0,
+              candidateSets: 0,
+            },
+          }),
+        );
 
         // Bound first, then derive follow-ups from what the host will actually
         // see, so a dropped link cannot leave a step pointing at missing data.
         const bounded = boundStructured(skeleton);
+        const boundedWithCoverage = withGraphCoverage(bounded.value);
         const withSteps = resolveIdentifiersResultSchema.parse({
-          ...bounded.value,
-          nextSteps: resolveNextSteps(bounded.value),
-          confidence: confidenceOf(bounded.value),
+          ...boundedWithCoverage,
+          nextSteps: resolveNextSteps(boundedWithCoverage),
+          confidence: confidenceOf(boundedWithCoverage),
         });
         const final = boundStructured(withSteps);
+        const finalWithCoverage = withGraphCoverage(final.value);
         const value = resolveIdentifiersResultSchema.parse({
-          ...final.value,
-          confidence: confidenceOf(final.value),
+          ...finalWithCoverage,
+          confidence: confidenceOf(finalWithCoverage),
         });
 
         if (request.response_format === "json") {
