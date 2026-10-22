@@ -2,6 +2,7 @@ import {
   type CosingClient,
   type CosingIngredient,
   type CosingMatch,
+  type CosingMatchField,
   type CosingPage,
   cosingDetailUrl,
   type IngredientSearchCriteria,
@@ -428,3 +429,97 @@ export function createCosingAdapter(client?: CosingClient): SourceAdapter {
 
 /** The process-wide adapter, backed by the shared CosIng client. */
 export const cosingAdapter: SourceAdapter = createCosingAdapter();
+
+/** One CosIng search hit, retaining how the inventory matched it. */
+export interface CosingBridgeHit {
+  ingredient: IngredientRef;
+  matchedOn: CosingMatchField;
+  exact: boolean;
+}
+
+/** The INCI and CAS search bridges the identity chain consumes. */
+export interface CosingBridges {
+  /**
+   * Exact INCI search first, fuzzy text fallback. A blank value is an empty
+   * result, never a query.
+   */
+  byInci(inci: string, signal?: AbortSignal): Promise<CosingBridgeHit[]>;
+  /** CosIng's wildcard CAS search (substring semantics upstream). */
+  byCas(cas: string, signal?: AbortSignal): Promise<CosingBridgeHit[]>;
+}
+
+/** Maps one page of CosIng matches to bridge hits. */
+function bridgeHits(page: CosingPage<CosingIngredient>): CosingBridgeHit[] {
+  const hits: CosingBridgeHit[] = [];
+  for (const match of page.items) {
+    const ingredient = refOf(match.item);
+    if (ingredient !== null) {
+      hits.push({
+        ingredient,
+        matchedOn: match.matchedOn,
+        exact: match.exact,
+      });
+    }
+  }
+  return hits;
+}
+
+/**
+ * Builds the chain-facing CosIng bridges.
+ *
+ * A zero match is an ordinary empty list. Upstream failures are reworded to
+ * name only CosIng, matching the adapter.
+ *
+ * @param client Optional client override, mirroring {@link createCosingAdapter}.
+ */
+export function createCosingBridges(client?: CosingClient): CosingBridges {
+  const clients = () => client ?? getClients().cosing;
+
+  return {
+    async byInci(inci, signal) {
+      const trimmed = inci.trim();
+      if (trimmed.length === 0) return [];
+      const cosing = clients();
+      try {
+        const exact = await cosing.ingredients.search({
+          inciName: trimmed.toUpperCase(),
+          page: 1,
+          pageSize: 5,
+          signal,
+        });
+        if (exact.items.length > 0) return bridgeHits(exact);
+        return bridgeHits(
+          await cosing.ingredients.search({
+            text: trimmed,
+            page: 1,
+            pageSize: 5,
+            signal,
+          }),
+        );
+      } catch (error) {
+        throw cosingFailure("The CosIng ingredient search", error);
+      }
+    },
+
+    async byCas(cas, signal) {
+      const trimmed = cas.trim();
+      if (trimmed.length === 0) return [];
+      const cosing = clients();
+      try {
+        return bridgeHits(
+          await cosing.ingredients.search({
+            casNo: trimmed,
+            page: 1,
+            pageSize: 5,
+            signal,
+          }),
+        );
+      } catch (error) {
+        throw cosingFailure("The CosIng ingredient search", error);
+      }
+    },
+  };
+}
+
+/** The process-wide chain bridges, backed by the shared CosIng client. */
+export const cosingBridges: CosingBridges = createCosingBridges();

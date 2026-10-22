@@ -10,6 +10,7 @@ import { resetClients } from "../src/clients.js";
 import { resetConfig } from "../src/config.js";
 import {
   createOpenFdaAdapter,
+  createOpenFdaBridges,
   matchSubstanceTier,
   openfdaAdapter,
   rankSubstances,
@@ -798,5 +799,183 @@ describe("openFDA substance ranking", () => {
       "EMPTY",
       "NO_NAMES",
     ]);
+  });
+});
+
+describe("openFDA identity bridges", () => {
+  it("fetches a substance by UNII and by dashed CAS", async () => {
+    const { client } = clientFor(
+      routeTo("/other/substance.json", fixture("substance-unii-glycerin.json")),
+    );
+    const bridges = createOpenFdaBridges(client);
+
+    const byUnii = await bridges.substanceByUnii(" pdc6a3c0ox ");
+    expect(byUnii?.name).toBe("Glycerin");
+    expect(byUnii?.identifiers.unii).toBe("PDC6A3C0OX");
+    expect(byUnii?.source.database).toBe("openFDA");
+
+    const { client: casClient } = clientFor(
+      routeTo("/other/substance.json", fixture("substance-cas-glycerin.json")),
+    );
+    const byCas =
+      await createOpenFdaBridges(casClient).substanceByCas("56-81-5");
+    expect(byCas?.identifiers.unii).toBe("PDC6A3C0OX");
+  });
+
+  it("treats a malformed or missing substance as a zero match", async () => {
+    const { client, fetchMock } = clientFor(
+      routeTo("/other/substance.json", fixture("substance-unii-glycerin.json")),
+    );
+    const bridges = createOpenFdaBridges(client);
+
+    expect(await bridges.substanceByUnii("not-a-unii")).toBeNull();
+    expect(await bridges.substanceByCas("not-a-cas")).toBeNull();
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    const { client: missClient } = clientFor(() => notFound());
+    expect(
+      await createOpenFdaBridges(missClient).substanceByUnii("PDC6A3C0OX"),
+    ).toBeNull();
+
+    const { client: emptyClient } = clientFor(() =>
+      jsonResponse({ meta: {}, results: [] }),
+    );
+    expect(
+      await createOpenFdaBridges(emptyClient).substanceByUnii("PDC6A3C0OX"),
+    ).toBeNull();
+    expect(
+      await createOpenFdaBridges(emptyClient).substanceByCas("56-81-5"),
+    ).toBeNull();
+  });
+
+  it("rewords a non-404 substance failure without naming the client", async () => {
+    const { client } = clientFor(() => jsonResponse({}, { status: 500 }));
+    await expect(
+      createOpenFdaBridges(client).substanceByUnii("PDC6A3C0OX"),
+    ).rejects.toThrow(/openFDA/);
+    await expect(
+      createOpenFdaBridges(client).substanceByUnii("PDC6A3C0OX"),
+    ).rejects.not.toThrow(/@knorby/);
+  });
+
+  it("searches by name through the UNII crosswalk and ranks the hits", async () => {
+    const handler: Handler = (url) => {
+      if (url.pathname === "/other/unii.json") {
+        return jsonResponse(fixture("unii-crosswalk-glycerin-exact.json"));
+      }
+      if (url.pathname === "/other/substance.json") {
+        return jsonResponse(fixture("substance-unii-glycerin.json"));
+      }
+      return notFound();
+    };
+    const { client } = clientFor(handler);
+    const hits =
+      await createOpenFdaBridges(client).substancesByName("glycerin");
+
+    expect(hits).toHaveLength(1);
+    expect(hits[0]?.ingredient.name).toBe("Glycerin");
+    expect(hits[0]?.tier).toBe("inci");
+    expect(await createOpenFdaBridges(client).substancesByName("  ")).toEqual(
+      [],
+    );
+  });
+
+  it("drops crosswalk entries that cannot become a substance ref", async () => {
+    const handler: Handler = (url) => {
+      if (url.pathname === "/other/unii.json") {
+        return jsonResponse({
+          meta: {},
+          results: [
+            { substance_name: "GLYCERIN", unii: "PDC6A3C0OX" },
+            { substance_name: "NO UNII", unii: "" },
+          ],
+        });
+      }
+      if (url.pathname === "/other/substance.json") {
+        return jsonResponse({
+          meta: {},
+          results: [{ names: [{ name: "GLYCERIN" }] }],
+        });
+      }
+      return notFound();
+    };
+    const { client } = clientFor(handler);
+    expect(
+      await createOpenFdaBridges(client).substancesByName("glycerin"),
+    ).toEqual([]);
+
+    const emptyRecordHandler: Handler = (url) => {
+      if (url.pathname === "/other/unii.json") {
+        return jsonResponse({
+          meta: {},
+          results: [{ substance_name: "GLYCERIN", unii: "PDC6A3C0OX" }],
+        });
+      }
+      return jsonResponse({ meta: {}, results: [] });
+    };
+    const { client: emptyClient } = clientFor(emptyRecordHandler);
+    expect(
+      await createOpenFdaBridges(emptyClient).substancesByName("glycerin"),
+    ).toEqual([]);
+
+    const missingHandler: Handler = (url) => {
+      if (url.pathname === "/other/unii.json") {
+        return jsonResponse({
+          meta: {},
+          results: [{ substance_name: "GLYCERIN", unii: "PDC6A3C0OX" }],
+        });
+      }
+      return notFound();
+    };
+    const { client: missingClient } = clientFor(missingHandler);
+    expect(
+      await createOpenFdaBridges(missingClient).substancesByName("glycerin"),
+    ).toEqual([]);
+  });
+
+  it("propagates a sanitized non-404 crosswalk record failure", async () => {
+    const handler: Handler = (url) => {
+      if (url.pathname === "/other/unii.json") {
+        return jsonResponse({
+          meta: {},
+          results: [{ substance_name: "GLYCERIN", unii: "PDC6A3C0OX" }],
+        });
+      }
+      return jsonResponse({}, { status: 500 });
+    };
+    const { client } = clientFor(handler);
+    await expect(
+      createOpenFdaBridges(client).substancesByName("glycerin"),
+    ).rejects.toThrow(/openFDA/);
+  });
+
+  it("resolves products by NDC and set id", async () => {
+    const { client } = clientFor(
+      routeTo("/drug/ndc.json", fixture("ndc-brand-lipitor.json")),
+    );
+    const bridges = createOpenFdaBridges(client);
+    const byNdc = await bridges.productByNdc("58151-155-77");
+    expect(byNdc?.product.name).toBe("Lipitor");
+    expect(byNdc?.product.source.database).toBe("openFDA");
+
+    const { client: labelClient } = clientFor(
+      routeTo("/drug/label.json", fixture("label-setid-atorvastatin.json")),
+    );
+    const bySetid = await createOpenFdaBridges(labelClient).productBySetId(
+      "a60cc18b-0631-4cf0-b021-9f52224ece65",
+    );
+    expect(bySetid?.product.name).toBe("Lipitor");
+  });
+
+  it("treats product misses as null and rejects malformed NDCs", async () => {
+    const { client } = clientFor(() => notFound());
+    const bridges = createOpenFdaBridges(client);
+    expect(await bridges.productByNdc("58151-155-77")).toBeNull();
+    expect(
+      await bridges.productBySetId("a60cc18b-0631-4cf0-b021-9f52224ece65"),
+    ).toBeNull();
+    await expect(bridges.productByNdc("not-an-ndc")).rejects.toThrow(
+      /Expected an openFDA product NDC/,
+    );
   });
 });

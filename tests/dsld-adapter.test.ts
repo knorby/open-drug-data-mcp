@@ -4,7 +4,11 @@ import { describe, expect, it, vi } from "vitest";
 import { resetClients } from "../src/clients.js";
 import { resetConfig } from "../src/config.js";
 import { ingredientRefSchema, productRefSchema } from "../src/lib/schemas.js";
-import { createDsldAdapter, dsldAdapter } from "../src/sources/dsld.js";
+import {
+  createDsldAdapter,
+  createDsldBridges,
+  dsldAdapter,
+} from "../src/sources/dsld.js";
 import { jsonResponse } from "./helpers.js";
 
 /**
@@ -1050,5 +1054,112 @@ describe("DSLD failure sanitation", () => {
     expect(message).toContain("did not return a usable response");
     expectSanitized(message);
     expect(message).not.toContain("internal.example");
+  });
+});
+
+describe("DSLD identity bridges", () => {
+  it("maps ingredient-group hits with CAS, a source id, and a deep link", async () => {
+    const { client, fetchMock } = clientFor((url) => {
+      if (url.pathname.endsWith("/v9/ingredient-groups")) {
+        return jsonResponse(fixture("ingredient-groups-vitamin-d3.json"));
+      }
+      throw new Error(`unexpected DSLD request: ${url.pathname}`);
+    });
+    const refs =
+      await createDsldBridges(client).ingredientGroupsByName("vitamin d3");
+
+    expect(refs).toHaveLength(1);
+    expect(refs[0]?.name).toBe("Vitamin D3");
+    expect(refs[0]?.identifiers.cas).toEqual(["67-97-0"]);
+    expect(refs[0]?.source).toMatchObject({
+      database: "DSLD",
+      id: "vitamin-d3",
+      url: "https://dsld.od.nih.gov/ingredient/Vitamin%20D3",
+    });
+    expect(refs[0]?.matchBasis).toBe("ingredient name match");
+    expect(requests(fetchMock)[0]?.searchParams.get("method")).toBe(
+      "by_keyword",
+    );
+    expect(
+      await createDsldBridges(client).ingredientGroupsByName("  "),
+    ).toEqual([]);
+  });
+
+  it("drops incomplete ingredient-group hits", async () => {
+    const { client } = clientFor((url) => {
+      if (url.pathname.endsWith("/v9/ingredient-groups")) {
+        return jsonResponse({
+          hits: [
+            { _index: "ingredient-groups" },
+            { _source: { groupId: "nameless" } },
+            {
+              _source: {
+                groupId: "no-cas",
+                groupName: "No CAS",
+                nutrientInfo: [{ cas: "   " }],
+              },
+            },
+          ],
+        });
+      }
+      return jsonResponse(emptyList());
+    });
+    const refs = await createDsldBridges(client).ingredientGroupsByName("x");
+    expect(refs).toHaveLength(1);
+    expect(refs[0]?.name).toBe("No CAS");
+    expect(refs[0]?.identifiers.cas).toBeUndefined();
+    expect(refs[0]?.source.id).toBe("no-cas");
+
+    const { client: missingHits } = clientFor(() =>
+      jsonResponse({ total: { value: 0, relation: "eq" } }),
+    );
+    expect(
+      await createDsldBridges(missingHits).ingredientGroupsByName("x"),
+    ).toEqual([]);
+
+    const { client: missingId } = clientFor(() =>
+      jsonResponse({ hits: [{ _source: { groupName: "No Id" } }] }),
+    );
+    const noId = await createDsldBridges(missingId).ingredientGroupsByName("x");
+    expect(noId[0]?.source.id).toBe("No Id");
+  });
+
+  it("rewords ingredient-group failures without naming the client", async () => {
+    const { client } = clientFor((url) =>
+      url.pathname.endsWith("/v9/ingredient-groups")
+        ? failure(500)
+        : jsonResponse(emptyList()),
+    );
+    const message = await errorMessage(
+      createDsldBridges(client).ingredientGroupsByName("x"),
+    );
+    expect(message).toContain("DSLD");
+    expectSanitized(message);
+  });
+
+  it("maps one label to its product ref and ingredient rows", async () => {
+    const { client } = clientFor((url) => {
+      if (url.pathname.endsWith("/v9/label/82118")) {
+        return jsonResponse(labelPage());
+      }
+      if (url.pathname.endsWith("/v9/ingredient-groups")) {
+        const term = url.searchParams.get("term");
+        if (term === "Vitamin D3") {
+          return jsonResponse(fixture("ingredient-groups-vitamin-d3.json"));
+        }
+        return jsonResponse(term === "Calcium" ? calciumGroups() : emptyList());
+      }
+      return jsonResponse(emptyList());
+    });
+    const record = await createDsldBridges(client).label(82118);
+    expect(record?.product.identifiers.dsldId).toBe(82118);
+    expect(record?.ingredients.length).toBeGreaterThan(0);
+  });
+
+  it("rewords a label failure without naming the client", async () => {
+    const { client } = clientFor(() => failure(500));
+    const message = await errorMessage(createDsldBridges(client).label(82118));
+    expect(message).toContain("DSLD");
+    expectSanitized(message);
   });
 });

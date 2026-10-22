@@ -4,7 +4,11 @@ import { describe, expect, it, vi } from "vitest";
 import { resetClients } from "../src/clients.js";
 import { resetConfig } from "../src/config.js";
 import { ingredientRefSchema } from "../src/lib/schemas.js";
-import { cosingAdapter, createCosingAdapter } from "../src/sources/cosing.js";
+import {
+  cosingAdapter,
+  createCosingAdapter,
+  createCosingBridges,
+} from "../src/sources/cosing.js";
 import { jsonResponse } from "./helpers.js";
 
 /**
@@ -568,5 +572,64 @@ describe("CosIng failures", () => {
       resetClients();
       resetConfig();
     }
+  });
+});
+
+describe("CosIng identity bridges", () => {
+  it("searches exact INCI first and keeps the match metadata", async () => {
+    const { client } = clientFor(
+      routeTo(fixture("ingredient-inci-niacinamide.json")),
+    );
+    const hits = await createCosingBridges(client).byInci("niacinamide");
+
+    expect(hits).toHaveLength(1);
+    expect(hits[0]?.ingredient.name).toBe("NIACINAMIDE");
+    expect(hits[0]?.matchedOn).toBe("inciName");
+    expect(hits[0]?.exact).toBe(true);
+    expect(await createCosingBridges(client).byInci("  ")).toEqual([]);
+  });
+
+  it("falls back to the fuzzy text search", async () => {
+    const { client } = clientFor((_url, init) => {
+      const must = searchQuery(init).bool.must;
+      return jsonResponse(
+        must.some((clause) => clause.term?.inciName !== undefined)
+          ? fixture("ingredient-zero.json")
+          : fixture("ingredient-text-niacinamide.json"),
+      );
+    });
+    const hits = await createCosingBridges(client).byInci("niacinamide");
+    expect(hits.map((hit) => hit.ingredient.source.id)).toEqual([
+      "83218",
+      "92270",
+    ]);
+    expect(hits[0]?.matchedOn).toBe("text");
+  });
+
+  it("searches by CAS and treats a blank as an empty result", async () => {
+    const { client } = clientFor(
+      routeTo(fixture("ingredient-cas-98-92-0.json")),
+    );
+    const hits = await createCosingBridges(client).byCas("98-92-0");
+    expect(hits[0]?.ingredient.identifiers.cas).toContain("98-92-0");
+    expect(await createCosingBridges(client).byCas("  ")).toEqual([]);
+  });
+
+  it("drops a record without a substance id", async () => {
+    const { client } = clientFor(
+      routeTo(envelope([{ inciName: "NO SUBSTANCE ID" }])),
+    );
+    const hits = await createCosingBridges(client).byInci("no substance id");
+    expect(hits).toEqual([]);
+  });
+
+  it("rewords search failures without naming the client", async () => {
+    const { client } = clientFor(() => new Response("{}", { status: 500 }));
+    await expect(createCosingBridges(client).byInci("x")).rejects.toThrow(
+      /CosIng/,
+    );
+    await expect(createCosingBridges(client).byCas("98-92-0")).rejects.toThrow(
+      /CosIng/,
+    );
   });
 });

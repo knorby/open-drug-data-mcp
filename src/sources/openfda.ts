@@ -950,8 +950,13 @@ function directoryStrengths(raw: DrugNdc): Map<string, string> {
   return strengths;
 }
 
-/** Maps parsed SPL ingredients to ingredient refs, crediting DailyMed. */
-function splIngredients(
+/**
+ * Maps parsed SPL ingredients to ingredient refs, crediting DailyMed.
+ *
+ * Exported for the identity chain, which parses a product's SPL rows itself
+ * when it resolves label ingredients at product level.
+ */
+export function splIngredientRefs(
   entries: readonly SplIngredient[],
   setid: string,
   retrievedAt: string,
@@ -998,6 +1003,20 @@ function openFdaRecord(
   };
 }
 
+/** The adapter's openFDA-specific surface, narrowed for callers and tests. */
+export interface OpenFdaAdapter extends SourceAdapter {
+  getProduct(
+    id: string,
+    opts: Record<string, unknown>,
+    signal?: AbortSignal,
+  ): Promise<OpenFdaProductRecord>;
+  getIngredient(
+    id: string,
+    opts: Record<string, unknown>,
+    signal?: AbortSignal,
+  ): Promise<IngredientLookupRecord>;
+}
+
 /**
  * Builds the openFDA adapter.
  *
@@ -1009,7 +1028,7 @@ function openFdaRecord(
 export function createOpenFdaAdapter(
   client?: OpenFdaClient,
   bridges: Pick<NlmBridges, "getSplXml"> = nlmBridges,
-): SourceAdapter {
+): OpenFdaAdapter {
   const clients = () => client ?? getClients().openfda;
 
   const productSearchTypes: ProductSearchType[] = [
@@ -1033,7 +1052,7 @@ export function createOpenFdaAdapter(
     strengths: ReadonlyMap<string, string>,
   ): Promise<IngredientRef[]> {
     const xml = await bridges.getSplXml(setid);
-    return splIngredients(
+    return splIngredientRefs(
       parseSplIngredients(xml),
       setid,
       retrievedAt,
@@ -1315,4 +1334,154 @@ export function createOpenFdaAdapter(
 }
 
 /** The process-wide adapter, backed by the shared openFDA client. */
-export const openfdaAdapter: SourceAdapter = createOpenFdaAdapter();
+export const openfdaAdapter: OpenFdaAdapter = createOpenFdaAdapter();
+
+/** One name-search hit from the openFDA UNII crosswalk, with its match tier. */
+export interface OpenFdaSubstanceHit {
+  ingredient: IngredientRef;
+  tier: SubstanceMatchTier;
+}
+
+/** The identifier and product bridges the identity chain consumes. */
+export interface OpenFdaBridges {
+  /** The substance record for a UNII, or `null` when openFDA has none. */
+  substanceByUnii(
+    unii: string,
+    signal?: AbortSignal,
+  ): Promise<IngredientRef | null>;
+  /** The substance record for a dashed CAS number, or `null`. */
+  substanceByCas(
+    cas: string,
+    signal?: AbortSignal,
+  ): Promise<IngredientRef | null>;
+  /**
+   * Ranked substance candidates for a name, empty on a zero match. This is
+   * the unreliable name path: the crosswalk decides which UNIIs to fetch,
+   * and the ranked tier tells the caller whether one is a clear hit.
+   */
+  substancesByName(
+    name: string,
+    signal?: AbortSignal,
+  ): Promise<OpenFdaSubstanceHit[]>;
+  /** One directory product by NDC, or `null` on a zero match. */
+  productByNdc(
+    ndc: string,
+    signal?: AbortSignal,
+  ): Promise<OpenFdaProductRecord | null>;
+  /** One product by SPL set id, or `null` on a zero match. */
+  productBySetId(
+    setid: string,
+    signal?: AbortSignal,
+  ): Promise<OpenFdaProductRecord | null>;
+}
+
+/** Fetches a substance record by one fielded search, or `null`. */
+async function bridgeSubstance(
+  client: OpenFdaClient,
+  search: string,
+): Promise<IngredientRef | null> {
+  const retrievedAt = new Date().toISOString();
+  try {
+    const response = await client.other.substance.search({ search, limit: 1 });
+    const raw = response.results[0];
+    return raw === undefined ? null : mapIngredient(raw, retrievedAt);
+  } catch (error) {
+    if (error instanceof OpenFdaNotFoundError) return null;
+    throw openFdaFailure("The openFDA ingredient lookup", error);
+  }
+}
+
+/** Resolves one product through the adapter, treating a miss as `null`. */
+async function bridgeProduct(
+  client: OpenFdaClient,
+  id: string,
+): Promise<OpenFdaProductRecord | null> {
+  try {
+    return await createOpenFdaAdapter(client).getProduct(id, {
+      includeLabelIngredients: false,
+    });
+  } catch (error) {
+    if ((error as { status?: unknown } | null)?.status === 404) return null;
+    throw error;
+  }
+}
+
+/**
+ * Builds the chain-facing openFDA bridges.
+ *
+ * Unknown or malformed identifiers resolve to `null`/empty results (a zero
+ * match, never an error). Name search fetches the crosswalk's UNIIs and ranks
+ * the records by how closely their names agree, mirroring the adapter.
+ *
+ * @param client Optional client override, mirroring
+ *   {@link createOpenFdaAdapter}.
+ */
+export function createOpenFdaBridges(client?: OpenFdaClient): OpenFdaBridges {
+  const clients = () => client ?? getClients().openfda;
+
+  return {
+    async substanceByUnii(unii, _signal) {
+      const normalized = unii.trim().toUpperCase();
+      if (!isUnii(normalized)) return null;
+      return await bridgeSubstance(clients(), field("unii", normalized));
+    },
+
+    async substanceByCas(cas, _signal) {
+      const normalized = cas.trim();
+      if (!CAS.test(normalized)) return null;
+      return await bridgeSubstance(
+        clients(),
+        and(field("codes.code", normalized), field("codes.code_system", "CAS")),
+      );
+    },
+
+    async substancesByName(name, _signal) {
+      const trimmed = name.trim();
+      if (trimmed.length === 0) return [];
+
+      const entries = await crosswalkEntries(clients(), trimmed, 1);
+      const retrievedAt = new Date().toISOString();
+      const records: Substance[] = [];
+      for (const entry of entries) {
+        const unii = nonEmpty(entry.unii);
+        if (unii === undefined) continue;
+        try {
+          const response = await clients().other.substance.search({
+            search: field("unii", unii),
+            limit: 1,
+          });
+          const record = response.results[0];
+          if (record !== undefined) records.push(record);
+        } catch (error) {
+          if (!(error instanceof OpenFdaNotFoundError)) {
+            throw openFdaFailure("The openFDA ingredient search", error);
+          }
+        }
+      }
+
+      const hits: OpenFdaSubstanceHit[] = [];
+      for (const record of rankSubstances(records, trimmed)) {
+        const ingredient = mapIngredient(
+          record,
+          retrievedAt,
+          MATCH_BASIS[matchSubstanceTier(record, trimmed)],
+        );
+        if (ingredient !== null) {
+          hits.push({ ingredient, tier: matchSubstanceTier(record, trimmed) });
+        }
+      }
+      return hits;
+    },
+
+    async productByNdc(ndc, _signal) {
+      return await bridgeProduct(clients(), ndc.trim());
+    },
+
+    async productBySetId(setid, _signal) {
+      return await bridgeProduct(clients(), setid.trim().toLowerCase());
+    },
+  };
+}
+
+/** The process-wide chain bridges, backed by the shared openFDA client. */
+export const openfdaBridges: OpenFdaBridges = createOpenFdaBridges();

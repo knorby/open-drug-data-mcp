@@ -883,3 +883,104 @@ export function createDsldAdapter(client?: DsldClient): DsldAdapter {
 
 /** The process-wide adapter, backed by the shared DSLD client. */
 export const dsldAdapter: DsldAdapter = createDsldAdapter();
+
+/** Deep link to a DSLD ingredient-group page. */
+function ingredientGroupUrl(name: string): string {
+  return `https://dsld.od.nih.gov/ingredient/${encodeURIComponent(name)}`;
+}
+
+/** One DSLD ingredient-group hit in the unified ingredient vocabulary. */
+function ingredientGroupRef(
+  doc: IngredientGroupDoc,
+  retrievedAt: string,
+): IngredientRef | null {
+  const name = nonEmpty(doc.groupName);
+  if (name === undefined) return null;
+  const cas = unique(
+    (doc.nutrientInfo ?? [])
+      .map((info) => nonEmpty(info.cas))
+      .filter((value): value is string => value !== undefined),
+  );
+  return {
+    name,
+    identifiers: {
+      ...(cas.length > 0 ? { cas } : {}),
+    },
+    source: {
+      database: "DSLD",
+      id: nonEmpty(doc.groupId) ?? name,
+      url: ingredientGroupUrl(name),
+      retrievedAt,
+    },
+    matchBasis: "ingredient name match",
+  };
+}
+
+/** The ingredient-name and label bridges the identity chain consumes. */
+export interface DsldBridges {
+  /** Ingredient-group name matches, used for weak terminal candidates. */
+  ingredientGroupsByName(
+    name: string,
+    signal?: AbortSignal,
+  ): Promise<IngredientRef[]>;
+  /** One label's product ref and ingredient rows, or `null` on a miss. */
+  label(
+    dsldId: number,
+    signal?: AbortSignal,
+  ): Promise<{ product: ProductRef; ingredients: IngredientRef[] } | null>;
+}
+
+/**
+ * Builds the chain-facing DSLD bridges.
+ *
+ * Ingredient-group search is deliberately name-based and capped: it exists
+ * to offer weak candidates, never to auto-link a supplement ingredient. A
+ * label bridge fetches one label and maps its ingredient rows with the same
+ * role, quantity, and UNII handling as the product adapter.
+ *
+ * @param client Optional client override, mirroring {@link createDsldAdapter}.
+ */
+export function createDsldBridges(client?: DsldClient): DsldBridges {
+  const clients = () => client ?? getClients().dsld;
+
+  return {
+    async ingredientGroupsByName(name, _signal) {
+      const trimmed = name.trim();
+      if (trimmed.length === 0) return [];
+      const retrievedAt = new Date().toISOString();
+      const dsld = clients();
+      try {
+        const result = await dsld.ingredients.groups({
+          term: trimmed,
+          method: BROWSE_METHODS.BY_KEYWORD,
+          size: 5,
+        });
+        const refs: IngredientRef[] = [];
+        for (const hit of result.hits ?? []) {
+          const doc = hit._source;
+          if (doc === undefined) continue;
+          const ref = ingredientGroupRef(doc, retrievedAt);
+          if (ref !== null) refs.push(ref);
+        }
+        return refs;
+      } catch (error) {
+        throw dsldFailure("The ingredient-group search", error);
+      }
+    },
+
+    async label(dsldId, _signal) {
+      const retrievedAt = new Date().toISOString();
+      const dsld = clients();
+      try {
+        const label = await dsld.label.get(dsldId);
+        const record = await labelRecord(dsld, label, retrievedAt);
+        return { product: record.product, ingredients: record.ingredients };
+      } catch (error) {
+        throw dsldFailure("The label lookup", error);
+      }
+    },
+  };
+}
+
+/** The process-wide chain bridges, backed by the shared DSLD client. */
+export const dsldBridges: DsldBridges = createDsldBridges();
