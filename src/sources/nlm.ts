@@ -2,6 +2,7 @@ import type {
   NlmDrugsClient,
   RxApproximateMatch,
   RxConcept,
+  RxTerm,
   SplPage,
   SplSearch,
   SplSummary,
@@ -10,6 +11,7 @@ import { getClients } from "../clients.js";
 import { isSplSetId, isUnii, normalizeNdc } from "../lib/ids.js";
 import type {
   IngredientIdentifiers,
+  IngredientProfile,
   IngredientRef,
   IngredientRole,
   LabelSections,
@@ -25,6 +27,7 @@ import {
 } from "./identity/spl-ingredients.js";
 import type {
   IngredientGroup,
+  IngredientLookupRecord,
   IngredientSearchType,
   ProductGroup,
   ProductSearchType,
@@ -773,6 +776,90 @@ async function rxNormProduct(
   };
 }
 
+/** A not-found error the tool layer renders as an ordinary 404. */
+function rxNormIngredientNotFound(id: string): Error {
+  return Object.assign(
+    new Error(
+      `RxNorm has no concept for "${id}". Check the RxCUI, or search ingredients by name to find the concept.`,
+    ),
+    { status: 404 },
+  );
+}
+
+/** The RxTerms presentation fields, when RxTerms publishes any. */
+function rxTermProfile(term: RxTerm | undefined): IngredientProfile["rxTerm"] {
+  if (term === undefined) return undefined;
+  const fullName = nonEmpty(term.fullName);
+  const brandName = nonEmpty(term.brandName);
+  const strength = nonEmpty(term.strength);
+  const route = nonEmpty(term.route);
+  return {
+    displayName: term.displayName,
+    ...(fullName === undefined ? {} : { fullName }),
+    ...(brandName === undefined ? {} : { brandName }),
+    ...(strength === undefined ? {} : { strength }),
+    ...(route === undefined ? {} : { route }),
+  };
+}
+
+/**
+ * Fetches one RxNorm concept with its RxTerms presentation and NDC crosswalk.
+ *
+ * The concept is the record; RxTerms and the NDC list are enrichments of the
+ * same lookup. A missing concept is a normal 404, while a failed enrichment
+ * fails the lookup rather than returning a record with silently missing data.
+ */
+async function fetchRxNormIngredient(
+  client: NlmDrugsClient,
+  rawId: string,
+  signal: AbortSignal | undefined,
+): Promise<IngredientLookupRecord> {
+  const id = rawId.trim();
+  if (!RXCUI.test(id)) {
+    throw new Error(
+      `Expected an RxNorm rxcui, but got "${id}". Pass identifiers.rxcui from an RxNorm result, or search ingredients by name.`,
+    );
+  }
+
+  let concept: RxConcept | undefined;
+  let term: RxTerm | undefined;
+  let ndcs: string[] = [];
+  try {
+    [concept, term, ndcs] = await Promise.all([
+      client.rxNorm.getConcept(id, { signal }),
+      client.rxTerms.getTerm(id, { signal }),
+      client.rxNorm.getNdcs(id, { signal }),
+    ]);
+  } catch (error) {
+    throw nlmFailure("The RxNorm ingredient lookup", "RxNorm", error);
+  }
+  if (concept === undefined) throw rxNormIngredientNotFound(id);
+
+  const base = ingredientRefOf(
+    concept.rxcui,
+    concept.name,
+    new Date().toISOString(),
+  );
+  if (base === null) throw rxNormIngredientNotFound(id);
+  const rxTerm = rxTermProfile(term);
+  const synonym = nonEmpty(concept.synonym);
+  const ndc = unique(ndcs);
+
+  return {
+    ingredient: {
+      ...base,
+      summary: `RxNorm term type ${concept.tty}`,
+    },
+    profile: {
+      rxcui: concept.rxcui,
+      tty: concept.tty,
+      ...(synonym === undefined ? {} : { synonym }),
+      ...(rxTerm === undefined ? {} : { rxTerm }),
+      ndcs: ndc,
+    },
+  };
+}
+
 /**
  * Builds the NLM adapter.
  *
@@ -927,6 +1014,14 @@ export function createNlmAdapter(client?: NlmDrugsClient): SourceAdapter {
       throw new Error(
         `Expected a DailyMed SPL set id or an RxNorm rxcui, but got "${trimmed}". Pass identifiers.splSetId or identifiers.rxcui from an NLM result; use drugdata_search_products to find a label or drugdata_search_ingredients to find a concept.`,
       );
+    },
+
+    async getIngredient(
+      id: string,
+      _opts: Record<string, unknown>,
+      signal?: AbortSignal,
+    ): Promise<IngredientLookupRecord> {
+      return await fetchRxNormIngredient(clients(), id, signal);
     },
   };
 }

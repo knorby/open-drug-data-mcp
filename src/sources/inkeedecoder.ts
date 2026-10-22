@@ -148,7 +148,10 @@ function ingredientRefOf(
  * editorial rating, safety notes, and the CosIng panel's functions and IUPAC
  * name. Labels are ours; every value is INKEEDecoder's.
  */
-function ingredientSummaryOf(item: ClientIngredient): string | undefined {
+function ingredientSummaryOf(
+  item: ClientIngredient,
+  includeCosingPanel: boolean,
+): string | undefined {
   const parts: string[] = [];
 
   const functions = (item.functions ?? []).map((entry) => entry.name);
@@ -164,12 +167,14 @@ function ingredientSummaryOf(item: ClientIngredient): string | undefined {
     parts.push(`Comedogenicity: ${comedogenicity}`);
   }
 
-  const cosingFunctions = nonEmpty(item.cosing?.allFunctions);
-  if (cosingFunctions !== undefined) {
-    parts.push(`CosIng functions: ${cosingFunctions}`);
+  if (includeCosingPanel) {
+    const cosingFunctions = nonEmpty(item.cosing?.allFunctions);
+    if (cosingFunctions !== undefined) {
+      parts.push(`CosIng functions: ${cosingFunctions}`);
+    }
+    const iupacName = nonEmpty(item.cosing?.iupacName);
+    if (iupacName !== undefined) parts.push(`IUPAC name: ${iupacName}`);
   }
-  const iupacName = nonEmpty(item.cosing?.iupacName);
-  if (iupacName !== undefined) parts.push(`IUPAC name: ${iupacName}`);
 
   return parts.length > 0 ? parts.join(" · ") : undefined;
 }
@@ -192,6 +197,8 @@ export interface IkdIngredientDetails {
 /** A full INKEEDecoder ingredient in the unified vocabulary. */
 export interface IkdIngredientRecord {
   ingredient: IngredientRef;
+  /** Canonical profile field consumed by `drugdata_get_ingredient`. */
+  profile: IkdIngredientDetails;
   details: IkdIngredientDetails;
 }
 
@@ -200,17 +207,22 @@ function ingredientRecordOf(
   item: ClientIngredient,
   requestedSlug: string,
   retrievedAt: string,
+  includeCosingPanel: boolean,
 ): IkdIngredientRecord {
   const slug = nonEmpty(item.slug) ?? requestedSlug;
   const name = nonEmpty(item.name) ?? slug;
-  const cas = identifierList(item.cosing?.cas);
-  const ec = identifierList(item.cosing?.ec);
-  const summary = ingredientSummaryOf(item);
+  const cas = includeCosingPanel ? identifierList(item.cosing?.cas) : [];
+  const ec = includeCosingPanel ? identifierList(item.cosing?.ec) : [];
+  const summary = ingredientSummaryOf(item, includeCosingPanel);
   const alsoCalled = nonEmpty(item.alsoCalled);
   const irritancy = nonEmpty(item.irritancy);
   const comedogenicity = nonEmpty(item.comedogenicity);
-  const cosingFunctions = nonEmpty(item.cosing?.allFunctions);
-  const iupacName = nonEmpty(item.cosing?.iupacName);
+  const cosingFunctions = includeCosingPanel
+    ? nonEmpty(item.cosing?.allFunctions)
+    : undefined;
+  const iupacName = includeCosingPanel
+    ? nonEmpty(item.cosing?.iupacName)
+    : undefined;
   const image = nonEmpty(item.image);
   const details = nonEmpty(item.details);
 
@@ -218,6 +230,17 @@ function ingredientRecordOf(
     slug,
     ...(cas.length > 0 ? { cas } : {}),
     ...(ec.length > 0 ? { ec } : {}),
+  };
+  const profile: IkdIngredientDetails = {
+    functions: (item.functions ?? []).map((entry) => entry.name),
+    ...(alsoCalled !== undefined ? { alsoCalled } : {}),
+    ...(irritancy !== undefined ? { irritancy } : {}),
+    ...(comedogenicity !== undefined ? { comedogenicity } : {}),
+    ...(cosingFunctions !== undefined ? { cosingFunctions } : {}),
+    ...(iupacName !== undefined ? { iupacName } : {}),
+    ...(image !== undefined ? { image } : {}),
+    ...(details !== undefined ? { details } : {}),
+    proof: item.proof ?? [],
   };
 
   return {
@@ -232,17 +255,8 @@ function ingredientRecordOf(
       ),
       ...(summary !== undefined ? { summary } : {}),
     },
-    details: {
-      functions: (item.functions ?? []).map((entry) => entry.name),
-      ...(alsoCalled !== undefined ? { alsoCalled } : {}),
-      ...(irritancy !== undefined ? { irritancy } : {}),
-      ...(comedogenicity !== undefined ? { comedogenicity } : {}),
-      ...(cosingFunctions !== undefined ? { cosingFunctions } : {}),
-      ...(iupacName !== undefined ? { iupacName } : {}),
-      ...(image !== undefined ? { image } : {}),
-      ...(details !== undefined ? { details } : {}),
-      proof: item.proof ?? [],
-    },
+    profile,
+    details: profile,
   };
 }
 
@@ -612,10 +626,11 @@ export function createInkeedecoderAdapter(
 
     async getIngredient(
       id: string,
-      _opts: Record<string, unknown>,
+      opts: Record<string, unknown>,
       signal?: AbortSignal,
     ): Promise<IkdIngredientRecord> {
       const slug = normalizeSlug(id);
+      const includeCosingPanel = opts.includeCosingPanel === true;
       const ikd = clients();
       const retrievedAt = new Date().toISOString();
 
@@ -625,12 +640,17 @@ export function createInkeedecoderAdapter(
           safety: true,
           alsoCalled: true,
           image: true,
-          cosing: true,
+          cosing: includeCosingPanel,
           details: true,
           proof: true,
           signal,
         });
-        return ingredientRecordOf(ingredient, slug, retrievedAt);
+        return ingredientRecordOf(
+          ingredient,
+          slug,
+          retrievedAt,
+          includeCosingPanel,
+        );
       } catch (error) {
         throw ikdFailure("The INKEEDecoder ingredient lookup", error);
       }

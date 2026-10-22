@@ -7,9 +7,16 @@ import {
   type IngredientSearchCriteria,
 } from "@knorby/eu-cosing-client";
 import { getClients } from "../clients.js";
-import type { IngredientIdentifiers, IngredientRef } from "../lib/schemas.js";
+import type {
+  IngredientIdentifiers,
+  IngredientProfile,
+  IngredientRef,
+  IngredientRegulatory,
+  RegulatoryNotice,
+} from "../lib/schemas.js";
 import type {
   IngredientGroup,
+  IngredientLookupRecord,
   IngredientSearchType,
   SourceAdapter,
 } from "./types.js";
@@ -111,10 +118,10 @@ function summaryOf(item: CosingIngredient): string | undefined {
  * record without a substance id has no stable identity or deep link, so it is
  * dropped rather than emitted with an empty source id.
  */
-function mapIngredient(
-  match: CosingMatch<CosingIngredient>,
+function refOf(
+  item: CosingIngredient,
+  matchBasis?: string,
 ): IngredientRef | null {
-  const item = match.item;
   const id = nonEmpty(item.substanceId);
   if (id === undefined) return null;
 
@@ -139,8 +146,161 @@ function mapIngredient(
       url: cosingDetailUrl(id),
       retrievedAt: item.source.retrievedAt,
     },
-    matchBasis: matchBasisOf(match),
+    ...(matchBasis !== undefined ? { matchBasis } : {}),
     ...(summary !== undefined ? { summary } : {}),
+  };
+}
+
+/** Maps one CosIng search match to the unified ref vocabulary. */
+function mapIngredient(
+  match: CosingMatch<CosingIngredient>,
+): IngredientRef | null {
+  return refOf(match.item, matchBasisOf(match));
+}
+
+/** The profile fields a CosIng inventory record exposes. */
+function profileOf(item: CosingIngredient): IngredientProfile {
+  const strings = (values: readonly string[]): string[] =>
+    unique(values).filter((value) => value.trim().length > 0);
+  return {
+    ...(nonEmpty(item.glossaryName) !== undefined
+      ? { glossaryName: nonEmpty(item.glossaryName) }
+      : {}),
+    ...(nonEmpty(item.inciName) !== undefined
+      ? { inciName: nonEmpty(item.inciName) }
+      : {}),
+    ...(nonEmpty(item.innName) !== undefined
+      ? { innName: nonEmpty(item.innName) }
+      : {}),
+    ...(nonEmpty(item.inciUsaName) !== undefined
+      ? { inciUsaName: nonEmpty(item.inciUsaName) }
+      : {}),
+    ...(nonEmpty(item.phEurName) !== undefined
+      ? { phEurName: nonEmpty(item.phEurName) }
+      : {}),
+    ...(nonEmpty(item.chemicalName) !== undefined
+      ? { chemicalName: nonEmpty(item.chemicalName) }
+      : {}),
+    ...(nonEmpty(item.chemicalDescription) !== undefined
+      ? { chemicalDescription: nonEmpty(item.chemicalDescription) }
+      : {}),
+    functions: strings(item.functions),
+    ...(nonEmpty(item.status) !== undefined
+      ? { status: nonEmpty(item.status) }
+      : {}),
+    annexNumbers: strings(item.annexNumbers),
+    identifiedIngredientIds: strings(item.identifiedIngredientIds),
+    ...(nonEmpty(item.cosmeticRestriction) !== undefined
+      ? { cosmeticRestriction: nonEmpty(item.cosmeticRestriction) }
+      : {}),
+    otherRestrictions: strings(item.otherRestrictions),
+    sccsOpinions: strings(item.sccsOpinions),
+    notes: strings(item.notes),
+    ...(item.perfuming === undefined ? {} : { perfuming: item.perfuming }),
+    ...(item.officialJournalPublication === undefined
+      ? {}
+      : { officialJournalPublication: item.officialJournalPublication }),
+  };
+}
+
+/**
+ * Builds the verbatim regulatory notices CosIng carries.
+ *
+ * Restriction and opinion text is never paraphrased. `basis` says why the
+ * notice applies: the annex list the record names, or the field it came from
+ * when CosIng assigns no annex.
+ */
+function regulatoryOf(
+  item: CosingIngredient,
+): IngredientRegulatory | undefined {
+  const notices: RegulatoryNotice[] = [];
+  const restriction = nonEmpty(item.cosmeticRestriction);
+  if (restriction !== undefined) {
+    notices.push({
+      text: restriction,
+      basis:
+        item.annexNumbers.length > 0
+          ? `annex ${item.annexNumbers.join(", ")}`
+          : "CosIng restriction",
+      source: "CosIng",
+    });
+  }
+  for (const text of item.otherRestrictions) {
+    if (text.trim().length === 0) continue;
+    notices.push({
+      text,
+      basis: "other restriction (verbatim)",
+      source: "CosIng",
+    });
+  }
+  for (const text of item.sccsOpinions) {
+    if (text.trim().length === 0) continue;
+    notices.push({
+      text,
+      basis: "SCCS opinion (verbatim)",
+      source: "CosIng",
+    });
+  }
+  return notices.length > 0 ? { notices } : undefined;
+}
+
+/** A not-found error the tool layer renders as an ordinary 404. */
+function cosingNotFound(id: string): Error {
+  return Object.assign(
+    new Error(
+      `CosIng has no inventory record for "${id}". Check the substance id or INCI name, or search CosIng ingredients by name or INCI.`,
+    ),
+    { status: 404 },
+  );
+}
+
+/**
+ * Fetches one CosIng ingredient by substance id, INCI name, or glossary name.
+ *
+ * A numeric id is the inventory's stable key. A text value must match exactly,
+ * first as an INCI name and then as a glossary name; fuzzy text search belongs
+ * to `drugdata_search_ingredients`, not to a lookup that promises one record.
+ */
+async function fetchCosingIngredient(
+  client: CosingClient,
+  rawId: string,
+  signal: AbortSignal | undefined,
+): Promise<IngredientLookupRecord> {
+  const id = rawId.trim();
+  let match: CosingMatch<CosingIngredient> | null;
+  try {
+    if (/^\d+$/.test(id)) {
+      match = await client.ingredients.get(id, { signal });
+    } else {
+      const inci = await client.ingredients.search({
+        inciName: id.toUpperCase(),
+        page: 1,
+        pageSize: 1,
+        signal,
+      });
+      match = inci.items[0] ?? null;
+      if (match === null) {
+        const glossary = await client.ingredients.search({
+          glossaryName: id.toUpperCase(),
+          page: 1,
+          pageSize: 1,
+          signal,
+        });
+        match = glossary.items[0] ?? null;
+      }
+    }
+  } catch (error) {
+    throw cosingFailure("The CosIng ingredient lookup", error);
+  }
+  if (match === null) throw cosingNotFound(id);
+
+  const ingredient = refOf(match.item);
+  if (ingredient === null) throw cosingNotFound(id);
+  const regulatory = regulatoryOf(match.item);
+  return {
+    ingredient,
+    profile: profileOf(match.item),
+    ...(regulatory !== undefined ? { regulatory } : {}),
   };
 }
 
@@ -251,6 +411,14 @@ export function createCosingAdapter(client?: CosingClient): SourceAdapter {
       } catch (error) {
         throw cosingFailure("The CosIng ingredient search", error);
       }
+    },
+
+    async getIngredient(
+      id: string,
+      _opts: Record<string, unknown>,
+      signal?: AbortSignal,
+    ): Promise<IngredientLookupRecord> {
+      return await fetchCosingIngredient(clients(), id, signal);
     },
   };
 }

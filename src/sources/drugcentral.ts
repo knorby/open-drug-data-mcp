@@ -5,21 +5,30 @@ import {
   type FaersPopulation,
   type GuidedResult,
   type IdentifierMatch,
+  type IdentifierRecord,
   type OmopRelationship,
   type PopulationStampedSignal,
   type Struct2Atc,
   type StructureCandidate,
   type StructureProfile,
+  type Synonym,
 } from "@knorby/drugcentral-client";
 import { getClients } from "../clients.js";
+import { SourceInputError } from "../lib/errors.js";
 import { isUnii } from "../lib/ids.js";
 import type {
+  ConditionAssertion,
+  FaersSignal,
+  IngredientClinical,
+  IngredientCrosswalk,
   IngredientIdentifiers,
+  IngredientProfile,
   IngredientRef,
   SourceRef,
 } from "../lib/schemas.js";
 import type {
   IngredientGroup,
+  IngredientLookupRecord,
   IngredientSearchType,
   SourceAdapter,
 } from "./types.js";
@@ -80,6 +89,15 @@ const RXCUI = /^\d+$/;
 
 /** A CAS Registry Number, in the conventional dashed spelling. */
 const CAS = /^\d{2,7}-\d{2}-\d$/;
+
+/** A prefixed crosswalk identifier, e.g. `DRUGBANK_ID:DB00945`. */
+const PREFIXED_IDENTIFIER = /^([A-Za-z][A-Za-z0-9_]{1,30}):(.+)$/;
+
+/** Clinical assertion rows emitted per category. */
+const CLINICAL_LIMIT = 50;
+
+/** FAERS signal rows emitted. */
+const FAERS_LIMIT = 50;
 
 /** A non-blank string, trimmed, or `undefined` when absent or blank. */
 function nonEmpty(value: string | null | undefined): string | undefined {
@@ -199,6 +217,13 @@ const IDENTITY_LABEL: Record<QueryIdentity["kind"], string> = {
   unii: "UNII",
   rxcui: "RxCUI",
   cas: "CAS",
+};
+
+/** Convenience aliases for crosswalk vocabularies in prefixed ids. */
+const ID_TYPE_ALIASES: Readonly<Record<string, string>> = {
+  RXCUI: "RXNORM",
+  CAS: "SECONDARY_CAS_RN",
+  DRUGBANK: "DRUGBANK_ID",
 };
 
 /**
@@ -429,12 +454,355 @@ async function identifierGroup(
   };
 }
 
+/** A not-found error the tool layer renders as an ordinary 404. */
+function drugCentralIngredientNotFound(id: string): Error {
+  return Object.assign(
+    new Error(
+      `DrugCentral has no structure record for "${id}". Check the structure id or identifier, or search DrugCentral ingredients by name.`,
+    ),
+    { status: 404 },
+  );
+}
+
+/** Values of one crosswalk vocabulary, in source order. */
+function crosswalkValues(
+  rows: readonly IdentifierRecord[],
+  type: string,
+): string[] {
+  return rows
+    .filter((row) => row.id_type === type)
+    .map((row) => nonEmpty(row.identifier))
+    .filter((value): value is string => value !== undefined);
+}
+
+/**
+ * One vocabulary's own identifier, preferring a row that is not a parent or
+ * salt link. DrugCentral marks parent/salt rows through `parent_match`; a
+ * crosswalk can carry both, and the structure's own value is the better
+ * unified identity.
+ */
+function ownCrosswalkValue(
+  rows: readonly IdentifierRecord[],
+  type: string,
+): string | undefined {
+  const candidates = rows.filter((row) => row.id_type === type);
+  const own =
+    candidates.find((row) => row.parent_match === null) ?? candidates[0];
+  return own === undefined ? undefined : nonEmpty(own.identifier);
+}
+
+/** The full crosswalk as `{ type, value }` rows, deduplicated. */
+function crosswalkOf(rows: readonly IdentifierRecord[]): IngredientCrosswalk[] {
+  const seen = new Set<string>();
+  const items: IngredientCrosswalk[] = [];
+  for (const row of rows) {
+    const type = nonEmpty(row.id_type);
+    const value = nonEmpty(row.identifier);
+    if (type === undefined || value === undefined) continue;
+    const key = `${type}:${value}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    items.push({ type, value });
+  }
+  return items;
+}
+
+/** The identifiers a structure profile proves. */
+function profileIdentifiers(
+  structure: DrugStructure,
+  rows: readonly IdentifierRecord[],
+  structId: number,
+): IngredientIdentifiers {
+  const ownUnii = ownCrosswalkValue(rows, "UNII")?.toUpperCase();
+  const unii = ownUnii !== undefined && isUnii(ownUnii) ? ownUnii : undefined;
+  const rxcui = unique(
+    crosswalkValues(rows, "RXNORM").filter((value) => RXCUI.test(value)),
+  );
+  const cas = unique(
+    [
+      nonEmpty(structure.cas_reg_no),
+      ...crosswalkValues(rows, "SECONDARY_CAS_RN"),
+    ].filter((value): value is string => value !== undefined),
+  );
+  const inchiKey = nonEmpty(structure.inchikey);
+  const cid = typeof structure.cd_id === "number" ? structure.cd_id : undefined;
+
+  return {
+    structId,
+    ...(unii === undefined ? {} : { unii }),
+    ...(rxcui.length === 0 ? {} : { rxcui }),
+    ...(cas.length === 0 ? {} : { cas }),
+    ...(inchiKey === undefined ? {} : { inchiKey }),
+    ...(cid === undefined ? {} : { cid: [cid] }),
+  };
+}
+
+/** Maps one OMOP assertion, preserving the source's relationship label. */
+function conditionOf(row: OmopRelationship): ConditionAssertion {
+  const snomedConceptId =
+    row.snomed_conceptid === null ? undefined : String(row.snomed_conceptid);
+  return {
+    name:
+      nonEmpty(row.concept_name) ??
+      nonEmpty(row.snomed_full_name) ??
+      String(row.concept_id),
+    relationship: row.relationship_name,
+    conceptId: row.concept_id,
+    ...(snomedConceptId === undefined ? {} : { snomedConceptId }),
+    ...(nonEmpty(row.snomed_full_name) === undefined
+      ? {}
+      : { snomedFullName: nonEmpty(row.snomed_full_name) }),
+    ...(nonEmpty(row.umls_cui) === undefined
+      ? {}
+      : { umlsCui: nonEmpty(row.umls_cui) }),
+  };
+}
+
+/** Maps one FAERS signal, keeping the report-contingency counts. */
+function faersSignalOf(row: PopulationStampedSignal): FaersSignal {
+  const number = (value: number | null): number | undefined =>
+    typeof value === "number" ? value : undefined;
+  const llr = number(row.llr);
+  const llrThreshold = number(row.llr_threshold);
+  const drugAe = number(row.drug_ae);
+  const drugNoAe = number(row.drug_no_ae);
+  const noDrugAe = number(row.no_drug_ae);
+  const noDrugNoAe = number(row.no_drug_no_ae);
+
+  return {
+    population: row.population,
+    term:
+      nonEmpty(row.meddra_name) ??
+      (row.meddra_code === null
+        ? "unnamed MedDRA term"
+        : `MedDRA ${row.meddra_code}`),
+    ...(llr === undefined ? {} : { llr }),
+    ...(llrThreshold === undefined ? {} : { llrThreshold }),
+    ...(drugAe === undefined ? {} : { drugAe }),
+    ...(drugNoAe === undefined ? {} : { drugNoAe }),
+    ...(noDrugAe === undefined ? {} : { noDrugAe }),
+    ...(noDrugNoAe === undefined ? {} : { noDrugNoAe }),
+  };
+}
+
+/**
+ * Fetches the clinical assertions and FAERS signals for one structure.
+ *
+ * Everything is capped: each condition list keeps at most
+ * {@link CLINICAL_LIMIT} rows and FAERS at most {@link FAERS_LIMIT}. A cap is
+ * visible through `truncated`, so a missing row is never mistaken for an
+ * absent fact.
+ */
+async function clinicalOf(
+  client: DrugCentralClient,
+  structId: number,
+): Promise<IngredientClinical> {
+  const [conditions, faers] = await Promise.all([
+    guarded("The DrugCentral condition lookup", () =>
+      client.guide.getConditionRelationships(structId),
+    ),
+    guarded("The DrugCentral FAERS lookup", () =>
+      client.guide.getFaersSignals(structId, { population: "all" }),
+    ),
+  ]);
+
+  const indications = conditions.data.filter(
+    (row) => row.relationship_name === "indication",
+  );
+  const offLabelUses = conditions.data.filter(
+    (row) => row.relationship_name === "off-label use",
+  );
+  const contraindications = conditions.data.filter(
+    (row) => row.relationship_name === "contraindication",
+  );
+  const faersRows = faers.data.slice(0, FAERS_LIMIT);
+  const truncated =
+    indications.length > CLINICAL_LIMIT ||
+    offLabelUses.length > CLINICAL_LIMIT ||
+    contraindications.length > CLINICAL_LIMIT ||
+    faers.data.length > FAERS_LIMIT;
+
+  return {
+    indications: indications.slice(0, CLINICAL_LIMIT).map(conditionOf),
+    offLabelUses: offLabelUses.slice(0, CLINICAL_LIMIT).map(conditionOf),
+    contraindications: contraindications
+      .slice(0, CLINICAL_LIMIT)
+      .map(conditionOf),
+    faers: faersRows.map(faersSignalOf),
+    truncated,
+  };
+}
+
+/** The profile fields a DrugCentral structure record exposes. */
+function structureProfileOf(
+  structure: DrugStructure,
+  profile: StructureProfile,
+  clinical: IngredientClinical | undefined,
+): IngredientProfile {
+  const atc = unique(
+    profile.atc
+      .map((row) => nonEmpty(row.atc_code))
+      .filter((code): code is string => code !== undefined),
+  );
+  const synonyms = unique(
+    profile.synonyms
+      .map((row: Synonym) => nonEmpty(row.name))
+      .filter((name): name is string => name !== undefined),
+  );
+  const identifiers = crosswalkOf(profile.identifiers);
+  const formula = nonEmpty(structure.cd_formula);
+  const molecularWeight =
+    typeof structure.cd_molweight === "number"
+      ? structure.cd_molweight
+      : undefined;
+  const smiles = nonEmpty(structure.smiles);
+  const inchi = nonEmpty(structure.inchi);
+
+  return {
+    structId: structure.id,
+    ...(nonEmpty(structure.name) === undefined
+      ? {}
+      : { name: nonEmpty(structure.name) }),
+    ...(nonEmpty(structure.status) === undefined
+      ? {}
+      : { status: nonEmpty(structure.status) }),
+    ...(nonEmpty(structure.cas_reg_no) === undefined
+      ? {}
+      : { cas: nonEmpty(structure.cas_reg_no) }),
+    ...(nonEmpty(structure.inchikey) === undefined
+      ? {}
+      : { inchiKey: nonEmpty(structure.inchikey) }),
+    ...(typeof structure.cd_id === "number" ? { cid: structure.cd_id } : {}),
+    ...(formula === undefined ? {} : { formula }),
+    ...(molecularWeight === undefined ? {} : { molecularWeight }),
+    ...(smiles === undefined ? {} : { smiles }),
+    ...(inchi === undefined ? {} : { inchi }),
+    identifiers,
+    atc,
+    synonyms,
+    ...(clinical === undefined ? {} : { clinical }),
+  };
+}
+
+/** Resolves a caller id to one DrugCentral structure id. */
+async function resolveStructId(
+  client: DrugCentralClient,
+  rawId: string,
+): Promise<number> {
+  const id = rawId.trim();
+  if (RXCUI.test(id)) {
+    const structId = Number(id);
+    if (Number.isSafeInteger(structId) && structId > 0) return structId;
+    throw new Error(
+      `Expected a positive DrugCentral structure id, but got "${id}". Pass identifiers.structId from a DrugCentral ingredient result.`,
+    );
+  }
+
+  const unii = isUnii(id.toUpperCase()) ? id.toUpperCase() : undefined;
+  const cas = unii === undefined && CAS.test(id) ? id : undefined;
+  const prefixed = PREFIXED_IDENTIFIER.exec(id);
+  const prefixType =
+    prefixed === null ? undefined : (prefixed[1] as string).toUpperCase();
+  const prefixValue =
+    prefixed === null ? undefined : (prefixed[2] as string).trim();
+  const resolvedPrefixType =
+    prefixType === undefined
+      ? undefined
+      : (ID_TYPE_ALIASES[prefixType] ?? prefixType);
+
+  let matches: GuidedResult<IdentifierMatch[]>;
+  if (unii !== undefined) {
+    matches = await guarded("The DrugCentral identifier lookup", () =>
+      client.guide.resolveByUnii(unii),
+    );
+  } else if (cas !== undefined) {
+    matches = await guarded("The DrugCentral identifier lookup", () =>
+      client.guide.resolveIdentifier({
+        type: "SECONDARY_CAS_RN",
+        value: cas,
+      }),
+    );
+  } else if (resolvedPrefixType !== undefined && prefixValue !== undefined) {
+    matches = await guarded("The DrugCentral identifier lookup", () =>
+      client.guide.resolveIdentifier({
+        type: resolvedPrefixType,
+        value: prefixValue,
+      }),
+    );
+  } else {
+    throw new Error(
+      `Expected a DrugCentral structure id or identifier, but got "${id}". Pass identifiers.structId, a UNII, a dashed CAS number, or a "TYPE:value" crosswalk identifier from a DrugCentral result.`,
+    );
+  }
+
+  const exact = matches.data.filter((match: IdentifierMatch) => {
+    const stored = match.identifier.trim();
+    if (unii !== undefined) return stored.toUpperCase() === unii;
+    if (cas !== undefined) return stored === cas;
+    const matchType = match.idType.toUpperCase();
+    return stored === prefixValue && matchType === resolvedPrefixType;
+  });
+  const structIds = unique(
+    exact.map((match: IdentifierMatch) => match.structId),
+  );
+
+  if (structIds.length === 0) throw drugCentralIngredientNotFound(id);
+  if (structIds.length > 1) {
+    throw new SourceInputError(
+      `DrugCentral maps "${id}" to several structures (${structIds.join(", ")}). Pass identifiers.structId from a DrugCentral result to choose one.`,
+    );
+  }
+  return structIds[0] as number;
+}
+
+/** Fetches one structure profile and maps it to the unified record. */
+async function fetchDrugCentralIngredient(
+  client: DrugCentralClient,
+  rawId: string,
+  includeClinical: boolean,
+): Promise<IngredientLookupRecord> {
+  const structId = await resolveStructId(client, rawId);
+  const result = await guarded("The DrugCentral structure profile lookup", () =>
+    client.guide.getStructureProfile(structId),
+  );
+  const structure = result.data.structure;
+  if (structure === null) throw drugCentralIngredientNotFound(rawId);
+
+  const retrievedAt = result.provenance.retrievedAt;
+  const identifiers = profileIdentifiers(
+    structure,
+    result.data.identifiers,
+    structId,
+  );
+  const summary = summaryOf(structure, result.data.atc);
+  const clinical = includeClinical
+    ? await clinicalOf(client, structId)
+    : undefined;
+  const name =
+    nonEmpty(structure.name) ??
+    nonEmpty(
+      result.data.synonyms.find((row) => row.preferred_name === 1)?.name,
+    ) ??
+    String(structId);
+
+  return {
+    ingredient: {
+      name,
+      identifiers,
+      source: sourceOf(structId, retrievedAt),
+      ...(summary === undefined ? {} : { summary }),
+    },
+    profile: structureProfileOf(structure, result.data, clinical),
+  };
+}
+
 /**
  * The DrugCentral adapter: an ingredient-search adapter that always
  * implements ingredient search.
  */
 export type DrugCentralAdapter = SourceAdapter & {
   searchIngredients: NonNullable<SourceAdapter["searchIngredients"]>;
+  getIngredient: NonNullable<SourceAdapter["getIngredient"]>;
 };
 
 /**
@@ -506,6 +874,17 @@ export function createDrugCentralAdapter(
       }
 
       return [emptyIngredientGroup(page)];
+    },
+
+    async getIngredient(
+      id: string,
+      opts: Record<string, unknown>,
+    ): Promise<IngredientLookupRecord> {
+      return await fetchDrugCentralIngredient(
+        clients(),
+        id,
+        opts.includeClinical === true,
+      );
     },
   };
 }

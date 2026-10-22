@@ -48,6 +48,21 @@ export class SourceRoutingError extends Error {
 }
 
 /**
+ * An actionable caller-input error whose message is safe to show verbatim.
+ *
+ * Adapters use this for a value that is well-formed enough to reach them but
+ * maps to more than one record (for example an ambiguous DrugCentral
+ * identifier). The message names no client library, so tools can surface it
+ * instead of the generic upstream-failure text.
+ */
+export class SourceInputError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "SourceInputError";
+  }
+}
+
+/**
  * Client-library references that must never reach a model.
  *
  * The sourcing policy credits the upstream database, never the npm package

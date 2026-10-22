@@ -1,8 +1,10 @@
 import type {
   DatabaseId,
+  IngredientProfile,
   IngredientRef,
   ProductCategory,
   ProductRef,
+  RegulatoryNotice,
 } from "../lib/schemas.js";
 
 /**
@@ -86,6 +88,13 @@ export interface IngredientGroup {
   page: number;
   hasMore: boolean;
   error?: string;
+}
+
+/** One ingredient lookup's unified record, before the tool renders it. */
+export interface IngredientLookupRecord {
+  ingredient: IngredientRef;
+  profile: IngredientProfile;
+  regulatory?: { notices: RegulatoryNotice[] };
 }
 
 /**

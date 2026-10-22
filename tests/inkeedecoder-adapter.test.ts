@@ -591,7 +591,7 @@ describe("INKEEDecoder ingredient lookup", () => {
 
     const record = await adapter.getIngredient(
       "https://inkeedecoder.com/ingredients/niacinamide?ref=search",
-      {},
+      { includeCosingPanel: true },
     );
 
     const ingredient = record.ingredient;
@@ -635,7 +635,9 @@ describe("INKEEDecoder ingredient lookup", () => {
     const { client } = clientFor(routeTo(EDGE_INGREDIENT));
     const adapter = createInkeedecoderAdapter(client);
 
-    const record = await adapter.getIngredient("edge-ingredient", {});
+    const record = await adapter.getIngredient("edge-ingredient", {
+      includeCosingPanel: true,
+    });
 
     expect(record.ingredient.identifiers).toEqual({
       slug: "edge-ingredient",
@@ -658,6 +660,46 @@ describe("INKEEDecoder ingredient lookup", () => {
     expect(record.ingredient.identifiers).toEqual({ slug: "bare-ingredient" });
     expect(record.ingredient.summary).toBeUndefined();
     expect(record.details).toEqual({ functions: [], proof: [] });
+  });
+
+  it("does not surface the CosIng panel by default even when the page carries one", async () => {
+    const { client } = clientFor(
+      routeTo(fixture("ingredient-niacinamide.html")),
+    );
+    const adapter = createInkeedecoderAdapter(client);
+
+    const record = await adapter.getIngredient("niacinamide", {});
+
+    expect(record.ingredient.identifiers).toEqual({ slug: "niacinamide" });
+    expect(record.details.cosingFunctions).toBeUndefined();
+    expect(record.details.iupacName).toBeUndefined();
+    expect(record.ingredient.summary).not.toContain("CosIng functions");
+  });
+
+  it("omits the CosIng panel unless it is requested", async () => {
+    const { client } = clientFor(routeTo(MINIMAL_INGREDIENT));
+    const adapter = createInkeedecoderAdapter(client);
+
+    const record = await adapter.getIngredient("bare-ingredient", {});
+
+    expect(record.ingredient.identifiers).toEqual({ slug: "bare-ingredient" });
+    expect(record.details.cosingFunctions).toBeUndefined();
+    expect(record.details.iupacName).toBeUndefined();
+    expect(record.ingredient.summary).toBeUndefined();
+  });
+
+  it("tolerates a requested CosIng panel that the page does not carry", async () => {
+    const { client } = clientFor(routeTo(MINIMAL_INGREDIENT));
+    const adapter = createInkeedecoderAdapter(client);
+
+    const record = await adapter.getIngredient("bare-ingredient", {
+      includeCosingPanel: true,
+    });
+
+    expect(record.ingredient.identifiers).toEqual({ slug: "bare-ingredient" });
+    expect(record.details.cosingFunctions).toBeUndefined();
+    expect(record.details.iupacName).toBeUndefined();
+    expect(record.ingredient.summary).toBeUndefined();
   });
 
   it("tolerates a client record with no functions or proof", async () => {

@@ -215,6 +215,82 @@ export function searchNextSteps(
   return steps;
 }
 
+/**
+ * Derives follow-up calls from one ingredient detail.
+ *
+ * Cross-database identifiers are the strongest pivots, so a UNII, RxCUI, or
+ * CAS number invites the resolve tool; a structure id or slug invites the
+ * database's own record lookup. A record lookup is skipped for the database
+ * that already produced the detail, and the list is capped at
+ * {@link MAX_NEXT_STEPS} so a rich profile stays actionable.
+ */
+export function ingredientDetailNextSteps(
+  ingredient: IngredientRef,
+): NextStep[] {
+  const steps: NextStep[] = [];
+  const { identifiers, source } = ingredient;
+  const add = (step: NextStep): void => {
+    if (steps.length === MAX_NEXT_STEPS) return;
+    steps.push(step);
+  };
+
+  const unii = identifiers.unii;
+  if (unii !== undefined) {
+    add({
+      tool: RESOLVE_IDENTIFIERS,
+      input: { unii },
+      why: `The ingredient carries UNII ${unii}; resolve it across the other databases for linked records.`,
+    });
+  }
+
+  const rxcui = first(identifiers.rxcui);
+  if (rxcui !== undefined) {
+    add({
+      tool: RESOLVE_IDENTIFIERS,
+      input: { rxcui },
+      why: `The ingredient carries RxCUI ${rxcui}; resolve it across the other databases for linked records.`,
+    });
+  }
+
+  const structId = identifiers.structId;
+  if (structId !== undefined && source.database !== "DrugCentral") {
+    add({
+      tool: GET_INGREDIENT,
+      input: { source: "drugcentral", id: String(structId) },
+      why: `The ingredient carries DrugCentral structure ${structId}; open its identity crosswalk and ATC classifications.`,
+    });
+  }
+
+  const cas = first(identifiers.cas);
+  if (cas !== undefined) {
+    add({
+      tool: RESOLVE_IDENTIFIERS,
+      input: { cas },
+      why: `The ingredient carries CAS ${cas}; resolve it across the other databases for linked records.`,
+    });
+  }
+
+  const inci = ingredient.inciName;
+  if (inci !== undefined && source.database !== "INKEEDecoder") {
+    add({
+      tool: "drugdata_search_ingredients",
+      input: { type: "inci", query: inci },
+      why: `Search the INCI name "${inci}" to find the cosmetic records that share it.`,
+    });
+  }
+
+  const slug = identifiers.slug;
+  if (slug !== undefined && source.database !== "INKEEDecoder") {
+    add({
+      tool: GET_INGREDIENT,
+      input: { source: "inkeedecoder", id: slug },
+      why: `The ingredient carries INKEEDecoder slug ${slug}; open its cosmetic ingredient page.`,
+    });
+  }
+
+  return steps;
+}
+
 /** What a product detail offers as follow-up: its ref and ingredient rows. */
 export interface ProductDetailSubject {
   product: ProductRef;

@@ -13,9 +13,10 @@ import {
   type UniiRecord,
 } from "@knorby/openfda-client";
 import { getClients } from "../clients.js";
-import { isSplSetId } from "../lib/ids.js";
+import { isSplSetId, isUnii } from "../lib/ids.js";
 import type {
   IngredientIdentifiers,
+  IngredientProfile,
   IngredientRef,
   IngredientRole,
   ProductIdentifiers,
@@ -31,6 +32,7 @@ import {
 import { type NlmBridges, nlmBridges } from "./nlm.js";
 import type {
   IngredientGroup,
+  IngredientLookupRecord,
   IngredientSearchType,
   ProductGroup,
   ProductSearchType,
@@ -80,6 +82,9 @@ const PACKAGE_NDC = /^(\d{4,5}-\d{3,4})-\d{1,2}$/;
 
 /** Active-ingredient strength shape (`"10 mg/1"`, `"0.5 mg/1"`). */
 const STRENGTH = /^([\d.]+)\s*([A-Za-zμ]+)(?:\s*\/.*)?$/;
+
+/** A CAS Registry Number, in the conventional dashed spelling. */
+const CAS = /^\d{2,7}-\d{2}-\d$/;
 
 /** How closely a substance name agrees with the searched text. */
 export type SubstanceMatchTier = "inci" | "exact" | "prefix" | "none";
@@ -436,6 +441,168 @@ function mapIngredient(
       retrievedAt,
     },
     ...(matchBasis !== undefined ? { matchBasis } : {}),
+  };
+}
+
+/**
+ * The profile fields an openFDA substance lookup exposes: every recorded name,
+ * code, and relationship. The values are openFDA's; labels belong to the tool.
+ */
+function substanceProfile(raw: Substance): IngredientProfile {
+  const names = (raw.names ?? []).flatMap((entry) => {
+    const name = nonEmpty(entry.name);
+    if (name === undefined) return [];
+    return [
+      {
+        name,
+        ...(nonEmpty(entry.type) !== undefined
+          ? { type: nonEmpty(entry.type) }
+          : {}),
+        ...(typeof entry.preferred === "boolean"
+          ? { preferred: entry.preferred }
+          : {}),
+        ...(typeof entry.display_name === "boolean"
+          ? { displayName: entry.display_name }
+          : {}),
+        organizations: (entry.name_orgs ?? [])
+          .map((org) => nonEmpty(org.name_org))
+          .filter((org): org is string => org !== undefined),
+      },
+    ];
+  });
+
+  const codes = (raw.codes ?? []).flatMap((entry) => {
+    const code = nonEmpty(entry.code);
+    const system = nonEmpty(entry.code_system);
+    if (code === undefined || system === undefined) return [];
+    return [
+      {
+        code,
+        system,
+        ...(nonEmpty(entry.type) !== undefined
+          ? { type: nonEmpty(entry.type) }
+          : {}),
+      },
+    ];
+  });
+
+  const relationships = (raw.relationships ?? []).flatMap((entry) => {
+    const related = entry.related_substance;
+    const relationship = {
+      ...(nonEmpty(entry.type) !== undefined
+        ? { type: nonEmpty(entry.type) }
+        : {}),
+      ...(nonEmpty(entry.qualification) !== undefined
+        ? { qualification: nonEmpty(entry.qualification) }
+        : {}),
+      ...(nonEmpty(related?.name) !== undefined
+        ? { relatedName: nonEmpty(related?.name) }
+        : {}),
+      ...(nonEmpty(related?.unii) !== undefined
+        ? { relatedUnii: nonEmpty(related?.unii)?.toUpperCase() }
+        : {}),
+      ...(nonEmpty(related?.substance_class) !== undefined
+        ? { relatedSubstanceClass: nonEmpty(related?.substance_class) }
+        : {}),
+    };
+    return Object.keys(relationship).length > 0 ? [relationship] : [];
+  });
+
+  return {
+    ...(nonEmpty(raw.substance_class) !== undefined
+      ? { substanceClass: nonEmpty(raw.substance_class) }
+      : {}),
+    ...(nonEmpty(raw.definition_level) !== undefined
+      ? { definitionLevel: nonEmpty(raw.definition_level) }
+      : {}),
+    ...(nonEmpty(raw.definition_type) !== undefined
+      ? { definitionType: nonEmpty(raw.definition_type) }
+      : {}),
+    ...(names.length > 0 ? { names } : {}),
+    ...(codes.length > 0 ? { codes } : {}),
+    ...(relationships.length > 0 ? { relationships } : {}),
+  };
+}
+
+/** A short source-faithful summary: substance class and definition level. */
+function substanceSummary(raw: Substance): string | undefined {
+  const parts: string[] = [];
+  const substanceClass = nonEmpty(raw.substance_class);
+  if (substanceClass !== undefined) {
+    parts.push(`Substance class: ${substanceClass}`);
+  }
+  const definitionLevel = nonEmpty(raw.definition_level);
+  if (definitionLevel !== undefined) {
+    parts.push(`Definition level: ${definitionLevel}`);
+  }
+  const definitionType = nonEmpty(raw.definition_type);
+  if (definitionType !== undefined) {
+    parts.push(`Definition type: ${definitionType}`);
+  }
+  return parts.length > 0 ? parts.join(" · ") : undefined;
+}
+
+/** A not-found error the tool layer renders as an ordinary 404. */
+function openFdaIngredientNotFound(id: string): Error {
+  return Object.assign(
+    new Error(
+      `openFDA has no substance record for "${id}". Check the UNII or CAS number, or search openFDA ingredients by name.`,
+    ),
+    { status: 404 },
+  );
+}
+
+/**
+ * Fetches one substance record and maps it to the unified ingredient record.
+ *
+ * The id must be a UNII or a dashed CAS number; the tool validates first, but
+ * the adapter keeps the same guard so a direct caller gets actionable text
+ * rather than an upstream query built from arbitrary input.
+ */
+async function fetchSubstance(
+  client: OpenFdaClient,
+  rawId: string,
+  retrievedAt: string,
+): Promise<IngredientLookupRecord> {
+  const id = rawId.trim();
+  const unii = isUnii(id) ? id.toUpperCase() : undefined;
+  const cas = unii === undefined && CAS.test(id) ? id : undefined;
+  if (unii === undefined && cas === undefined) {
+    throw new Error(
+      `Expected a UNII or a dashed CAS number for an openFDA substance, but got "${id}". Pass identifiers.unii or a CAS number from an openFDA ingredient result.`,
+    );
+  }
+
+  const search =
+    unii !== undefined
+      ? and(field("unii", unii))
+      : and(
+          field("codes.code", cas as string),
+          field("codes.code_system", "CAS"),
+        );
+
+  let raw: Substance | undefined;
+  try {
+    const response = await client.other.substance.search({ search, limit: 1 });
+    raw = response.results[0];
+  } catch (error) {
+    if (error instanceof OpenFdaNotFoundError) {
+      throw openFdaIngredientNotFound(id);
+    }
+    throw openFdaFailure("The openFDA ingredient lookup", error);
+  }
+  if (raw === undefined) throw openFdaIngredientNotFound(id);
+
+  const base = mapIngredient(raw, retrievedAt);
+  if (base === null) throw openFdaIngredientNotFound(id);
+  const summary = substanceSummary(raw);
+
+  return {
+    ingredient: {
+      ...base,
+      ...(summary !== undefined ? { summary } : {}),
+    },
+    profile: substanceProfile(raw),
   };
 }
 
@@ -1135,6 +1302,14 @@ export function createOpenFdaAdapter(
         );
       }
       return await productByNdc(trimmed, includeLabelIngredients, retrievedAt);
+    },
+
+    async getIngredient(
+      id: string,
+      _opts: Record<string, unknown>,
+    ): Promise<IngredientLookupRecord> {
+      const retrievedAt = new Date().toISOString();
+      return await fetchSubstance(clients(), id, retrievedAt);
     },
   };
 }

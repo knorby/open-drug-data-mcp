@@ -237,11 +237,17 @@ export const labelSectionsSchema = z.object({
 /** Usage sections plus whether the extraction had to shorten them. */
 export type LabelSections = z.infer<typeof labelSectionsSchema>;
 
-/** A follow-up link on a product detail. */
-export const productLinkSchema = z.object({
+/** A follow-up link on a detail record. */
+export const recordLinkSchema = z.object({
   label: z.string().describe("Short human-readable label for the link."),
   url: z.string().describe("Deep link to the related record."),
 });
+
+/** A follow-up link on a detail record. */
+export type RecordLink = z.infer<typeof recordLinkSchema>;
+
+/** A follow-up link on a product detail. */
+export const productLinkSchema = recordLinkSchema;
 
 /** A follow-up link on a product detail. */
 export type ProductLink = z.infer<typeof productLinkSchema>;
@@ -306,3 +312,219 @@ export const paginatedFieldsSchema = z.object(paginatedFields);
 
 /** Pagination fields shared by grouped results. */
 export type PaginatedFields = z.infer<typeof paginatedFieldsSchema>;
+
+/**
+ * Source-specific ingredient profile.
+ *
+ * Sources are asymmetric, so every field is optional and the object is closed:
+ * openFDA supplies names/codes/relationships, CosIng supplies functions and
+ * regulatory references, DrugCentral supplies the identity crosswalk and
+ * clinical assertions, RxNorm supplies the concept and RxTerms, and
+ * INKEEDecoder supplies its page's editorial fields. A source contributes what
+ * it actually knows; absent facts stay absent.
+ */
+export const ingredientNameSchema = z.object({
+  name: z.string(),
+  type: z.string().optional(),
+  preferred: z.boolean().optional(),
+  displayName: z.boolean().optional(),
+  organizations: z.array(z.string()),
+});
+
+/** One name variant recorded by a source. */
+export type IngredientName = z.infer<typeof ingredientNameSchema>;
+
+/** One source-assigned code (for example a CAS number or ChEMBL id). */
+export const ingredientCodeSchema = z.object({
+  code: z.string(),
+  system: z.string(),
+  type: z.string().optional(),
+});
+
+/** One source-assigned code. */
+export type IngredientCode = z.infer<typeof ingredientCodeSchema>;
+
+/** One relationship from a substance record to another substance. */
+export const ingredientRelationshipSchema = z.object({
+  type: z.string().optional(),
+  qualification: z.string().optional(),
+  relatedName: z.string().optional(),
+  relatedUnii: z.string().optional(),
+  relatedSubstanceClass: z.string().optional(),
+});
+
+/** One substance relationship. */
+export type IngredientRelationship = z.infer<
+  typeof ingredientRelationshipSchema
+>;
+
+/** One row of a source's identifier crosswalk. */
+export const ingredientCrosswalkSchema = z.object({
+  type: z.string().describe("Source identifier vocabulary, e.g. DRUGBANK_ID."),
+  value: z.string(),
+});
+
+/** One row of a source's identifier crosswalk. */
+export type IngredientCrosswalk = z.infer<typeof ingredientCrosswalkSchema>;
+
+/** The RxTerms presentation fields RxNorm publishes for a concept. */
+export const rxTermSchema = z.object({
+  displayName: z.string(),
+  fullName: z.string().optional(),
+  brandName: z.string().optional(),
+  strength: z.string().optional(),
+  route: z.string().optional(),
+});
+
+/** RxTerms presentation fields for a concept. */
+export type RxTerm = z.infer<typeof rxTermSchema>;
+
+/** One drug-condition assertion, preserving the source's relationship label. */
+export const conditionAssertionSchema = z.object({
+  name: z.string(),
+  relationship: z
+    .string()
+    .describe("Verbatim source relationship label, e.g. indication."),
+  conceptId: z.number().int().optional(),
+  snomedConceptId: z.string().optional(),
+  snomedFullName: z.string().optional(),
+  umlsCui: z.string().optional(),
+});
+
+/** One drug-condition assertion. */
+export type ConditionAssertion = z.infer<typeof conditionAssertionSchema>;
+
+/**
+ * One FAERS disproportionality signal. The count fields are report
+ * contingencies for the drug x event table, never incidence rates.
+ */
+export const faersSignalSchema = z.object({
+  population: z.enum(["all", "male", "female"]),
+  term: z.string(),
+  llr: z.number().optional(),
+  llrThreshold: z.number().optional(),
+  drugAe: z.number().int().optional(),
+  drugNoAe: z.number().int().optional(),
+  noDrugAe: z.number().int().optional(),
+  noDrugNoAe: z.number().int().optional(),
+});
+
+/** One FAERS signal. */
+export type FaersSignal = z.infer<typeof faersSignalSchema>;
+
+/** DrugCentral clinical assertions plus FAERS signals. */
+export const ingredientClinicalSchema = z.object({
+  indications: z.array(conditionAssertionSchema),
+  offLabelUses: z.array(conditionAssertionSchema),
+  contraindications: z.array(conditionAssertionSchema),
+  faers: z.array(faersSignalSchema),
+  truncated: z
+    .boolean()
+    .describe("Whether any clinical list was capped before emission."),
+});
+
+/** DrugCentral clinical assertions plus FAERS signals. */
+export type IngredientClinical = z.infer<typeof ingredientClinicalSchema>;
+
+/** Source-specific ingredient profile fields. */
+export const ingredientProfileSchema = z.object({
+  // openFDA substance records.
+  substanceClass: z.string().optional(),
+  definitionLevel: z.string().optional(),
+  definitionType: z.string().optional(),
+  names: z.array(ingredientNameSchema).optional(),
+  codes: z.array(ingredientCodeSchema).optional(),
+  relationships: z.array(ingredientRelationshipSchema).optional(),
+
+  // CosIng inventory records.
+  glossaryName: z.string().optional(),
+  inciName: z.string().optional(),
+  innName: z.string().optional(),
+  inciUsaName: z.string().optional(),
+  phEurName: z.string().optional(),
+  chemicalName: z.string().optional(),
+  chemicalDescription: z.string().optional(),
+  functions: z.array(z.string()).optional(),
+  status: z.string().optional(),
+  annexNumbers: z.array(z.string()).optional(),
+  identifiedIngredientIds: z.array(z.string()).optional(),
+  cosmeticRestriction: z.string().optional(),
+  otherRestrictions: z.array(z.string()).optional(),
+  sccsOpinions: z.array(z.string()).optional(),
+  notes: z.array(z.string()).optional(),
+  perfuming: z.boolean().optional(),
+  officialJournalPublication: z.boolean().optional(),
+
+  // DrugCentral structure profiles.
+  structId: z.number().int().optional(),
+  cas: z.string().optional().describe("DrugCentral's primary CAS number."),
+  inchiKey: z.string().optional(),
+  cid: z.number().int().optional(),
+  formula: z.string().optional(),
+  molecularWeight: z.number().optional(),
+  smiles: z.string().optional(),
+  inchi: z.string().optional(),
+  identifiers: z.array(ingredientCrosswalkSchema).optional(),
+  atc: z.array(z.string()).optional(),
+  synonyms: z.array(z.string()).optional(),
+  clinical: ingredientClinicalSchema.optional(),
+
+  // RxNorm concepts and RxTerms.
+  rxcui: z.string().optional(),
+  tty: z.string().optional(),
+  synonym: z.string().optional(),
+  rxTerm: rxTermSchema.optional(),
+  ndcs: z.array(z.string()).optional(),
+
+  // INKEEDecoder ingredient pages.
+  alsoCalled: z.string().optional(),
+  irritancy: z.string().optional(),
+  comedogenicity: z.string().optional(),
+  cosingFunctions: z.string().optional(),
+  iupacName: z.string().optional(),
+  image: z.string().optional(),
+  details: z.string().optional(),
+  proof: z.array(z.string()).optional(),
+});
+
+/** Source-specific ingredient profile fields. */
+export type IngredientProfile = z.infer<typeof ingredientProfileSchema>;
+
+/** One regulatory notice, with its verbatim text and match basis. */
+export const regulatoryNoticeSchema = z.object({
+  text: z.string().describe("Source regulatory text, preserved verbatim."),
+  basis: z
+    .string()
+    .describe("Why the notice applies, e.g. annex III or CAS substring match."),
+  source: databaseIdSchema.describe("Upstream database that supplied it."),
+});
+
+/** One regulatory notice. */
+export type RegulatoryNotice = z.infer<typeof regulatoryNoticeSchema>;
+
+/** Regulatory notices attached to an ingredient profile. */
+export const ingredientRegulatorySchema = z.object({
+  notices: z.array(regulatoryNoticeSchema),
+});
+
+/** Regulatory notices attached to an ingredient profile. */
+export type IngredientRegulatory = z.infer<typeof ingredientRegulatorySchema>;
+
+/**
+ * A full ingredient record.
+ *
+ * The briefed shape is `ingredient`, `profile`, and `nextSteps`. `regulatory`
+ * and `links` are additive: regulatory notices keep verbatim source text and
+ * its basis visible at the top level, and links make the record navigable
+ * without re-deriving URLs.
+ */
+export const ingredientDetailSchema = z.object({
+  ingredient: ingredientRefSchema,
+  profile: ingredientProfileSchema,
+  regulatory: ingredientRegulatorySchema.optional(),
+  links: z.array(recordLinkSchema),
+  nextSteps: z.array(nextStepSchema),
+});
+
+/** A full ingredient record in the unified vocabulary. */
+export type IngredientDetail = z.infer<typeof ingredientDetailSchema>;
