@@ -296,7 +296,7 @@ described in [`AGENTS.md`](AGENTS.md).
   policy, and release setup.
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) — development workflow and commit
   conventions.
-- [`skills/open-drug-data/SKILL.md`](skills/open-drug-data/SKILL.md) — an
+- [`skills/open-drug-data/SKILL.md`](https://github.com/knorby/open-drug-data-mcp/blob/main/skills/open-drug-data/SKILL.md) — an
   installable agent skill teaching the search → resolve → get loop.
 
 ## License
