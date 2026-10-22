@@ -93,10 +93,18 @@ const ASPIRIN_SEARCH = {
   "/synonyms/name/aspirin": "synonyms-name-aspirin.json",
 };
 
-/** The structure routes the identifier paths need for struct 74. */
+/** The structure and ATC routes the identifier paths need for struct 74. */
 const ASPIRIN_STRUCTURE = {
   "/structures/id/74": "structures-id-74.json",
+  "/struct2atc/struct_id/74": "struct2atc-struct-74.json",
 };
+
+/** Answers enrichment lookups with 404 for any structure not routed. */
+function emptyEnrichment(path: string): Response {
+  if (path.startsWith("/structures/id/")) return notFound();
+  if (path.startsWith("/struct2atc/struct_id/")) return notFound();
+  throw new Error(`unexpected DrugCentral request: ${path}`);
+}
 
 describe("DrugCentral adapter capabilities", () => {
   it("declares ingredient-only capabilities and no NDC-to-structure support", () => {
@@ -137,7 +145,10 @@ describe("DrugCentral adapter capabilities", () => {
 
 describe("DrugCentral name search", () => {
   it("maps synonym candidates to ingredient refs with a deep link", async () => {
-    const { client } = clientFor(ASPIRIN_SEARCH);
+    const { client } = clientFor(
+      { ...ASPIRIN_SEARCH, ...ASPIRIN_STRUCTURE },
+      emptyEnrichment,
+    );
     const adapter = createDrugCentralAdapter(client);
 
     const groups = await adapter.searchIngredients("name", "  aspirin ", 1);
@@ -156,6 +167,14 @@ describe("DrugCentral name search", () => {
     expect(ingredientRefSchema.parse(first)).toEqual(first);
     expect(first?.name).toBe("aspirin");
     expect(first?.matchBasis).toBe("synonym match");
+    expect(first?.identifiers).toEqual({
+      structId: 74,
+      cas: ["50-78-2"],
+      cid: [348],
+      inchiKey: "BSYNRYMUTXBXSQ-UHFFFAOYSA-N",
+    });
+    expect(first?.summary).toContain("Status: OFP");
+    expect(first?.summary).toContain("ATC: A01AD05");
     expect(first?.source).toEqual({
       database: "DrugCentral",
       id: "74",
@@ -172,6 +191,7 @@ describe("DrugCentral name search", () => {
       "/structures/name/acetylsalicylic acid":
         "structures-name-acetylsalicylic-acid.json",
       "/synonyms/name/acetylsalicylic acid": notFound,
+      ...ASPIRIN_STRUCTURE,
     });
     const adapter = createDrugCentralAdapter(client);
 
@@ -185,6 +205,7 @@ describe("DrugCentral name search", () => {
     expect(groups[0]?.items[0]?.name).toBe("acetylsalicylic acid");
     expect(groups[0]?.items[0]?.identifiers.structId).toBe(74);
     expect(groups[0]?.items[0]?.matchBasis).toBe("preferred-name match");
+    expect(groups[0]?.items[0]?.summary).toContain("ATC: A01AD05");
   });
 
   it("returns an empty group for a zero-match 404", async () => {
@@ -218,7 +239,7 @@ describe("DrugCentral name search", () => {
       { "/synonyms/name/aspirin analog": "synonyms-name-paged.json" },
       (path) => {
         if (path.startsWith("/structures/name/")) return notFound();
-        throw new Error(`unexpected DrugCentral request: ${path}`);
+        return emptyEnrichment(path);
       },
     );
     const adapter = createDrugCentralAdapter(client);
@@ -227,31 +248,37 @@ describe("DrugCentral name search", () => {
     expect(first[0]?.items).toHaveLength(20);
     expect(first[0]?.hasMore).toBe(true);
     expect(first[0]?.items[0]?.identifiers.structId).toBe(1000);
+    expect(fetchMock).toHaveBeenCalledTimes(42);
 
     const second = await adapter.searchIngredients("name", "aspirin analog", 2);
     expect(second[0]?.items).toHaveLength(1);
     expect(second[0]?.hasMore).toBe(false);
     expect(second[0]?.items[0]?.identifiers.structId).toBe(1020);
-    expect(fetchMock).toHaveBeenCalledTimes(4);
+    expect(fetchMock).toHaveBeenCalledTimes(46);
 
     const third = await adapter.searchIngredients("name", "aspirin analog", 3);
     expect(third[0]?.items).toEqual([]);
     expect(third[0]?.hasMore).toBe(false);
+    expect(fetchMock).toHaveBeenCalledTimes(48);
   });
 
-  it("falls back to the structure id when a candidate has no name", async () => {
+  it("summarizes ATC when the structure has no status", async () => {
+    const blankStructure = {
+      id: 9001,
+      name: null,
+      cas_reg_no: null,
+      status: null,
+      cd_id: null,
+      inchikey: null,
+    };
     const { client } = clientFor({
-      "/structures/name/blank": [
-        {
-          id: 9001,
-          name: null,
-          cas_reg_no: null,
-          status: null,
-          cd_id: null,
-          inchi_key: null,
-        },
-      ],
+      "/structures/name/blank": [blankStructure],
       "/synonyms/name/blank": notFound,
+      "/structures/id/9001": [blankStructure],
+      "/struct2atc/struct_id/9001": [
+        { struct_id: 9001, atc_code: "N02BA01", id: 1 },
+        { struct_id: 9001, atc_code: null, id: 2 },
+      ],
     });
     const adapter = createDrugCentralAdapter(client);
 
@@ -259,6 +286,7 @@ describe("DrugCentral name search", () => {
 
     expect(groups[0]?.items[0]?.name).toBe("9001");
     expect(groups[0]?.items[0]?.identifiers).toEqual({ structId: 9001 });
+    expect(groups[0]?.items[0]?.summary).toBe("ATC: N02BA01");
   });
 
   it("returns an empty group for an unsupported search type", async () => {
@@ -296,7 +324,8 @@ describe("DrugCentral identifier search", () => {
       inchiKey: "BSYNRYMUTXBXSQ-UHFFFAOYSA-N",
     });
     expect(item?.matchBasis).toBe("UNII identifier match");
-    expect(item?.summary).toBe("Status: OFP");
+    expect(item?.summary).toContain("Status: OFP");
+    expect(item?.summary).toContain("ATC: A01AD05");
     expect(item?.source).toEqual({
       database: "DrugCentral",
       id: "74",
@@ -309,19 +338,22 @@ describe("DrugCentral identifier search", () => {
   it("drops duplicate crosswalk rows by structure id", async () => {
     const { client } = clientFor({
       "/identifier/identifier/R16CO5Y76E": "identifier-unii-duplicate.json",
-      ...ASPIRIN_STRUCTURE,
+      "/structures/id/74": "structures-id-74.json",
+      "/struct2atc/struct_id/74": notFound,
     });
     const adapter = createDrugCentralAdapter(client);
 
     const groups = await adapter.searchIngredients("unii", "R16CO5Y76E", 1);
 
     expect(groups[0]?.items).toHaveLength(1);
+    expect(groups[0]?.items[0]?.summary).toBe("Status: OFP");
   });
 
   it("keeps a match whose structure record is gone", async () => {
     const { client } = clientFor({
       "/identifier/identifier/R16CO5Y76E": "identifier-unii-aspirin.json",
       "/structures/id/74": notFound,
+      "/struct2atc/struct_id/74": notFound,
     });
     const adapter = createDrugCentralAdapter(client);
 
@@ -373,10 +405,25 @@ describe("DrugCentral identifier search", () => {
     expect(first[0]?.items[0]?.name).toBe("acetylsalicylic acid");
     expect(first[0]?.items[0]?.identifiers.rxcui).toEqual(["1191"]);
     expect(first[0]?.items[0]?.matchBasis).toBe("RxCUI identifier match");
+    expect(first[0]?.items[0]?.summary).toContain("ATC: A01AD05");
 
     const second = await adapter.searchIngredients("rxcui", "1191", 2);
     expect(second[0]?.items).toEqual([]);
     expect(second[0]?.hasMore).toBe(false);
+  });
+
+  it("drops a substring-only crosswalk false positive", async () => {
+    const { client, fetchMock } = clientFor({
+      "/identifier/identifier/1191": "identifier-rxcui-substring.json",
+    });
+    const adapter = createDrugCentralAdapter(client);
+
+    const groups = await adapter.searchIngredients("rxcui", "1191", 1);
+
+    expect(groups).toEqual([
+      { source: "DrugCentral", items: [], page: 1, hasMore: false },
+    ]);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it("rejects a non-numeric RxCUI locally", async () => {
@@ -393,6 +440,7 @@ describe("DrugCentral identifier search", () => {
     const { client } = clientFor({
       "/identifier/identifier/91524-16-2": "identifier-secondary-cas.json",
       "/structures/id/4061": "structures-id-4061.json",
+      "/struct2atc/struct_id/4061": "struct2atc-struct-4061.json",
     });
     const adapter = createDrugCentralAdapter(client);
 
@@ -403,6 +451,8 @@ describe("DrugCentral identifier search", () => {
     expect(item?.identifiers.cas).toEqual(["91524-16-2", "26839-75-8"]);
     expect(item?.identifiers.structId).toBe(4061);
     expect(item?.matchBasis).toBe("CAS identifier match");
+    expect(item?.summary).toContain("Status: OFP");
+    expect(item?.summary).toContain("ATC: C07AA06");
   });
 
   it("rejects a malformed CAS locally and treats a miss as empty", async () => {
@@ -429,7 +479,7 @@ describe("DrugCentral identifier search", () => {
       },
       (path) => {
         if (path.startsWith("/structures/id/")) return notFound();
-        throw new Error(`unexpected DrugCentral request: ${path}`);
+        return emptyEnrichment(path);
       },
     );
     const adapter = createDrugCentralAdapter(client);
@@ -438,7 +488,7 @@ describe("DrugCentral identifier search", () => {
     expect(first[0]?.items).toHaveLength(20);
     expect(first[0]?.hasMore).toBe(true);
     expect(first[0]?.items[0]?.identifiers.structId).toBe(2000);
-    expect(fetchMock).toHaveBeenCalledTimes(21);
+    expect(fetchMock).toHaveBeenCalledTimes(41);
 
     const second = await adapter.searchIngredients("unii", "A000000001", 2);
     expect(second[0]?.items).toHaveLength(1);
@@ -486,6 +536,20 @@ describe("DrugCentral error sanitation", () => {
     const { client } = clientFor({
       "/identifier/identifier/R16CO5Y76E": "identifier-unii-aspirin.json",
       "/structures/id/74": () => failure(500),
+      "/struct2atc/struct_id/74": notFound,
+    });
+    const adapter = createDrugCentralAdapter(client);
+
+    await expect(
+      adapter.searchIngredients("unii", "R16CO5Y76E", 1),
+    ).rejects.toThrow(/DrugCentral returned HTTP 500/);
+  });
+
+  it("rewords an ATC enrichment failure", async () => {
+    const { client } = clientFor({
+      "/identifier/identifier/R16CO5Y76E": "identifier-unii-aspirin.json",
+      "/structures/id/74": "structures-id-74.json",
+      "/struct2atc/struct_id/74": () => failure(500),
     });
     const adapter = createDrugCentralAdapter(client);
 
