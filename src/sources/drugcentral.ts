@@ -660,9 +660,6 @@ function structureProfileOf(
 
   return {
     structId: structure.id,
-    ...(nonEmpty(structure.name) === undefined
-      ? {}
-      : { name: nonEmpty(structure.name) }),
     ...(nonEmpty(structure.status) === undefined
       ? {}
       : { status: nonEmpty(structure.status) }),
