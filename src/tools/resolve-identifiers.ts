@@ -588,9 +588,11 @@ function ingredientStep(ingredient: IngredientRef): NextStep | null {
 function candidateStep(set: CandidateSet): NextStep | null {
   const option = set.options[0];
   if (option === undefined) return null;
+  const query = usableName(option.name);
+  if (query === undefined) return null;
   return {
     tool: SEARCH_INGREDIENTS,
-    input: { type: "name", query: option.name },
+    input: { type: "name", query },
     why: `Candidate from ${set.database} matched by ${set.matchedVia} (${set.reason}); search the name to identify it across sources.`,
   };
 }

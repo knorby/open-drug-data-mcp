@@ -770,6 +770,52 @@ describe("resolve_identifiers ingredient resolution", () => {
     expect(text).toContain("- INCI: Niacinamide");
   });
 
+  it("bounds candidate follow-up names and skips unusable ones", async () => {
+    const longName = `  ${"c".repeat(250)}  `;
+    const client = await connect({
+      resolve: async () =>
+        ingredientResolution({
+          candidates: [
+            {
+              database: "openFDA",
+              matchedVia: "substance name",
+              reason: "multiple-substance-matches",
+              options: [ingredient("   ")],
+            },
+            {
+              database: "DSLD",
+              matchedVia: "ingredient-name",
+              reason: "name-match",
+              options: [ingredient(longName)],
+            },
+          ],
+        }),
+    });
+
+    const result = await call(client.client, { substance_name: "candidate" });
+
+    const output = result.structuredContent as IngredientResolution & {
+      nextSteps: NextStep[];
+    };
+    expect(output.nextSteps).toEqual([
+      {
+        tool: "drugdata_search_ingredients",
+        input: { type: "name", query: "c".repeat(200) },
+        why: expect.any(String),
+      },
+    ]);
+    expect(
+      output.nextSteps.every((step) => {
+        const query = step.input.query;
+        return (
+          typeof query === "string" &&
+          query.trim().length > 0 &&
+          query.length <= 200
+        );
+      }),
+    ).toBe(true);
+  });
+
   it("serializes the result as JSON when asked", async () => {
     const client = await connect(createIdentityResolver(fullChainDeps()));
 
