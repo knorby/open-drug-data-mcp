@@ -195,6 +195,9 @@ function profileOf(item: CosingIngredient): IngredientProfile {
       : {}),
     otherRestrictions: strings(item.otherRestrictions),
     sccsOpinions: strings(item.sccsOpinions),
+    sccsOpinionUrls: strings(item.sccsOpinionUrls),
+    relatedRegulations: strings(item.relatedRegulations),
+    otherRegulations: strings(item.otherRegulations),
     notes: strings(item.notes),
     ...(item.perfuming === undefined ? {} : { perfuming: item.perfuming }),
     ...(item.officialJournalPublication === undefined

@@ -305,6 +305,7 @@ describe("get_ingredient tool", () => {
     });
     expect(tool.description).toContain("include_clinical");
     expect(tool.description).toContain("include_cosing_panel");
+    expect(tool.description).toContain("one extra upstream request");
     expect(tool.description).toContain("default false");
     expect(tool.description).not.toMatch(/client/i);
     expect(Object.keys(tool.inputSchema.properties ?? {}).sort()).toEqual([
@@ -367,6 +368,24 @@ describe("get_ingredient tool", () => {
     }
   });
 
+  it("rejects an unsupported DrugCentral crosswalk type with the supported vocabulary", async () => {
+    harness = await start(createRegistry([], []));
+
+    const result = await harness.client.callTool({
+      name: "drugdata_get_ingredient",
+      arguments: { source: "drugcentral", id: "PUBCHEM_CID:2244" },
+    });
+
+    expect(result.isError).toBe(true);
+    const text = textOf(result);
+    expect(text).toContain("does not support crosswalk type");
+    expect(text).toContain("PUBCHEM_CID");
+    expect(text).toContain("DRUGBANK_ID");
+    expect(text).toContain("identifiers.structId");
+    expect(text).toContain("drugdata_search_ingredients");
+    expect(text).not.toContain("failed unexpectedly");
+  });
+
   it("prepares ids for every source, normalizing where the database is case-insensitive", () => {
     expect(prepareIngredientId("openfda", "pdc6a3c0ox")).toEqual({
       ok: true,
@@ -400,6 +419,9 @@ describe("get_ingredient tool", () => {
       ok: true,
       id: "DRUGBANK_ID:DB00945",
     });
+    expect(
+      prepareIngredientId("drugcentral", "PUBCHEM_CID:2244"),
+    ).toMatchObject({ ok: false });
     expect(prepareIngredientId("nlm", "0083367")).toEqual({
       ok: true,
       id: "83367",
@@ -462,8 +484,14 @@ describe("get_ingredient tool", () => {
     expect(textOf(result)).toContain("DRUGDATA_TIMEOUT_MS");
   });
 
-  it("returns an error when the named database cannot answer ingredient lookups", async () => {
-    const adapter = lookupAdapter("openfda", ["DailyMed"], async () => ({}));
+  it("returns the actionable routing error when the named database cannot answer ingredient lookups", async () => {
+    const adapter: SourceAdapter = {
+      id: "openfda",
+      databases: ["openFDA"],
+      productSearchTypes: [],
+      ingredientSearchTypes: [],
+      productCategories: [],
+    };
     harness = await start(createRegistry([adapter], []));
 
     const result = await harness.client.callTool({
@@ -472,6 +500,9 @@ describe("get_ingredient tool", () => {
     });
 
     expect(result.isError).toBe(true);
+    const text = textOf(result);
+    expect(text).toContain("does not provide ingredient lookups");
+    expect(text).toMatch(/Available sources|No registered source/i);
   });
 
   it("scrubs client-library names from an adapter failure", async () => {
@@ -1056,6 +1087,9 @@ describe("get_ingredient — DrugCentral", () => {
     await expect(ingredientLookup(adapter, "0")).rejects.toThrow(
       /Expected a positive DrugCentral structure id/,
     );
+    await expect(ingredientLookup(adapter, "PUBCHEM_CID:2244")).rejects.toThrow(
+      /does not support crosswalk type/,
+    );
   });
 });
 
@@ -1272,6 +1306,9 @@ describe("get_ingredient — CosIng", () => {
       identifiedIngredientIds: [],
       otherRestrictions: [],
       sccsOpinions: [],
+      sccsOpinionUrls: [],
+      relatedRegulations: [],
+      otherRegulations: [],
       notes: [],
     });
     expect(output.ingredient.summary).toBeUndefined();
@@ -1769,6 +1806,13 @@ describe("get_ingredient — INKEEDecoder", () => {
     ]);
     expect(output.profile.cosingFunctions).toBeUndefined();
     expect(output.profile.iupacName).toBeUndefined();
+    expect(output.nextSteps).toEqual([
+      {
+        tool: "drugdata_search_ingredients",
+        input: { type: "inci", query: "Niacinamide" },
+        why: expect.stringContaining("compare other cosmetic records"),
+      },
+    ]);
 
     const text = textOf(
       await harness.client.callTool({
@@ -1999,6 +2043,9 @@ describe("get_ingredient — profile rendering", () => {
         perfuming: true,
         officialJournalPublication: false,
         notes: ["A note", " "],
+        sccsOpinionUrls: ["https://example.test/sccs-opinion"],
+        relatedRegulations: ["Related regulation"],
+        otherRegulations: ["Other regulation"],
       },
       regulatory: { notices: [] },
     }));
@@ -2009,6 +2056,10 @@ describe("get_ingredient — profile rendering", () => {
       id: "35499",
     });
     expect(output.regulatory?.notices).toEqual([]);
+    expect(output.links).toContainEqual({
+      label: "SCCS opinion",
+      url: "https://example.test/sccs-opinion",
+    });
 
     const text = textOf(
       await harness.client.callTool({
@@ -2024,6 +2075,8 @@ describe("get_ingredient — profile rendering", () => {
     expect(text).toContain("Official Journal publication: no");
     expect(text).toContain("Chemical description (verbatim)");
     expect(text).toContain("Notes (verbatim) (1)");
+    expect(text).toContain("Related regulations (verbatim)");
+    expect(text).toContain("Other regulations (verbatim)");
   });
 
   it("renders a minimal RxNorm profile and skips blank display names", async () => {
@@ -2117,6 +2170,52 @@ describe("get_ingredient — bounds", () => {
     resetConfig();
     resetClients();
     vi.restoreAllMocks();
+  });
+
+  it("marks clinical data truncated when bounding shortens it", async () => {
+    const long = "x".repeat(6_000);
+    const adapter = lookupAdapter("drugcentral", ["DrugCentral"], async () => ({
+      ingredient: {
+        name: "Structure",
+        identifiers: { structId: 1 },
+        source: {
+          database: "DrugCentral",
+          id: "1",
+          url: "https://drugcentral.org/drugcard/1",
+          retrievedAt: RETRIEVED_AT,
+        },
+      },
+      profile: {
+        structId: 1,
+        clinical: {
+          indications: Array.from({ length: 5 }, (_, index) => ({
+            name: `${long}-${index}`,
+            relationship: "indication",
+          })),
+          offLabelUses: [],
+          contraindications: [],
+          faers: [],
+          truncated: false,
+        },
+      },
+    }));
+    harness = await start(createRegistry([adapter], []));
+
+    const result = await harness.client.callTool({
+      name: "drugdata_get_ingredient",
+      arguments: {
+        source: "drugcentral",
+        id: "1",
+        include_clinical: true,
+      },
+    });
+
+    expect(result.isError).not.toBe(true);
+    const output = result.structuredContent as unknown as IngredientOutput & {
+      profile: { clinical: { truncated: boolean } };
+    };
+    expect(output.profile.clinical.truncated).toBe(true);
+    expect(textOf(result)).toContain("[Some fields were shortened");
   });
 
   it("bounds an oversized profile and says fields were shortened", async () => {

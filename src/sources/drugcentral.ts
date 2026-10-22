@@ -6,6 +6,7 @@ import {
   type GuidedResult,
   type IdentifierMatch,
   type IdentifierRecord,
+  KNOWN_IDENTIFIER_TYPES,
   type OmopRelationship,
   type PopulationStampedSignal,
   type Struct2Atc,
@@ -225,6 +226,18 @@ const ID_TYPE_ALIASES: Readonly<Record<string, string>> = {
   CAS: "SECONDARY_CAS_RN",
   DRUGBANK: "DRUGBANK_ID",
 };
+
+/**
+ * Identifier vocabularies the guided resolver accepts, including the aliases
+ * this module maps onto client vocabulary names. Tool validation uses this so
+ * a `TYPE:value` id never reaches a resolver that cannot handle it.
+ */
+export const DRUGCENTRAL_IDENTIFIER_TYPES: readonly string[] = unique([
+  ...KNOWN_IDENTIFIER_TYPES,
+  ...Object.keys(ID_TYPE_ALIASES),
+]);
+
+const SUPPORTED_IDENTIFIER_TYPES = new Set(DRUGCENTRAL_IDENTIFIER_TYPES);
 
 /**
  * Whether a crosswalk row's identifier equals the queried one.
@@ -720,6 +733,11 @@ async function resolveStructId(
       }),
     );
   } else if (resolvedPrefixType !== undefined && prefixValue !== undefined) {
+    if (!SUPPORTED_IDENTIFIER_TYPES.has(resolvedPrefixType)) {
+      throw new SourceInputError(
+        `DrugCentral does not support crosswalk type "${prefixType}". Supported types: ${DRUGCENTRAL_IDENTIFIER_TYPES.join(", ")}. Pass identifiers.structId from a DrugCentral result, or use drugdata_search_ingredients to find a valid identifier.`,
+      );
+    }
     matches = await guarded("The DrugCentral identifier lookup", () =>
       client.guide.resolveIdentifier({
         type: resolvedPrefixType,

@@ -271,11 +271,14 @@ export function ingredientDetailNextSteps(
   }
 
   const inci = ingredient.inciName;
-  if (inci !== undefined && source.database !== "INKEEDecoder") {
+  if (inci !== undefined) {
     add({
       tool: "drugdata_search_ingredients",
       input: { type: "inci", query: inci },
-      why: `Search the INCI name "${inci}" to find the cosmetic records that share it.`,
+      why:
+        source.database === "INKEEDecoder"
+          ? `Search the INCI name "${inci}" to compare other cosmetic records and find cross-source CosIng identifiers.`
+          : `Search the INCI name "${inci}" to find the cosmetic records that share it.`,
     });
   }
 

@@ -1,6 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/server";
 import * as z from "zod/v4";
-import { SourceInputError } from "../lib/errors.js";
+import { SourceInputError, SourceRoutingError } from "../lib/errors.js";
 import {
   applyCharacterLimit,
   boundStructured,
@@ -12,6 +12,7 @@ import { isUnii, normalizeSlug } from "../lib/ids.js";
 import { ingredientDetailNextSteps } from "../lib/next-steps.js";
 import {
   type DatabaseId,
+  type IngredientClinical,
   type IngredientDetail,
   type IngredientProfile,
   type IngredientRef,
@@ -21,6 +22,7 @@ import {
   ingredientRegulatorySchema,
   type RecordLink,
 } from "../lib/schemas.js";
+import { DRUGCENTRAL_IDENTIFIER_TYPES } from "../sources/drugcentral.js";
 import type { Registry } from "../sources/types.js";
 import {
   type IdentifierField,
@@ -72,10 +74,10 @@ const SOURCE_DATABASES: Readonly<Record<IngredientSource, DatabaseId>> = {
 const CAS = /^\d{2,7}-\d{2}-\d$/;
 
 /** A caller-supplied crosswalk identifier, e.g. `DRUGBANK_ID:DB00945`. */
-const PREFIXED_IDENTIFIER = /^[A-Za-z][A-Za-z0-9_]{1,30}:\S+$/;
+const PREFIXED_IDENTIFIER = /^([A-Za-z][A-Za-z0-9_]{1,30}):(\S+)$/;
 
 const DESCRIPTION =
-  "Fetch one ingredient profile from openFDA, CosIng, DrugCentral, RxNorm, or INKEEDecoder. The `id` is the database's own key: a UNII or dashed CAS number (openfda), a numeric substance id or exact INCI/glossary name (cosing), a numeric structure id, UNII, dashed CAS number, or TYPE:value crosswalk identifier (drugcentral), a numeric RxCUI (nlm), or an ingredient slug/URL (inkeedecoder). The result carries the unified ingredient ref, the source's profile fields and identifier crosswalk, verbatim regulatory notices where the source publishes them, links, and suggested follow-up calls. `include_clinical` asks DrugCentral for indications, off-label uses, contraindications, and FAERS counts — extra requests, verbose, default false. `include_cosing_panel` asks INKEEDecoder for its CosIng CAS/EC/IUPAC panel — default false. A malformed id is an error result naming the search tool that finds a valid one; an upstream miss is an error result, not an empty profile.";
+  "Fetch one ingredient profile from openFDA, CosIng, DrugCentral, RxNorm, or INKEEDecoder. The `id` is the database's own key: a UNII or dashed CAS number (openfda), a numeric substance id or exact INCI/glossary name (cosing), a numeric structure id, UNII, dashed CAS number, or a supported TYPE:value crosswalk identifier (drugcentral), a numeric RxCUI (nlm), or an ingredient slug/URL (inkeedecoder). The result carries the unified ingredient ref, the source's profile fields and identifier crosswalk, verbatim regulatory notices where the source publishes them, links, and suggested follow-up calls. `include_clinical` asks DrugCentral for indications, off-label uses, contraindications, and FAERS counts — extra requests, verbose, default false. `include_cosing_panel` asks INKEEDecoder for its CosIng CAS/EC/IUPAC panel — adds one extra upstream request, default false. A malformed id is an error result naming the search tool that finds a valid one; an upstream miss is an error result, not an empty profile.";
 
 const inputSchema = z.object({
   source: z
@@ -102,7 +104,7 @@ const inputSchema = z.object({
     .boolean()
     .default(false)
     .describe(
-      "INKEEDecoder only: fetch the CosIng panel (CAS numbers, EC numbers, IUPAC name). Default false.",
+      "INKEEDecoder only: fetch the CosIng panel (CAS numbers, EC numbers, IUPAC name). Adds one extra upstream request. Default false.",
     ),
   response_format: z
     .enum(RESPONSE_FORMATS)
@@ -186,13 +188,22 @@ export function prepareIngredientId(
           : invalidId(source, id, "expects a positive numeric structure id");
       }
       if (isUnii(id)) return { ok: true, id: id.toUpperCase() };
-      return CAS.test(id) || PREFIXED_IDENTIFIER.test(id)
-        ? { ok: true, id }
-        : invalidId(
-            source,
-            id,
-            'expects a numeric structure id, a UNII, a dashed CAS number, or a "TYPE:value" crosswalk identifier',
-          );
+      if (CAS.test(id)) return { ok: true, id };
+      const prefixed = PREFIXED_IDENTIFIER.exec(id);
+      if (prefixed !== null) {
+        const type = (prefixed[1] as string).toUpperCase();
+        return DRUGCENTRAL_IDENTIFIER_TYPES.includes(type)
+          ? { ok: true, id }
+          : {
+              ok: false,
+              error: `Error: drugdata_get_ingredient — source "drugcentral" does not support crosswalk type "${prefixed[1]}". Supported types: ${DRUGCENTRAL_IDENTIFIER_TYPES.join(", ")}. Pass identifiers.structId from a DrugCentral result, or use drugdata_search_ingredients to find a valid identifier.`,
+            };
+      }
+      return invalidId(
+        source,
+        id,
+        'expects a numeric structure id, a UNII, a dashed CAS number, or a supported "TYPE:value" crosswalk identifier',
+      );
     }
     case "nlm": {
       if (/^\d+$/.test(id)) {
@@ -358,6 +369,12 @@ function cosingSections(profile: IngredientProfile): string[] {
       ].join("\n"),
     );
   }
+  const related = namesList(profile.relatedRegulations);
+  const relatedBlock = bullets("Related regulations (verbatim)", related);
+  if (relatedBlock !== undefined) blocks.push(relatedBlock);
+  const other = namesList(profile.otherRegulations);
+  const otherBlock = bullets("Other regulations (verbatim)", other);
+  if (otherBlock !== undefined) blocks.push(otherBlock);
   return blocks;
 }
 
@@ -580,7 +597,19 @@ function ingredientLinks(
     );
   }
 
+  for (const url of profile.sccsOpinionUrls ?? []) {
+    add("SCCS opinion", url);
+  }
+
   return links;
+}
+
+/** Whether bounding shortened any clinical content. */
+function clinicalShortened(
+  before: IngredientClinical | undefined,
+  after: IngredientClinical | undefined,
+): boolean {
+  return JSON.stringify(before) !== JSON.stringify(after);
 }
 
 /** Renders one ingredient detail as markdown. */
@@ -696,12 +725,32 @@ export function registerGetIngredientTool(
           nextSteps: ingredientDetailNextSteps(bounded.value.ingredient),
         });
         const final = boundStructured(withSteps);
+        const clinicalWasShortened = clinicalShortened(
+          skeleton.profile.clinical,
+          final.value.profile.clinical,
+        );
+        const withClinicalFlag =
+          final.value.profile.clinical !== undefined &&
+          !final.value.profile.clinical.truncated &&
+          clinicalWasShortened
+            ? ingredientDetailSchema.parse({
+                ...final.value,
+                profile: {
+                  ...final.value.profile,
+                  clinical: {
+                    ...final.value.profile.clinical,
+                    truncated: true,
+                  },
+                },
+              })
+            : final.value;
+        const value = boundStructured(withClinicalFlag).value;
         const truncated = bounded.truncated || final.truncated;
 
         if (response_format === "json") {
           return {
-            content: [{ type: "text" as const, text: formatJson(final.value) }],
-            structuredContent: final.value,
+            content: [{ type: "text" as const, text: formatJson(value) }],
+            structuredContent: value,
           };
         }
 
@@ -709,13 +758,16 @@ export function registerGetIngredientTool(
           content: [
             {
               type: "text" as const,
-              text: applyCharacterLimit(renderMarkdown(final.value, truncated)),
+              text: applyCharacterLimit(renderMarkdown(value, truncated)),
             },
           ],
-          structuredContent: final.value,
+          structuredContent: value,
         };
       } catch (error) {
-        if (error instanceof SourceInputError) {
+        if (
+          error instanceof SourceInputError ||
+          error instanceof SourceRoutingError
+        ) {
           return messageError(
             `Error: drugdata_get_ingredient — ${error.message}`,
           );
