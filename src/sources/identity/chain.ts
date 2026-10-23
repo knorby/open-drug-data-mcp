@@ -1,6 +1,6 @@
 import type { Ingredient as ClientIngredient } from "@knorby/inkeedecoder-client";
 import { throwIfAborted } from "../../lib/abort.js";
-import { sanitizeSourceText } from "../../lib/errors.js";
+import { SourceInputError, toUserMessage } from "../../lib/errors.js";
 import { logWarn } from "../../lib/log.js";
 import type {
   DatabaseId,
@@ -85,6 +85,12 @@ export interface CandidateSet {
   matchedVia: string;
   reason: string;
   options: IngredientRef[];
+  /**
+   * True when the caller's cap kept some options out of `options`. The tool
+   * text names the cap when set, so a short list is never mistaken for the
+   * source's full match list.
+   */
+  optionsTruncated?: boolean;
 }
 
 /**
@@ -175,6 +181,17 @@ const DATABASE_ORDER: Readonly<Record<DatabaseId, number>> = {
   DrugCentral: 4,
   DSLD: 5,
   INKEEDecoder: 6,
+  // The reference-only databases never appear in an identity graph today;
+  // they are ordered after the record-owning databases so a future bridge
+  // that emits one sorts deterministically.
+  RxTerms: 7,
+  RxClass: 8,
+  MeSH: 9,
+  PubMed: 10,
+  MedlinePlus: 11,
+  UMLS: 12,
+  "ClinicalTrials.gov": 13,
+  PubChem: 14,
 };
 
 /** A non-blank, trimmed string, or `undefined`. */
@@ -423,6 +440,9 @@ function applyCandidates(
     matchedVia: outcome.matchedVia,
     reason: outcome.reason,
     options: outcome.options.slice(0, cap),
+    // The cap is caller-controlled; say when it hid options so the set is
+    // never mistaken for the source's full match list.
+    ...(outcome.options.length > cap ? { optionsTruncated: true } : {}),
   });
 }
 
@@ -436,7 +456,7 @@ function isConfigFailure(error: unknown): boolean {
   return /invalid environment configuration/i.test(errorText(error));
 }
 
-/** Records one source failure in the database vocabulary, scrubbed for output. */
+/** Records one source failure in the database vocabulary. */
 function recordError(
   state: ChainState,
   database: DatabaseId,
@@ -444,8 +464,26 @@ function recordError(
 ): void {
   state.errors.push({
     database: isConfigFailure(error) ? "config" : database,
-    message: sanitizeSourceText(errorText(error)),
+    message: authoredError(error, database, "identity step"),
   });
+}
+
+/**
+ * Model-facing text for an unexpected step failure.
+ *
+ * Authored errors — configuration problems and caller-input errors — pass
+ * through verbatim; anything unexpected becomes the generic actionable
+ * message from `toUserMessage`, which logs the raw failure text to stderr.
+ * Raw exception text never reaches the model.
+ */
+function authoredError(
+  error: unknown,
+  database: DatabaseId,
+  what: string,
+): string {
+  if (isConfigFailure(error)) return errorText(error);
+  if (error instanceof SourceInputError) return error.message;
+  return toUserMessage(error, `the ${database} ${what}`);
 }
 
 /** Rethrows a caller cancellation instead of swallowing it. */
@@ -1122,7 +1160,7 @@ async function splIngredients(
     if (signal?.aborted === true) throw error;
     errors.push({
       database: isConfigFailure(error) ? "config" : "DailyMed",
-      message: sanitizeSourceText(errorText(error)),
+      message: authoredError(error, "DailyMed", "label fetch"),
     });
     return [];
   }
@@ -1153,7 +1191,7 @@ async function attempt<T>(
     if (signal?.aborted === true) throw error;
     errors.push({
       database: isConfigFailure(error) ? "config" : database,
-      message: sanitizeSourceText(errorText(error)),
+      message: authoredError(error, database, "bridge call"),
     });
     return undefined;
   }

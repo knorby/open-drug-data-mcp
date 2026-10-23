@@ -720,6 +720,11 @@ function candidateBlocks(
     `${level} Candidates (${candidates.length})`,
     ...candidates.flatMap((set) => [
       `${level}# ${set.database} — matched via ${set.matchedVia} (${set.reason})`,
+      ...(set.optionsTruncated === true
+        ? [
+            `- _Only the first ${set.options.length} options are shown; the source had more. Raise max_candidates to see them._`,
+          ]
+        : []),
       ...set.options.map((option) => {
         const identifiers = identifierText(
           option.identifiers,
@@ -972,8 +977,21 @@ export function registerResolveIdentifiersTool(
         });
 
         if (request.response_format === "json") {
+          // The markdown branch notes bounding in its text; the JSON branch
+          // gets the same note so silent shortening is impossible in either
+          // format.
           return {
-            content: [{ type: "text" as const, text: formatJson(value) }],
+            content: [
+              { type: "text" as const, text: formatJson(value) },
+              ...(bounded.truncated || final.truncated
+                ? [
+                    {
+                      type: "text" as const,
+                      text: truncationNote(),
+                    },
+                  ]
+                : []),
+            ],
             structuredContent: value,
           };
         }

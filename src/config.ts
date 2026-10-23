@@ -54,10 +54,11 @@ const optionalKey = () =>
  * 2. **Validate, do not trust.** `process.env` is `string | undefined`; Zod
  *    coerces and constrains it once, here.
  *
- * Every variable is optional: every source answers without a key, and the
- * openFDA and DSLD keys only raise upstream rate limits. Blank key values
- * count as unset, because hosts often emit `"VAR": ""` for every variable in
- * a config block.
+ * Every variable is optional: every source answers without a key. The
+ * openFDA and DSLD keys raise upstream rate limits; PubMed identification is
+ * etiquette; the UMLS key alone gates a source (UMLS reference searches
+ * return an actionable error without it). Blank key values count as unset,
+ * because hosts often emit `"VAR": ""` for every variable in a config block.
  */
 const EnvSchema = z.object({
   /**
@@ -70,6 +71,30 @@ const EnvSchema = z.object({
    * rate limit. Never echoed to a tool response.
    */
   DSLD_API_KEY: optionalKey(),
+  /**
+   * UMLS API key (NLM UTS account). Required by the UMLS source only: without
+   * it, UMLS reference searches return an actionable error naming this
+   * variable and every other NLM source still works. Never echoed to a tool
+   * response.
+   */
+  UMLS_API_KEY: optionalKey(),
+  /**
+   * PubMed API key. Optional: keyless requests work at a lower rate limit
+   * (3 per second); with a key the limit rises. Never echoed to a tool
+   * response.
+   */
+  NLM_PUBMED_API_KEY: optionalKey(),
+  /**
+   * Contact email for PubMed requests. Optional: NLM asks bulk users to
+   * identify themselves so it can notify them of outages. Never echoed to a
+   * tool response.
+   */
+  NLM_PUBMED_EMAIL: optionalKey(),
+  /**
+   * Tool name PubMed requests identify this server by. Optional, for the same
+   * etiquette as the email. Never echoed to a tool response.
+   */
+  NLM_PUBMED_TOOL: optionalKey(),
   /**
    * Abandon an upstream request that takes longer than this, in ms. A blank
    * value counts as unset, like the optional keys: hosts often emit `"VAR": ""`.

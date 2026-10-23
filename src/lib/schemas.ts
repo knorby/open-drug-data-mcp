@@ -10,9 +10,11 @@ import { z } from "zod/v4";
  * Two rules hold throughout:
  *
  * - **Upstream databases only.** `database` names the database that supplied
- *   the data (openFDA, CosIng, RxNorm, DailyMed, DrugCentral, DSLD,
- *   INKEEDecoder) — never a client library. Tool output is built from these
- *   schemas, so a client name here would leak into the model's context.
+ *   the data (openFDA, CosIng, RxNorm, RxTerms, RxClass, DailyMed,
+ *   DrugCentral, DSLD, INKEEDecoder, MeSH, PubMed, MedlinePlus, UMLS,
+ *   ClinicalTrials.gov, PubChem) — never a client library. Tool output is
+ *   built from these schemas, so a client name here would leak into the
+ *   model's context.
  * - **Closed objects.** Every `z.object` strips unknown keys (zod's default),
  *   so a stray upstream field cannot reach `structuredContent` and break a
  *   host's schema validation. Nested objects are closed the same way.
@@ -23,10 +25,18 @@ export const databaseIdSchema = z.enum([
   "openFDA",
   "CosIng",
   "RxNorm",
+  "RxTerms",
+  "RxClass",
   "DailyMed",
   "DrugCentral",
   "DSLD",
   "INKEEDecoder",
+  "MeSH",
+  "PubMed",
+  "MedlinePlus",
+  "UMLS",
+  "ClinicalTrials.gov",
+  "PubChem",
 ]);
 
 /** Upstream database credited for a result. */
@@ -212,6 +222,12 @@ export const candidateSetSchema = z.object({
   options: z
     .array(ingredientRefSchema)
     .describe("Ingredient records the caller must choose between."),
+  optionsTruncated: z
+    .boolean()
+    .optional()
+    .describe(
+      "True when the chain's cap kept some options out of this list; the tool text names the cap when set.",
+    ),
 });
 
 /** One ambiguous source result, never auto-linked. */
@@ -524,17 +540,38 @@ export const ingredientCrosswalkSchema = z.object({
 /** One row of a source's identifier crosswalk. */
 export type IngredientCrosswalk = z.infer<typeof ingredientCrosswalkSchema>;
 
-/** The RxTerms presentation fields RxNorm publishes for a concept. */
+/**
+ * The RxTerms presentation fields RxNorm publishes for a concept, with the
+ * RxTerms record link that credits them. The enclosing ingredient stays
+ * RxNorm-owned; this nested reference is the RxTerms attribution.
+ */
 export const rxTermSchema = z.object({
   displayName: z.string(),
   fullName: z.string().optional(),
   brandName: z.string().optional(),
   strength: z.string().optional(),
   route: z.string().optional(),
+  source: sourceRefSchema.describe(
+    "The RxTerms record this presentation data came from.",
+  ),
 });
 
 /** RxTerms presentation fields for a concept. */
 export type RxTerm = z.infer<typeof rxTermSchema>;
+
+/**
+ * PubChem chemistry fields for a compound, as PubChem reports them (strings).
+ * Kept separate from DrugCentral's structure fields, which use numbers.
+ */
+export const pubChemChemistrySchema = z.object({
+  iupacName: z.string().optional(),
+  molecularFormula: z.string().optional(),
+  molecularWeight: z.string().optional(),
+  inChIKey: z.string().optional(),
+});
+
+/** PubChem chemistry fields for a compound. */
+export type PubChemChemistry = z.infer<typeof pubChemChemistrySchema>;
 
 /** One drug-condition assertion, preserving the source's relationship label. */
 export const conditionAssertionSchema = z.object({
@@ -635,6 +672,10 @@ export const ingredientProfileSchema = z.object({
   synonym: z.string().optional(),
   rxTerm: rxTermSchema.optional(),
   ndcs: z.array(z.string()).optional(),
+
+  // PubChem compound chemistry (separate from DrugCentral's structure block
+  // because PubChem reports values as strings).
+  chemistry: pubChemChemistrySchema.optional(),
 
   // INKEEDecoder ingredient pages.
   alsoCalled: z.string().optional(),

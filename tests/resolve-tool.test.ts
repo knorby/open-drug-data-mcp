@@ -666,6 +666,60 @@ describe("resolve_identifiers ingredient resolution", () => {
     expect(text).not.toContain("**Next steps**");
   });
 
+  it("names the cap when a candidate set was truncated", async () => {
+    const client = await connect({
+      resolve: async () =>
+        ingredientResolution({
+          candidates: [
+            {
+              database: "RxNorm",
+              matchedVia: "unii",
+              reason: "name-match",
+              options: Array.from({ length: 6 }, (_, index) =>
+                ingredient(`Match ${index + 1}`),
+              ),
+              optionsTruncated: true,
+            },
+          ],
+        }),
+    });
+
+    const result = await call(client.client, { unii: "R16CO5Y76E" });
+
+    expect(result.isError).toBeUndefined();
+    const text = textOf(result);
+    expect(text).toContain("## Candidates (1)");
+    expect(text).toContain(
+      "Only the first 6 options are shown; the source had more",
+    );
+    expect(text).toContain("Raise max_candidates");
+    expect(text).toContain("- Match 6");
+  });
+
+  it("appends the truncation note to a JSON response that overflows", async () => {
+    const client = await connect({
+      resolve: async () =>
+        ingredientResolution({
+          identifiers: { cas: ["x".repeat(40_000)] },
+        }),
+    });
+
+    const result = await call(client.client, {
+      unii: "R16CO5Y76E",
+      response_format: "json",
+    });
+
+    expect(result.isError).toBeUndefined();
+    const blocks = result.content.filter(
+      (block): block is { type: "text"; text: string } => block.type === "text",
+    );
+    expect(blocks).toHaveLength(2);
+    expect(blocks[0]?.text).toContain("cas");
+    expect(blocks[0]?.text.length).toBeLessThan(40_000);
+    expect(blocks[1]?.text).toContain("Some fields were shortened");
+    expect(blocks[1]?.text).toContain("25,000");
+  });
+
   it("maps confident ingredient links to their own record lookups", async () => {
     const client = await connect({
       resolve: async () =>
@@ -1344,7 +1398,12 @@ describe("resolve configuration and source failures", () => {
     expect(result.isError).toBeFalsy();
     const output = result.structuredContent as IngredientResolution;
     expect(output.graph.errors).toEqual([
-      { database: "openFDA", message: "the upstream service is down" },
+      {
+        database: "openFDA",
+        message: expect.stringContaining(
+          "the openFDA identity step failed unexpectedly",
+        ),
+      },
     ]);
     const text = textOf(result);
     expect(text).toContain("⚠ openFDA unavailable");

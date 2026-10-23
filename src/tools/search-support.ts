@@ -1,6 +1,6 @@
 import type { CallToolResult } from "@modelcontextprotocol/server";
 import { readConfig } from "../config.js";
-import { sanitizeSourceText, toUserMessage } from "../lib/errors.js";
+import { toUserMessage } from "../lib/errors.js";
 import { formatJson } from "../lib/format.js";
 import type { NextStep } from "../lib/schemas.js";
 import { cosingAdapter } from "../sources/cosing.js";
@@ -9,6 +9,7 @@ import { dsldAdapter } from "../sources/dsld.js";
 import { inkeedecoderAdapter } from "../sources/inkeedecoder.js";
 import { nlmAdapter } from "../sources/nlm.js";
 import { openfdaAdapter } from "../sources/openfda.js";
+import { pubchemAdapter } from "../sources/pubchem.js";
 import { createRegistry } from "../sources/registry.js";
 import type {
   IngredientGroup,
@@ -22,8 +23,13 @@ import type {
  *
  * Both tools need the same four things before they can render a result: a
  * registry (injected by tests or built from process configuration), safe error
- * text, source-grouped output with scrubbed error messages, and the same
- * conventions for empty results, identifiers, and next-step rendering.
+ * text, source-grouped output, and the same conventions for empty results,
+ * identifiers, and next-step rendering.
+ *
+ * Error text is authored, never filtered: adapters and the registry write
+ * database-specific messages, `toUserMessage` logs raw failure text to stderr
+ * and returns generic actionable text, and ordinary record text is passed
+ * through verbatim. No output inspection or word replacement happens here.
  */
 
 /** Every adapter a search fans out over, in the server's fixed order. */
@@ -34,6 +40,7 @@ const SEARCH_ADAPTERS: readonly SourceAdapter[] = [
   drugcentralAdapter,
   dsldAdapter,
   inkeedecoderAdapter,
+  pubchemAdapter,
 ];
 
 /** The registry to use, or the configuration error that prevents building one. */
@@ -71,7 +78,7 @@ export function toolError(error: unknown, context: string): CallToolResult {
     content: [
       {
         type: "text",
-        text: sanitizeSourceText(toUserMessage(error, context)),
+        text: toUserMessage(error, context),
       },
     ],
     isError: true,
@@ -81,31 +88,14 @@ export function toolError(error: unknown, context: string): CallToolResult {
 /** A returned tool error built from ready-made, model-facing text. */
 export function messageError(message: string): CallToolResult {
   return {
-    content: [{ type: "text", text: sanitizeSourceText(message) }],
+    content: [{ type: "text", text: message }],
     isError: true,
   };
 }
 
 /** Whether a group carries a failure instead of results. */
-interface ErrorCarrier {
+export interface ErrorCarrier {
   error?: string;
-}
-
-/**
- * Scrubs client-library references from every group error.
- *
- * Adapters normally reword failures, but the registry forwards an adapter's
- * rejection text verbatim. This is the last gate before the text reaches the
- * model, so the sourcing policy holds even for an adapter bug.
- */
-export function sanitizeGroups<T extends ErrorCarrier>(
-  groups: readonly T[],
-): T[] {
-  return groups.map((group) =>
-    group.error === undefined
-      ? group
-      : { ...group, error: sanitizeSourceText(group.error) },
-  );
 }
 
 /** What the caller needs to know to word empty-result guidance correctly. */

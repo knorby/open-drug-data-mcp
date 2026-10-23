@@ -16,6 +16,10 @@ const ENV_KEYS = [
   "DSLD_API_KEY",
   "DRUGDATA_TIMEOUT_MS",
   "DRUGDATA_DISABLED_SOURCES",
+  "UMLS_API_KEY",
+  "NLM_PUBMED_API_KEY",
+  "NLM_PUBMED_EMAIL",
+  "NLM_PUBMED_TOOL",
 ] as const;
 
 function clearEnv(): void {
@@ -371,6 +375,29 @@ describe("getClients", () => {
     const urls = fetchMock.mock.calls.map(([input]) => String(input));
     expect(urls[0]).toContain("api_key=openfda-test-key");
     expect(urls[1]).toContain("api_key=dsld-test-key");
+  });
+
+  it("passes the NLM PubMed credentials to the client", async () => {
+    process.env.NLM_PUBMED_API_KEY = "pubmed-test-key";
+    process.env.NLM_PUBMED_EMAIL = "researcher@example.test";
+    process.env.NLM_PUBMED_TOOL = "open-drug-data-mcp";
+    resetConfig();
+    const fetchMock = vi.fn(
+      async (_input: RequestInfo | URL, _init?: RequestInit) =>
+        jsonResponse({
+          esearchresult: { idlist: [], count: "0", retstart: "0" },
+        }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const clients = getClients();
+    await clients.nlm.pubMed.search("aspirin");
+
+    const url = new URL(String(fetchMock.mock.calls[0]?.[0]));
+    expect(url.hostname).toBe("eutils.ncbi.nlm.nih.gov");
+    expect(url.searchParams.get("api_key")).toBe("pubmed-test-key");
+    expect(url.searchParams.get("email")).toBe("researcher@example.test");
+    expect(url.searchParams.get("tool")).toBe("open-drug-data-mcp");
   });
 
   it("passes the policy-covering deadline to clients that accept one", () => {

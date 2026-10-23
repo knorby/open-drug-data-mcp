@@ -79,7 +79,23 @@ function createClients(): Clients {
       fetch: policyFetch,
       timeoutMs: clientTimeoutMs,
     }),
-    nlm: new NlmDrugsClient({ fetch: policyFetch }),
+    nlm: new NlmDrugsClient({
+      fetch: policyFetch,
+      ...(config.UMLS_API_KEY === undefined
+        ? {}
+        : { umls: { apiKey: config.UMLS_API_KEY } }),
+      ...(config.NLM_PUBMED_API_KEY === undefined &&
+      config.NLM_PUBMED_EMAIL === undefined &&
+      config.NLM_PUBMED_TOOL === undefined
+        ? {}
+        : {
+            pubMed: {
+              apiKey: config.NLM_PUBMED_API_KEY,
+              email: config.NLM_PUBMED_EMAIL,
+              tool: config.NLM_PUBMED_TOOL,
+            },
+          }),
+    }),
     drugcentral: createDrugCentralClient({
       fetch: policyFetch,
       timeoutMs: clientTimeoutMs,

@@ -788,7 +788,10 @@ function rxNormIngredientNotFound(id: string): Error {
 }
 
 /** The RxTerms presentation fields, when RxTerms publishes any. */
-function rxTermProfile(term: RxTerm | undefined): IngredientProfile["rxTerm"] {
+function rxTermProfile(
+  rxcui: string,
+  term: RxTerm | undefined,
+): IngredientProfile["rxTerm"] {
   if (term === undefined) return undefined;
   const fullName = nonEmpty(term.fullName);
   const brandName = nonEmpty(term.brandName);
@@ -800,6 +803,12 @@ function rxTermProfile(term: RxTerm | undefined): IngredientProfile["rxTerm"] {
     ...(brandName === undefined ? {} : { brandName }),
     ...(strength === undefined ? {} : { strength }),
     ...(route === undefined ? {} : { route }),
+    source: {
+      database: "RxTerms",
+      id: rxcui,
+      url: `https://mor.nlm.nih.gov/RxNav/search?searchBy=RXCUI&searchTerm=${encodeURIComponent(rxcui)}`,
+      retrievedAt: new Date().toISOString(),
+    },
   };
 }
 
@@ -842,7 +851,7 @@ async function fetchRxNormIngredient(
     new Date().toISOString(),
   );
   if (base === null) throw rxNormIngredientNotFound(id);
-  const rxTerm = rxTermProfile(term);
+  const rxTerm = rxTermProfile(id, term);
   const synonym = nonEmpty(concept.synonym);
   const ndc = unique(ndcs);
 

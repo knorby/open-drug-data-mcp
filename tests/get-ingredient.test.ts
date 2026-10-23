@@ -505,7 +505,7 @@ describe("get_ingredient tool", () => {
     expect(text).toMatch(/Available sources|No registered source/i);
   });
 
-  it("scrubs client-library names from an adapter failure", async () => {
+  it("rewords an adapter failure without exposing internals", async () => {
     const adapter = lookupAdapter("openfda", ["openFDA"], async () => {
       throw new Error("@knorby/openfda-client failed unexpectedly");
     });
@@ -522,7 +522,85 @@ describe("get_ingredient tool", () => {
 
     expect(result.isError).toBe(true);
     expect(textOf(result)).not.toMatch(/@knorby|client/i);
+    expect(textOf(result)).toContain("failed unexpectedly");
   });
+
+  it("rejects an id from the site's former domain with slug advice", async () => {
+    const getIngredient = vi.fn(async () => {
+      throw new Error("should not be called");
+    });
+    harness = await start(
+      createRegistry(
+        [lookupAdapter("inkeedecoder", ["INKEEDecoder"], getIngredient)],
+        [],
+      ),
+    );
+
+    const result = await harness.client.callTool({
+      name: "drugdata_get_ingredient",
+      arguments: {
+        source: "inkeedecoder",
+        id: "https://www.incidecoder.com/ingredients/squalane",
+      },
+    });
+
+    expect(result.isError).toBe(true);
+    expect(textOf(result)).toMatch(/not an INKEEDecoder link/);
+    expect(getIngredient).not.toHaveBeenCalled();
+  });
+
+  it("rejects a non-numeric PubChem id with CID advice", async () => {
+    const getIngredient = vi.fn(async () => {
+      throw new Error("should not be called");
+    });
+    harness = await start(
+      createRegistry(
+        [lookupAdapter("pubchem", ["PubChem"], getIngredient)],
+        [],
+      ),
+    );
+
+    const result = await harness.client.callTool({
+      name: "drugdata_get_ingredient",
+      arguments: { source: "pubchem", id: "aspirin" },
+    });
+
+    expect(result.isError).toBe(true);
+    expect(textOf(result)).toMatch(/numeric PubChem CID/);
+    expect(textOf(result)).toContain("drugdata_search_ingredients");
+    expect(getIngredient).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["no chemistry block", {}],
+    ["an empty chemistry block", { chemistry: {} }],
+  ])(
+    "omits the Chemistry section when the profile has %s",
+    async (_label, profile) => {
+      const adapter = lookupAdapter("pubchem", ["PubChem"], async () => ({
+        ingredient: {
+          name: "Aspirin",
+          identifiers: {},
+          source: {
+            database: "PubChem",
+            id: "2244",
+            url: "https://pubchem.ncbi.nlm.nih.gov/compound/2244",
+            retrievedAt: RETRIEVED_AT,
+          },
+        },
+        profile,
+      }));
+      harness = await start(createRegistry([adapter], []));
+
+      const result = await harness.client.callTool({
+        name: "drugdata_get_ingredient",
+        arguments: { source: "pubchem", id: "2244" },
+      });
+
+      expect(result.isError).not.toBe(true);
+      expect(textOf(result)).not.toContain("### Chemistry");
+    },
+  );
 
   it("returns a JSON profile with the same bounded structured value", async () => {
     const adapter = lookupAdapter("cosing", ["CosIng"], async () => ({
@@ -1684,7 +1762,18 @@ describe("get_ingredient — RxNorm", () => {
       id: "83367",
     });
 
-    expect(output.profile.rxTerm).toEqual({ displayName: "Only display" });
+    const rxTerm = output.profile.rxTerm as
+      | {
+          displayName?: string;
+          source: { database: string; id: string; url: string };
+        }
+      | undefined;
+    expect(rxTerm).toMatchObject({ displayName: "Only display" });
+    expect(rxTerm?.source).toMatchObject({
+      database: "RxTerms",
+      id: "83367",
+    });
+    expect(rxTerm?.source.url).toContain("searchTerm=83367");
     expect(output.profile.synonym).toBe("Atorvastatin calcium");
     expect(output.profile.ndcs).toEqual([]);
   });
@@ -2093,7 +2182,15 @@ describe("get_ingredient — profile rendering", () => {
       },
       profile: {
         rxcui: "1",
-        rxTerm: { displayName: "   " },
+        rxTerm: {
+          displayName: "   ",
+          source: {
+            database: "RxTerms",
+            id: "1",
+            url: "https://mor.nlm.nih.gov/RxNav/search?searchBy=RXCUI&searchTerm=1",
+            retrievedAt: RETRIEVED_AT,
+          },
+        },
       },
     }));
     harness = await start(createRegistry([adapter], []));

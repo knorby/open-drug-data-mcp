@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import type { Ingredient as ClientIngredient } from "@knorby/inkeedecoder-client";
 import { describe, expect, it, vi } from "vitest";
+import { SourceInputError } from "../src/lib/errors.js";
 import type { IngredientRef, ProductRef } from "../src/lib/schemas.js";
 import type { CosingBridgeHit } from "../src/sources/cosing.js";
 import type { DrugCentralBridges } from "../src/sources/drugcentral.js";
@@ -900,7 +901,35 @@ describe("failure isolation", () => {
     expect(graph.links.map((link) => link.database)).toEqual(["RxNorm"]);
     expect(JSON.stringify(graph)).not.toContain("@knorby");
     expect(graph.errors).toEqual([
-      { database: "openFDA", message: "the upstream service failed" },
+      {
+        database: "openFDA",
+        message: expect.stringContaining(
+          "the openFDA identity step failed unexpectedly",
+        ),
+      },
+    ]);
+  });
+
+  it("passes a caller-input error message through verbatim", async () => {
+    const graph = await resolveIngredient(
+      { unii: "R16CO5Y76E" },
+      {
+        openfda: {
+          substanceByUnii: async () => {
+            throw new SourceInputError(
+              "The UNII lookup rejected this input as unusable.",
+            );
+          },
+        },
+        nlm: { rxcuisForUnii: async () => ["1191"] },
+      },
+    );
+
+    expect(graph.errors).toEqual([
+      {
+        database: "openFDA",
+        message: "The UNII lookup rejected this input as unusable.",
+      },
     ]);
   });
 
@@ -925,7 +954,7 @@ describe("failure isolation", () => {
     expect(rxcuisForUnii).not.toHaveBeenCalled();
   });
 
-  it("records a non-Error failure as text", async () => {
+  it("records a non-Error failure as a generic step error", async () => {
     const graph = await resolveIngredient(
       { unii: "R16CO5Y76E" },
       {
@@ -938,8 +967,14 @@ describe("failure isolation", () => {
     );
 
     expect(graph.errors).toEqual([
-      { database: "openFDA", message: "plain failure" },
+      {
+        database: "openFDA",
+        message: expect.stringContaining(
+          "the openFDA identity step failed unexpectedly",
+        ),
+      },
     ]);
+    expect(graph.errors?.[0]?.message).not.toContain("plain failure");
   });
 
   it("skips the weak terminals when no subject name is known", async () => {

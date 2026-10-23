@@ -26,17 +26,25 @@ describe("databaseIdSchema", () => {
       "openFDA",
       "CosIng",
       "RxNorm",
+      "RxTerms",
+      "RxClass",
       "DailyMed",
       "DrugCentral",
       "DSLD",
       "INKEEDecoder",
+      "MeSH",
+      "PubMed",
+      "MedlinePlus",
+      "UMLS",
+      "ClinicalTrials.gov",
+      "PubChem",
     ]);
     const database: DatabaseId = databaseIdSchema.parse("openFDA");
     expect(database).toBe("openFDA");
   });
 
   it("rejects an unknown database", () => {
-    expect(databaseIdSchema.safeParse("PubChem").success).toBe(false);
+    expect(databaseIdSchema.safeParse("ExampleClient").success).toBe(false);
   });
 });
 

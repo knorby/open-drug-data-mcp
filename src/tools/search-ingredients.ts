@@ -29,7 +29,6 @@ import {
   messageError,
   nextStepsText,
   resolveRegistry,
-  sanitizeGroups,
   toolError,
   type ZeroResultsContext,
   zeroResultsNote,
@@ -46,13 +45,13 @@ import {
  */
 
 const DESCRIPTION =
-  "Search ingredients across openFDA, CosIng, DrugCentral, RxNorm, and INKEEDecoder. Choose the kind of value you have (name, INCI name, UNII, CAS number, EC number, or RxCUI); results are grouped by upstream database with identifiers, a deep link, and suggested follow-up calls. One `page` value applies to every source in the fan-out and re-queries all of them; each group's `hasMore` reports whether that source has another page. A group with an `error` means that one database failed — retry, or proceed with the other groups. No matches is a normal empty result, not an error.";
+  "Search ingredients across openFDA, CosIng, DrugCentral, RxNorm, PubChem, and INKEEDecoder. Choose the kind of value you have (name, INCI name, UNII, CAS number, EC number, RxCUI, or PubChem CID); results are grouped by upstream database with identifiers, a deep link, and suggested follow-up calls. One `page` value applies to every source in the fan-out and re-queries all of them; each group's `hasMore` reports whether that source has another page. A group with an `error` means that one database failed — retry, or proceed with the other groups. No matches is a normal empty result, not an error.";
 
 const inputSchema = z.object({
   type: z
     .enum(INGREDIENT_SEARCH_TYPES)
     .describe(
-      "What to search by: 'name', 'inci' (INCI name), 'unii', 'cas' (CAS Registry Number), 'ec' (EC number), or 'rxcui' (RxNorm concept id).",
+      "What to search by: 'name', 'inci' (INCI name), 'unii', 'cas' (CAS Registry Number), 'ec' (EC number), 'rxcui' (RxNorm concept id), or 'cid' (PubChem compound id).",
     ),
   query: z
     .string()
@@ -144,13 +143,11 @@ export function registerSearchIngredientsTool(
         const resolved = resolveRegistry(registry);
         if (!resolved.ok) return messageError(resolved.error);
 
-        const groups = sanitizeGroups(
-          await resolved.registry.searchIngredients(
-            type,
-            query,
-            { page },
-            ctx.mcpReq.signal,
-          ),
+        const groups = await resolved.registry.searchIngredients(
+          type,
+          query,
+          { page },
+          ctx.mcpReq.signal,
         );
         const output = outputSchema.parse({
           query,

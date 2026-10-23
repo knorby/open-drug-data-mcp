@@ -62,36 +62,12 @@ export class SourceInputError extends Error {
   }
 }
 
-/**
- * Client-library references that must never reach a model.
- *
- * The sourcing policy credits the upstream database, never the npm package
- * that fetched the data. Adapters reword their own failures, but a search can
- * receive an error group or a rejection from any adapter, so the tool layer
- * applies this last-line scrub before returning text.
- */
-const CLIENT_PACKAGE = /@knorby\/[a-z0-9._-]+/gi;
-
-/**
- * A client-library reference may appear as its own word (`client`) or inside a
- * camel-case class name (`OpenFdaClient`). Match the whole token so the
- * replacement leaves no fragment of the name behind, and do not use word
- * boundaries around the word itself: there is no boundary before `Client` in
- * a camel-case name.
- */
-const CLIENT_WORD = /\b[\w.-]*client[\w.-]*\b/gi;
-
-/** Rewords client-library names so output names only upstream databases. */
-export function sanitizeSourceText(text: string): string {
-  return text
-    .replace(CLIENT_PACKAGE, "the upstream service")
-    .replace(CLIENT_WORD, "upstream service");
-}
-
 export function toUserMessage(error: unknown, context: string): string {
-  // A routing error already carries an actionable, database-only message; the
-  // registry wrote it for the model, so pass it through untouched.
+  // Routing and caller-input errors already carry an actionable,
+  // database-only message the registry or adapter wrote for the model, so
+  // pass them through untouched.
   if (error instanceof SourceRoutingError) return error.message;
+  if (error instanceof SourceInputError) return error.message;
 
   const raw = error instanceof Error ? error.message : String(error);
   const status = readStatus(error, raw);

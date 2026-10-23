@@ -44,6 +44,7 @@ export const INGREDIENT_SEARCH_TYPES = [
   "cas",
   "ec",
   "rxcui",
+  "cid",
 ] as const;
 
 /** Search styles accepted by `drugdata_search_ingredients`. */

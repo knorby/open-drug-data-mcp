@@ -8,6 +8,7 @@ import {
   DsldClient,
   type FetchLike as DsldFetch,
 } from "@knorby/nih-dsld-client";
+import { NlmDrugsClient } from "@knorby/nlm-drugs-client";
 import {
   OpenFdaClient,
   type FetchLike as OpenFdaFetch,
@@ -20,6 +21,7 @@ import { createCosingAdapter } from "../src/sources/cosing.js";
 import { createDsldAdapter } from "../src/sources/dsld.js";
 import type { IdentityResolver } from "../src/sources/identity/chain.js";
 import { createInkeedecoderAdapter } from "../src/sources/inkeedecoder.js";
+import { createReferenceSearcher } from "../src/sources/nlm-references/index.js";
 import { createOpenFdaAdapter } from "../src/sources/openfda.js";
 import { createRegistry } from "../src/sources/registry.js";
 import type { Registry, SourceAdapter } from "../src/sources/types.js";
@@ -51,6 +53,7 @@ const TOOL_ORDER = [
   "drugdata_get_product",
   "drugdata_get_ingredient",
   "drugdata_resolve_identifiers",
+  "drugdata_search_references",
 ] as const;
 
 const ENV_KEYS = [
@@ -111,6 +114,25 @@ function sweepFetch(): typeof fetch {
           return html(textFixture("inkeedecoder/search-niacinamide.html"));
         }
         break;
+      case "eutils.ncbi.nlm.nih.gov":
+        if (url.pathname === "/entrez/eutils/esearch.fcgi") {
+          return jsonResponse({
+            esearchresult: { idlist: ["36758480"], count: "1", retstart: "0" },
+          });
+        }
+        if (url.pathname === "/entrez/eutils/esummary.fcgi") {
+          return jsonResponse({
+            result: {
+              uids: ["36758480"],
+              "36758480": {
+                uid: "36758480",
+                title: "Aspirin use and outcomes",
+                pubdate: "2023 Feb",
+              },
+            },
+          });
+        }
+        break;
       default:
         break;
     }
@@ -121,9 +143,11 @@ function sweepFetch(): typeof fetch {
 
 /**
  * An adapter that fails the way a broken source module might: its rejection
- * text carries a package name. The tool layer must scrub it before the model
- * sees it, and this adapter also owns the DailyMed/RxNorm lookups so the
- * sweep exercises the lookup error path as well as the search fan-out.
+ * text carries a package name. Boundaries author model-facing errors — the
+ * registry and tool layers route it through `toUserMessage`, which logs the
+ * raw text to stderr and returns generic actionable text — and this adapter
+ * also owns the DailyMed/RxNorm lookups so the sweep exercises the lookup
+ * error path as well as the search fan-out.
  */
 function rejectingAdapter(): SourceAdapter {
   const reject = () => {
@@ -243,7 +267,7 @@ describe("server assembly", () => {
     resetConfig();
   });
 
-  it("exposes exactly the six drugdata tools in the fixed order", async () => {
+  it("exposes exactly the seven drugdata tools in the fixed order", async () => {
     harness = await connect();
 
     const { tools } = await harness.client.listTools();
@@ -401,6 +425,11 @@ describe("server assembly", () => {
     harness = await connect({
       registry: sweepRegistry(),
       resolver: sweepResolver(),
+      referenceSearch: createReferenceSearcher({
+        client: new NlmDrugsClient({
+          fetch: sweepFetch() as unknown as typeof fetch,
+        }),
+      }),
     });
 
     const calls = [
@@ -434,6 +463,10 @@ describe("server assembly", () => {
         name: "drugdata_get_ingredient",
         arguments: { source: "nlm", id: "1191" },
       }),
+      harness.client.callTool({
+        name: "drugdata_search_references",
+        arguments: { source: "pubmed", type: "name", query: "aspirin" },
+      }),
     ];
 
     const results = await Promise.all(calls);
@@ -460,6 +493,11 @@ describe("server assembly", () => {
     ).toBe(true);
     expect(results[6]?.isError).toBe(true);
     expect(results[7]?.isError).toBe(true);
+
+    const references = results[8]?.structuredContent as {
+      groups: { items: unknown[] }[];
+    };
+    expect(references.groups[0]?.items).toHaveLength(1);
 
     const serialized = JSON.stringify(results);
     expect(serialized).not.toMatch(/@knorby/i);

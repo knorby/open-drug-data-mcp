@@ -56,6 +56,7 @@ export const INGREDIENT_SOURCES = [
   "drugcentral",
   "nlm",
   "inkeedecoder",
+  "pubchem",
 ] as const;
 
 /** Databases that can answer an ingredient lookup. */
@@ -68,6 +69,7 @@ const SOURCE_DATABASES: Readonly<Record<IngredientSource, DatabaseId>> = {
   drugcentral: "DrugCentral",
   nlm: "RxNorm",
   inkeedecoder: "INKEEDecoder",
+  pubchem: "PubChem",
 };
 
 /** A CAS Registry Number, in the conventional dashed spelling. */
@@ -77,7 +79,7 @@ const CAS = /^\d{2,7}-\d{2}-\d$/;
 const PREFIXED_IDENTIFIER = /^([A-Za-z][A-Za-z0-9_]{1,30}):(\S+)$/;
 
 const DESCRIPTION =
-  "Fetch one ingredient profile from openFDA, CosIng, DrugCentral, RxNorm, or INKEEDecoder. The `id` is the database's own key: a UNII or dashed CAS number (openfda), a numeric substance id or exact INCI/glossary name (cosing), a numeric structure id, UNII, dashed CAS number, or a supported TYPE:value crosswalk identifier (drugcentral), a numeric RxCUI (nlm), or an ingredient slug/URL (inkeedecoder). The result carries the unified ingredient ref, the source's profile fields and identifier crosswalk, verbatim regulatory notices where the source publishes them, links, and suggested follow-up calls. `include_clinical` asks DrugCentral for indications, off-label uses, contraindications, and FAERS counts — extra requests, verbose, default false. `include_cosing_panel` asks INKEEDecoder to include its CosIng CAS/EC/IUPAC panel from the same page fetch — no extra request, default false. A malformed id is an error result naming the search tool that finds a valid one; an upstream miss is an error result, not an empty profile.";
+  "Fetch one ingredient profile from openFDA, CosIng, DrugCentral, RxNorm, INKEEDecoder, or PubChem. The `id` is the database's own key: a UNII or dashed CAS number (openfda), a numeric substance id or exact INCI/glossary name (cosing), a numeric structure id, UNII, dashed CAS number, or a supported TYPE:value crosswalk identifier (drugcentral), a numeric RxCUI (nlm), an ingredient slug/URL (inkeedecoder), or a numeric PubChem CID (pubchem). The result carries the unified ingredient ref, the source's profile fields and identifier crosswalk, verbatim regulatory notices where the source publishes them, links, and suggested follow-up calls. `include_clinical` asks DrugCentral for indications, off-label uses, contraindications, and FAERS counts — extra requests, verbose, default false. `include_cosing_panel` asks INKEEDecoder to include its CosIng CAS/EC/IUPAC panel from the same page fetch — no extra request, default false. A malformed id is an error result naming the search tool that finds a valid one; an upstream miss is an error result, not an empty profile.";
 
 const inputSchema = z.object({
   source: z
@@ -85,7 +87,7 @@ const inputSchema = z.object({
       error: `source must be one of: ${INGREDIENT_SOURCES.join(", ")}.`,
     })
     .describe(
-      "Upstream database that owns the record: 'openfda', 'cosing', 'drugcentral', 'nlm', or 'inkeedecoder'.",
+      "Upstream database that owns the record: 'openfda', 'cosing', 'drugcentral', 'nlm', 'inkeedecoder', or 'pubchem'.",
     ),
   id: z
     .string()
@@ -225,6 +227,12 @@ export function prepareIngredientId(
           error: `Error: drugdata_get_ingredient — ${reason} Use drugdata_search_ingredients to find an INKEEDecoder ingredient slug, then pass it unchanged.`,
         };
       }
+    }
+    case "pubchem": {
+      if (/^[1-9]\d*$/.test(id) && Number.isSafeInteger(Number(id))) {
+        return { ok: true, id: String(Number(id)) };
+      }
+      return invalidId(source, id, "expects a numeric PubChem CID");
     }
   }
 }
@@ -486,19 +494,27 @@ function rxNormSections(profile: IngredientProfile): string[] {
   pushPart(identity, nonEmpty(profile.rxcui), "RxCUI");
   pushPart(identity, nonEmpty(profile.tty), "Term type");
   pushPart(identity, nonEmpty(profile.synonym), "Synonym");
-  const term = profile.rxTerm;
-  if (term !== undefined) {
-    pushPart(identity, term.displayName, "Display name");
-    pushPart(identity, term.fullName, "Full name");
-    pushPart(identity, term.brandName, "Brand name");
-    pushPart(identity, term.strength, "Strength");
-    pushPart(identity, term.route, "Route");
-  }
   if (identity.length > 0) {
     blocks.push(
       ["### RxNorm concept", ...identity.map((line) => `- ${line}`)].join("\n"),
     );
   }
+
+  // RxTerms is its own database: presentation fields carry their own record
+  // link and retrieval time, so the attribution stays visible in text.
+  const term = profile.rxTerm;
+  if (term !== undefined) {
+    const presentation: string[] = [
+      `- Source: ${term.source.url} (retrieved ${term.source.retrievedAt})`,
+    ];
+    pushPart(presentation, term.displayName, "Display name");
+    pushPart(presentation, term.fullName, "Full name");
+    pushPart(presentation, term.brandName, "Brand name");
+    pushPart(presentation, term.strength, "Strength");
+    pushPart(presentation, term.route, "Route");
+    blocks.push(["### RxTerms presentation", ...presentation].join("\n"));
+  }
+
   const ndcs = namesList(profile.ndcs);
   const ndcBlock = bullets("NDC crosswalk", ndcs);
   if (ndcBlock !== undefined) blocks.push(ndcBlock);
@@ -548,9 +564,24 @@ function profileSections(
       return rxNormSections(profile);
     case "INKEEDecoder":
       return inkeeSections(profile);
+    case "PubChem":
+      return pubChemSections(profile);
     default:
       return [];
   }
+}
+
+/** Renders the PubChem chemistry section. */
+function pubChemSections(profile: IngredientProfile): string[] {
+  const chemistry = profile.chemistry;
+  if (chemistry === undefined) return [];
+  const lines: string[] = [];
+  pushPart(lines, chemistry.iupacName, "IUPAC name");
+  pushPart(lines, chemistry.molecularFormula, "Molecular formula");
+  pushPart(lines, chemistry.molecularWeight, "Molecular weight");
+  pushPart(lines, chemistry.inChIKey, "InChIKey");
+  if (lines.length === 0) return [];
+  return [["### Chemistry", ...lines.map((line) => `- ${line}`)].join("\n")];
 }
 
 /** Cross-database links a profile can offer beyond its own record. */

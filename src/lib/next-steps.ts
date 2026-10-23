@@ -120,6 +120,11 @@ const INGREDIENT_TARGETS: Partial<Record<DatabaseId, IngredientTarget>> = {
     what: "an INKEEDecoder ingredient page",
     id: (ref) => ref.identifiers.slug,
   },
+  PubChem: {
+    source: "pubchem",
+    what: "a PubChem compound record",
+    id: (ref) => decimal(ref.identifiers.cid?.[0]),
+  },
 };
 
 /** Product-only identifier fields, used when a ref carries no category. */

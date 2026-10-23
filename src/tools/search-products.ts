@@ -30,7 +30,6 @@ import {
   messageError,
   nextStepsText,
   resolveRegistry,
-  sanitizeGroups,
   toolError,
   type ZeroResultsContext,
   zeroResultsNote,
@@ -141,16 +140,14 @@ export function registerSearchProductsTool(
         const resolved = resolveRegistry(registry);
         if (!resolved.ok) return messageError(resolved.error);
 
-        const groups = sanitizeGroups(
-          await resolved.registry.searchProducts(
-            type,
-            query,
-            {
-              category,
-              page,
-            },
-            ctx.mcpReq.signal,
-          ),
+        const groups = await resolved.registry.searchProducts(
+          type,
+          query,
+          {
+            category,
+            page,
+          },
+          ctx.mcpReq.signal,
         );
         const output = outputSchema.parse({
           query,

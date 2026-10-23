@@ -305,20 +305,29 @@ in force.
 
 ### What this server is
 
-Six tools over seven upstream databases:
+Seven tools over openFDA, CosIng, the NLM drug databases (RxNorm, RxTerms,
+RxClass, DailyMed, MeSH, PubMed, MedlinePlus, UMLS, ClinicalTrials.gov),
+DrugCentral, NIH DSLD, INKEEDecoder, and PubChem:
 
 - `drugdata_ping` — diagnostics; no network.
 - `drugdata_search_products` — name, brand, ingredient, barcode, or NDC.
-- `drugdata_search_ingredients` — name, INCI, UNII, CAS, EC, or RxCUI.
+- `drugdata_search_ingredients` — name, INCI, UNII, CAS, EC, RxCUI, or
+  PubChem CID.
 - `drugdata_get_product` — openFDA, DSLD, DailyMed, or INKEEDecoder.
-- `drugdata_get_ingredient` — openFDA, CosIng, DrugCentral, RxNorm, or
-  INKEEDecoder.
+- `drugdata_get_ingredient` — openFDA, CosIng, DrugCentral, RxNorm,
+  INKEEDecoder, or PubChem.
 - `drugdata_resolve_identifiers` — exactly one of `unii`, `ndc`, `rxcui`,
   `cas`, `inci_name`, `substance_name`, `spl_setid`, `dsld_id`.
+- `drugdata_search_references` — one NLM reference source per call
+  (`prescribable`, `rxclass`, `mesh`, `pubmed`, `medlineplus`,
+  `medlineplus_genetics`, `medlineplus_connect`, `umls`, `clinicaltrials`)
+  by `name`, `rxcui`, `ndc`, or `cui`; link-first results (titles,
+  identifiers, deep links), opaque-cursor pagination; UMLS needs
+  `UMLS_API_KEY`.
 
-The loop is search → resolve → get. Every search and resolution returns
-`nextSteps`. Results are source-grouped, bounded, and credited to the upstream
-database.
+The loop is search → resolve → get, plus a reference step for literature and
+classification sources. Every search and resolution returns `nextSteps`.
+Results are source-grouped, bounded, and credited to the upstream database.
 
 ### Hard sourcing policy
 
@@ -327,15 +336,20 @@ These are release-blocking rules, not style preferences:
 - **Upstream databases only in tool output.** Never name a client library,
   a package scope, or a client-shaped source label in result text,
   `structuredContent`, or an agent-facing error. The allowed database labels
-  are `openFDA`, `CosIng`, `RxNorm`, `DailyMed`, `DrugCentral`, `DSLD`, and
-  `INKEEDecoder`. Internal logs on stderr may name a package for debugging.
+  are `openFDA`, `CosIng`, `RxNorm`, `RxTerms`, `RxClass`, `DailyMed`,
+  `DrugCentral`, `DSLD`, `INKEEDecoder`, `MeSH`, `PubMed`, `MedlinePlus`,
+  `UMLS`, `ClinicalTrials.gov`, and `PubChem`. Internal logs on stderr may
+  name a package for debugging.
 - **Every record carries provenance.** A `SourceRef` has the upstream
   `database`, its own `id`, a deep-link `url`, and `retrievedAt`. Do not
   invent an id or a link.
 - **Regulatory and label text is verbatim and attributed.** Keep the source's
   wording, label it, and never present it as our conclusion.
-- **Errors name the database, not the client.** Adapters reword upstream
-  failures; the tool boundary scrubs again. A new adapter or tool must keep
+- **Errors name the database, not the client.** Adapters and boundaries
+  author their failure text at the source: a failed source becomes an error
+  group worded for the database, and unexpected rejections are reworded by
+  `toUserMessage` (raw text goes to stderr only). There is no downstream
+  text filtering, and none may be added. A new adapter or tool must keep
   this true.
 - **Zero matches are normal.** They are empty groups, not errors. A failed
   source becomes an error group and must not fail the other groups.
@@ -355,7 +369,8 @@ These are release-blocking rules, not style preferences:
 src/sources/types.ts        SourceAdapter contract + capability declarations
 src/sources/registry.ts     search fan-out (allSettled) and lookup routing
 src/sources/<source>.ts     one adapter per upstream source module
-src/tools/search-support.ts SEARCH_ADAPTERS, registry resolution, error scrub
+src/sources/nlm-references/ reference search handlers + cursor pagination
+src/tools/search-support.ts SEARCH_ADAPTERS, registry resolution, error groups
 src/clients.ts              one shared client per source, uniform fetch policy
 src/config.ts               source ids, labels, lazy environment config
 ```
@@ -365,6 +380,14 @@ An adapter speaks only the unified schemas in `src/lib/schemas.ts`. It declares
 `productCategories`, and implements only the methods it can answer. The
 registry never invents results; it forwards groups and synthesizes error groups
 for a rejected adapter.
+
+The NLM reference sources are not adapters: `drugdata_search_references`
+dispatches to one handler per source in `src/sources/nlm-references/` through
+`createReferenceSearcher`, because each answers a different shape of question
+than product/ingredient search. PubChem is an adapter
+(`src/sources/pubchem.ts`) that shares the NLM client and the `nlm`
+disable id; it serves ingredient searches (name, CID) and ingredient
+profiles (a `chemistry` block), not products or the identity chain.
 
 #### Adding a source
 

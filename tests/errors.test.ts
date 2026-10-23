@@ -1,7 +1,7 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
+  SourceInputError,
   SourceRoutingError,
-  sanitizeSourceText,
   toUserMessage,
 } from "../src/lib/errors.js";
 
@@ -117,6 +117,18 @@ describe("toUserMessage", () => {
     );
   });
 
+  it("returns a caller-input error's actionable message verbatim", () => {
+    const message =
+      'Identifier "TYPE:value" matched more than one DrugCentral structure. Search ingredients first, then retry with the exact structure id.';
+
+    expect(
+      toUserMessage(
+        new SourceInputError(message),
+        "the DrugCentral ingredient lookup",
+      ),
+    ).toBe(message);
+  });
+
   it("falls back generically for a non-Error value and logs it", () => {
     const write = vi
       .spyOn(process.stderr, "write")
@@ -154,31 +166,5 @@ describe("toUserMessage", () => {
     expect(message).not.toContain("null");
     expect(String(write.mock.calls[0]?.[0])).toContain("null");
     write.mockRestore();
-  });
-});
-
-describe("sanitizeSourceText", () => {
-  afterEach(() => {
-    vi.restoreAllMocks();
-  });
-
-  it("scrubs scoped package names", () => {
-    const text = sanitizeSourceText("@knorby/openfda-client rejected the call");
-
-    expect(text).toContain("the upstream service");
-    expect(text).not.toMatch(/@knorby|client/i);
-  });
-
-  it("scrubs a camel-case client class name", () => {
-    const text = sanitizeSourceText("OpenFdaClient: request failed");
-
-    expect(text).toContain("upstream service");
-    expect(text).not.toMatch(/client/i);
-  });
-
-  it("scrubs a benign standalone client phrase", () => {
-    expect(sanitizeSourceText("The client asked for data.")).toBe(
-      "The upstream service asked for data.",
-    );
   });
 });

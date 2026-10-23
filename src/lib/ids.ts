@@ -108,18 +108,12 @@ export function isUnii(value: string): boolean {
 /**
  * Hosts accepted in slug arguments.
  *
- * INCIDecoder renamed itself to INKEEDecoder after a trademark dispute with
- * PCPC, the body that owns the INCI nomenclature (see
- * https://inkeedecoder.com/new-name). It is the same site and the same
- * database — old incidecoder.com links redirect to inkeedecoder.com — so both
- * hosts are accepted here. Only the path is used: fetches always go to the
- * configured base URL, so a stale link never contacts the old domain.
+ * Only the path is used: fetches always go to the configured base URL, so a
+ * full URL is just a way of naming a record, never a host to contact.
  */
 const ALLOWED_SLUG_HOSTS = new Set([
   "inkeedecoder.com",
   "www.inkeedecoder.com",
-  "incidecoder.com",
-  "www.incidecoder.com",
 ]);
 
 /** Path prefixes that name a single INKEEDecoder entity. */

@@ -67,6 +67,20 @@ const outputSchema = z.object({
       }),
     )
     .describe("Every source, in the server's fixed order."),
+  referenceSources: z
+    .object({
+      umlsConfigured: z
+        .boolean()
+        .describe(
+          "Whether UMLS_API_KEY is set; UMLS reference searches error with configuration advice when it is not. Never reveals the key.",
+        ),
+      pubmedConfigured: z
+        .boolean()
+        .describe(
+          "Whether any NLM_PUBMED_* variable is set (optional etiquette/rate-limit identification). Never reveals the values.",
+        ),
+    })
+    .describe("Key situation for the NLM reference sources."),
 });
 
 type PingInput = z.infer<typeof inputSchema>;
@@ -108,6 +122,13 @@ export function registerPingTool(server: McpServer): void {
         ok: true,
         server: { name: SERVER_NAME, version: SERVER_VERSION },
         sources,
+        referenceSources: {
+          umlsConfigured: config.config.UMLS_API_KEY !== undefined,
+          pubmedConfigured:
+            config.config.NLM_PUBMED_API_KEY !== undefined ||
+            config.config.NLM_PUBMED_EMAIL !== undefined ||
+            config.config.NLM_PUBMED_TOOL !== undefined,
+        },
       };
 
       const enabledCount = sources.filter((source) => source.enabled).length;
@@ -120,7 +141,7 @@ export function registerPingTool(server: McpServer): void {
             `- ${SOURCE_LABELS[source.id]}: ${source.enabled ? "enabled" : "disabled"} (${keyLabel(source.id, source.configured)})`,
         ),
         "",
-        "API keys: openFDA and DSLD keys are optional — they raise upstream rate limits. Key values are never shown.",
+        "API keys: openFDA and DSLD keys are optional — they raise upstream rate limits. UMLS needs UMLS_API_KEY for UMLS reference searches; PubMed identification variables are optional etiquette. Key values are never shown.",
       ].join("\n");
 
       return {

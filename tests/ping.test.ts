@@ -13,6 +13,10 @@ const ENV_KEYS = [
   "DSLD_API_KEY",
   "DRUGDATA_TIMEOUT_MS",
   "DRUGDATA_DISABLED_SOURCES",
+  "UMLS_API_KEY",
+  "NLM_PUBMED_API_KEY",
+  "NLM_PUBMED_EMAIL",
+  "NLM_PUBMED_TOOL",
 ] as const;
 
 function clearEnv(): void {
@@ -23,6 +27,7 @@ interface PingOutput {
   ok: boolean;
   server: { name: string; version: string };
   sources: { id: SourceId; enabled: boolean; configured: boolean }[];
+  referenceSources: { umlsConfigured: boolean; pubmedConfigured: boolean };
 }
 
 describe("drugdata_ping", () => {
@@ -72,6 +77,10 @@ describe("drugdata_ping", () => {
     for (const source of output.sources) {
       expect(source.enabled).toBe(true);
     }
+    expect(output.referenceSources).toEqual({
+      umlsConfigured: false,
+      pubmedConfigured: false,
+    });
   });
 
   it("disables the sources named in DRUGDATA_DISABLED_SOURCES", async () => {
@@ -127,6 +136,27 @@ describe("drugdata_ping", () => {
     const serialized = JSON.stringify(result);
     expect(serialized).not.toContain("openfda-secret");
     expect(serialized).not.toContain("dsld-secret");
+  });
+
+  it("reports UMLS and PubMed reference configuration without echoing keys", async () => {
+    process.env.UMLS_API_KEY = "umls-secret";
+    process.env.NLM_PUBMED_API_KEY = "pubmed-secret";
+    resetConfig();
+    harness = await createTestClient();
+
+    const result = await harness.client.callTool({
+      name: "drugdata_ping",
+      arguments: {},
+    });
+
+    const output = result.structuredContent as PingOutput;
+    expect(output.referenceSources).toEqual({
+      umlsConfigured: true,
+      pubmedConfigured: true,
+    });
+    const serialized = JSON.stringify(result);
+    expect(serialized).not.toContain("umls-secret");
+    expect(serialized).not.toContain("pubmed-secret");
   });
 
   it("echoes an optional message in the text response", async () => {

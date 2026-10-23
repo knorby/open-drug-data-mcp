@@ -350,7 +350,7 @@ describe("search tools", () => {
     expect(text).toContain("call this tool again with page: 2");
   });
 
-  it("keeps a failed source as an error group and sanitizes its message", async () => {
+  it("keeps a failed source as an error group and rewords its message", async () => {
     const openfda = fakeAdapter({
       id: "openfda",
       databases: ["openFDA"],

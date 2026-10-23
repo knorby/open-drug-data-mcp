@@ -35,6 +35,17 @@ judgment:
 - CosIng is an information database with no legal value; only Regulation
   (EC) No 1223/2009 and its Annexes establish regulatory status.
 - INKEEDecoder is editorial content, not a regulatory or medical authority.
+- MeSH, UMLS, RxClass, and PubChem describe terminology, classification, and
+  chemistry, not product approvals. Some UMLS Metathesaurus material comes
+  from copyrighted source vocabularies.
+- PubMed abstracts may carry publisher or author copyright; this server
+  returns citations and links, not article text. MedlinePlus topic and
+  Genetics summaries are public domain, but its encyclopedia and drug
+  monographs are licensed; this server links to those pages instead of
+  extracting them.
+- ClinicalTrials.gov study records are sponsor-submitted and are not
+  independently verified by NLM; a registry entry is not evidence of safety
+  or efficacy.
 
 Data may be incomplete, delayed, out of date, or wrong. No warranty is made,
 and no liability is accepted for use of the data or this software. Always
@@ -55,9 +66,22 @@ redistributing data.
 - Results name the upstream database, carry its deep link, and keep
   regulatory text verbatim and labeled. Client library names never appear in
   tool output.
+- `drugdata_search_references` queries one NLM reference source at a time —
+  PubMed, ClinicalTrials.gov, MeSH, MedlinePlus (topics, Genetics, Connect),
+  UMLS, RxClass, and RxNorm's prescribable name list — and returns titles,
+  identifiers, and deep links rather than extracted article or record text.
+  Sources that page do so through opaque cursors the caller passes back.
 - `DRUGDATA_DISABLED_SOURCES` can switch off any adapter for a process. The
   ids are `openfda`, `cosing`, `nlm`, `drugcentral`, `dsld`, and
-  `inkeedecoder`; `nlm` covers both RxNorm and DailyMed.
+  `inkeedecoder`; `nlm` covers every NLM namespace (RxNorm, RxTerms, RxClass,
+  DailyMed, MeSH, PubMed, MedlinePlus, UMLS, ClinicalTrials.gov) and the
+  PubChem adapter, which shares the NLM client.
+- UMLS requires `UMLS_API_KEY` (a free UTS account under the UMLS
+  Metathesaurus license); without it the UMLS reference source returns a
+  configuration error naming the variable. PubMed accepts optional
+  `NLM_PUBMED_API_KEY`, `NLM_PUBMED_EMAIL`, and `NLM_PUBMED_TOOL`
+  identification for E-utilities etiquette. The other NLM services are
+  keyless.
 - The server does not bulk-download, mirror, or redistribute datasets. The
   INKEEDecoder adapter keeps a one-request-per-second pace, and searches
   never walk pagination automatically.
@@ -142,7 +166,7 @@ in the inventory is not an authorization, and only Regulation (EC) No
 | **Coverage** | Normalized clinical drug concepts and ingredient concepts, their NDC crosswalks, and RxTerms presentation fields. |
 | **Identifiers** | RxCUI, NDC, UNII. |
 | **Search types** | Products: name, NDC. Ingredients: name, UNII, RxCUI. |
-| **Lookups** | `drugdata_get_ingredient` (`nlm`) by numeric RxCUI. |
+| **Lookups** | `drugdata_get_ingredient` (`nlm`) by numeric RxCUI. `drugdata_search_references` (`prescribable`) searches the prescribable-name subset (RxNav's Prescribe namespace) under the RxNorm label with dataset `Prescribable`. |
 | **Update cadence** | RxNorm publishes monthly full releases and weekly updates. This server uses the public RxNav APIs and does not download the full release. |
 
 **Terms verified 2026-10-22:**
@@ -200,6 +224,224 @@ may not be current.
 labeling on DailyMed may differ from the most recent FDA-approved labeling,
 and unapproved products are labeled as such. Always check the current
 official labeling before relying on a section.
+
+## RxTerms
+
+| | |
+| --- | --- |
+| **Publisher** | U.S. National Library of Medicine (NLM), National Institutes of Health |
+| **Upstream** | <https://www.nlm.nih.gov/research/umls/rxnorm/rxterms.html> via the RxNav REST APIs |
+| **Coverage** | Presentation names for clinical drugs: display name, full generic name, brand name, strength, and route, keyed by RxCUI. |
+| **Identifiers** | RxCUI. |
+| **Search types** | None directly; reached through RxNorm RxCUIs. |
+| **Lookups** | Embedded in `drugdata_get_ingredient` (`nlm`) profiles as a nested `rxTerm` block with its own RxTerms source link; not a standalone lookup. |
+| **Update cadence** | Follows RxNav releases; the RxTerms dataset updates with RxNorm monthly releases. |
+
+**Terms verified 2026-10-22:** the RxNorm terms of service and NLM Terms and
+Conditions already cited above govern the RxNav API family, including the
+RxTerms endpoints.
+
+**Attribution:** the RxNorm statement above ("This product uses publicly
+available data courtesy of the U.S. National Library of Medicine...") applies.
+
+**Caveats:** RxTerms is presentation information for humans, not dosing or
+clinical guidance. Strength and route describe the term, not a prescription.
+
+## RxClass
+
+| | |
+| --- | --- |
+| **Publisher** | U.S. National Library of Medicine (NLM), National Institutes of Health |
+| **Upstream** | <https://www.nlm.nih.gov/research/umls/rxnorm/rxclass.html> via the RxNav REST APIs |
+| **Coverage** | Drug classifications from multiple sources (for example ATC, EPC, mechanistic and physiological effects), searchable by class name or by an RxCUI's memberships. |
+| **Identifiers** | RxClass class id, class name, class type; member RxCUIs. |
+| **Search types** | `drugdata_search_references` (`rxclass`): by class `name` or by `rxcui` memberships. |
+| **Lookups** | None; class results carry a deep link to the RxClass API entry for the class id. |
+| **Update cadence** | Follows RxNav releases for each relationship source. |
+
+**Terms verified 2026-10-22:** the RxNorm terms of service and NLM Terms and
+Conditions already cited above govern the RxNav API family, including the
+RxClass endpoints.
+
+**Attribution:** the RxNorm/NLM acknowledgement above applies.
+
+**Caveats:** membership depends on the relationship source (relaSource); the
+same drug can appear in many overlapping classes. Classes are descriptive
+terminology, not regulatory categorization.
+
+## MeSH
+
+| | |
+| --- | --- |
+| **Publisher** | U.S. National Library of Medicine (NLM), National Institutes of Health |
+| **Upstream** | <https://id.nlm.nih.gov/mesh> — the MeSH SPARQL/RDF API and descriptor lookup |
+| **Coverage** | Medical Subject Headings descriptors and supplementary concept records, including drugs and chemicals, with their labels and resource URIs. |
+| **Identifiers** | MeSH descriptor id (`D`-prefixed), MeSH RDF resource URI. |
+| **Search types** | `drugdata_search_references` (`mesh`): descriptor search by `name`. |
+| **Lookups** | None; descriptor results link to their RDF resource. The raw SPARQL endpoint is intentionally not exposed. |
+| **Update cadence** | Annual MeSH release; the API serves the current version. |
+
+**Terms verified 2026-10-22:** the NLM Terms and Conditions and NLM Web
+Policies already cited above govern NLM web data, including the MeSH API.
+MeSH is also a UMLS Metathesaurus source vocabulary; this server queries the
+public API read-only and does not download the MeSH RDF distribution, so the
+UMLS license is not triggered by this server's use.
+
+**Attribution:** acknowledge NLM as the source ("Courtesy of the U.S.
+National Library of Medicine"); do not imply NLM endorsement.
+
+**Caveats:** MeSH is a controlled vocabulary for indexing biomedical
+literature, not a drug database. A supplementary concept record describes a
+substance, not a marketed product or a regulatory status.
+
+## PubMed
+
+| | |
+| --- | --- |
+| **Publisher** | U.S. National Library of Medicine (NLM), National Center for Biotechnology Information (NCBI) |
+| **Upstream** | <https://pubmed.ncbi.nlm.nih.gov/> via the NCBI E-utilities API |
+| **Coverage** | Biomedical literature citations: article titles, publication dates, PMIDs, and links. This server returns citations and links, not abstracts or article text. |
+| **Identifiers** | PMID. |
+| **Search types** | `drugdata_search_references` (`pubmed`): search by `name`; pages through a cursor. |
+| **Lookups** | None; article results link to `pubmed.ncbi.nlm.nih.gov/<pmid>/`. |
+| **Update cadence** | Continuous, as new citations are added to PubMed. |
+
+**Terms verified 2026-10-22:** the NCBI Website and Data Usage Policies and
+Disclaimers at <https://www.ncbi.nlm.nih.gov/home/about/policies/>. For
+E-utilities scripting they require no more than three requests per second
+and ask distributed software to send the `email` and `tool` parameters; this
+server supports optional `NLM_PUBMED_API_KEY`, `NLM_PUBMED_EMAIL`, and
+`NLM_PUBMED_TOOL` configuration for exactly that. NCBI's notice must be
+evident to users of the service; this server attributes every result to
+PubMed with a link.
+
+NLM does not claim copyright on PubMed abstracts, but journal publishers or
+authors may. That is why this server returns titles, PMIDs, and links rather
+than abstract text.
+
+**Attribution:** cite PubMed/NCBI as the retrieval source and link the
+record; do not imply endorsement.
+
+**Caveats:** search ranking is PubMed's; results are relevance-ranked, not
+exhaustive. Inclusion in PubMed is not a quality judgment.
+
+## MedlinePlus (topics, Genetics, and Connect)
+
+| | |
+| --- | --- |
+| **Publisher** | U.S. National Library of Medicine (NLM), National Institutes of Health |
+| **Upstream** | <https://medlineplus.gov/> — the MedlinePlus web service for health topics and Genetics, and the MedlinePlus Connect web service for drug pages |
+| **Coverage** | Consumer health topic pages, MedlinePlus Genetics condition/gene/chromosome pages, and Connect drug information pages matched by drug name, RxCUI, or NDC. This server returns titles, links, and (for topics) result counts, not page content. |
+| **Identifiers** | Topic and page URLs; no separate numeric id upstream. |
+| **Search types** | `drugdata_search_references`: `medlineplus` (health topics, by `name`), `medlineplus_genetics` (Genetics, by `name`), `medlineplus_connect` (drug pages, by `name`, `rxcui`, or `ndc`). Topics page through a cursor. |
+| **Lookups** | None; results link to the MedlinePlus pages themselves. |
+| **Update cadence** | Continuous editorial updates by NLM. |
+
+**Terms verified 2026-10-22:** the MedlinePlus copyright page at
+<https://medlineplus.gov/copyright.html>. Health topic summaries and
+Genetics pages are U.S. Government works in the public domain; NLM asks for
+the acknowledgement "Courtesy of MedlinePlus from the National Library of
+Medicine" or "Source: MedlinePlus, National Library of Medicine." The
+A.D.A.M. Medical Encyclopedia and the ASHP drug monographs on MedlinePlus
+are copyrighted and licensed for use on MedlinePlus only; direct links to
+those pages are permitted, which is what this server returns. NLM's page
+also invites linking to and displaying data from the MedlinePlus web service
+and Connect.
+
+**Caveats:** MedlinePlus is consumer-level information, not clinical
+guidance or a substitute for a professional. Because some site content is
+licensed, this server links rather than extracting page text.
+
+## UMLS
+
+| | |
+| --- | --- |
+| **Publisher** | U.S. National Library of Medicine (NLM), National Institutes of Health |
+| **Upstream** | <https://uts.nlm.nih.gov/> — the Unified Medical Language System (UMLS) Terminology Services REST API |
+| **Coverage** | Metathesaurus concept search and concept lookup by CUI, with the concept's name and root source vocabularies. This server queries read-only at request time and does not redistribute the Metathesaurus or any subset. |
+| **Identifiers** | UMLS CUI (the `ui` returned for a concept search). |
+| **Search types** | `drugdata_search_references` (`umls`): by `name` (concept search) or `cui` (concept lookup). No pagination upstream. |
+| **Lookups** | None; concept results link to their UTS concept pages. |
+| **Update cadence** | Follows Metathesaurus releases (for example 2026AA). |
+
+**Terms verified 2026-10-22:** the UMLS Metathesaurus License Agreement at
+<https://uts.nlm.nih.gov/uts/assets/LicenseAgreement.pdf> (current copy
+fetched via <https://www.nlm.nih.gov/research/umls/license.html>). The
+license is free and non-exclusive, and grants use "to improve access to
+biomedical information"; it prohibits distributing the Metathesaurus or
+subsets (including individual vocabulary sources) except as an integral part
+of an application; it requires acknowledging NLM as the source, citing year
+and version; it notes that some Metathesaurus material comes from
+copyrighted source vocabularies; and it forbids implying NLM or contributor
+endorsement. Using the UTS API requires a UTS account, which is how this
+server's `UMLS_API_KEY` is obtained.
+
+**Attribution:** acknowledge NLM as the source of UMLS data, citing year and
+Metathesaurus release; do not imply NLM or vocabulary-contributor endorsement.
+
+**Caveats:** a CUI is a concept identifier that aggregates many vocabularies,
+not a regulatory or product identifier. Without `UMLS_API_KEY` the UMLS
+reference source returns a configuration error naming the variable and makes
+no network call.
+
+## ClinicalTrials.gov
+
+| | |
+| --- | --- |
+| **Publisher** | U.S. National Library of Medicine (NLM), National Institutes of Health |
+| **Upstream** | <https://clinicaltrials.gov/> — the ClinicalTrials.gov Application Programming Interface (API v2) |
+| **Coverage** | Registry records of publicly and privately funded clinical studies: NCT number, brief title, and study links. This server returns titles, identifiers, and links, not study records. |
+| **Identifiers** | NCT number. |
+| **Search types** | `drugdata_search_references` (`clinicaltrials`): search by `name` (term); pages through a cursor. |
+| **Lookups** | None; study results link to `clinicaltrials.gov/study/<nct>`. |
+| **Update cadence** | Continuous, as sponsors submit and update registrations. |
+
+**Terms verified 2026-10-22:** ClinicalTrials.gov is an NLM website, and the
+NLM Web Policies at <https://www.nlm.nih.gov/web_policies.html> govern NLM
+web data: works produced by the U.S. Government are not subject to copyright
+in the United States, and NLM asks for the acknowledgement "Courtesy of the
+National Library of Medicine." The site's dedicated terms page
+(<https://clinicaltrials.gov/content/about-site/terms-conditions>) is
+JavaScript-rendered and returned no text to plain fetches on the verification
+date, so it is recorded here rather than quoted; the NLM Web Policies are
+the verified basis.
+
+**Attribution:** cite ClinicalTrials.gov and the NCT number with the deep
+link; do not imply NLM endorsement.
+
+**Caveats:** study records are submitted by sponsors and are not
+independently verified by NLM. Registration is not evidence of safety,
+efficacy, or even that a study completed.
+
+## PubChem
+
+| | |
+| --- | --- |
+| **Publisher** | National Center for Biotechnology Information (NCBI), U.S. National Library of Medicine |
+| **Upstream** | <https://pubchem.ncbi.nlm.nih.gov/> — PUG REST and PUG View APIs |
+| **Coverage** | Chemical compound records: IUPAC name, molecular formula, molecular weight, and InChIKey for a compound id, plus name-to-compound id search. Surfaced as ingredient search results and a `chemistry` block on ingredient profiles. |
+| **Identifiers** | PubChem CID. |
+| **Search types** | `drugdata_search_ingredients`: `name` (compound name search) and `cid` (direct compound lookup). |
+| **Lookups** | `drugdata_get_ingredient` (`pubchem`) by numeric CID; returns the `chemistry` block. |
+| **Update cadence** | Continuous, as depositor and authority records are added. |
+
+**Terms verified 2026-10-22:** the NCBI Website and Data Usage Policies and
+Disclaimers at <https://www.ncbi.nlm.nih.gov/home/about/policies/>. Data
+created by or for the U.S. Government on NCBI sites is in the public domain
+("it is requested that in any subsequent use of this work, NLM be given
+appropriate acknowledgment"), but the notice names PubChem among resources
+that incorporate contributed or licensed material that may be protected by
+copyright; anyone reproducing or making commercial use is expected to adhere
+to the terms asserted by the copyright holder. This server queries the
+public API read-only and returns small structured chemistry fields plus
+links.
+
+**Attribution:** acknowledge NCBI/PubChem as the source and link the
+compound record; do not imply endorsement.
+
+**Caveats:** a CID is a chemical compound, not a drug product or ingredient
+in a marketed sense; one ingredient name can match several compounds (salts,
+hydrates, mixtures), and compound identity is not a regulatory status.
 
 ## DrugCentral
 
@@ -334,6 +576,11 @@ All pages below were fetched on **2026-10-22**.
 | DSLD | <https://dsld.od.nih.gov/terms-and-conditions> | **Could not be verified:** the URL returned no content on 2026-10-22. Licensing was taken from the API guide instead. |
 | INKEEDecoder | <https://inkeedecoder.com/termsofservice> | Fetched. All rights reserved; no copying, republishing, derivative works, or commercial use; non-commercial personal use only. |
 | INKEEDecoder | <https://inkeedecoder.com/robots.txt> | Fetched. Allows `/`; disallows `/auth/` and `/products/recommend/`. |
+| UMLS | <https://www.nlm.nih.gov/research/umls/license.html> → <https://uts.nlm.nih.gov/uts/assets/LicenseAgreement.pdf> | Fetched (PDF, 2026AA copy). Free non-exclusive license; no distributing the Metathesaurus or subsets; acknowledge NLM citing year and version; copyrighted source vocabularies; no endorsement. |
+| MedlinePlus | <https://medlineplus.gov/copyright.html> | Fetched. Topic and Genetics summaries public domain; "Courtesy of MedlinePlus from the National Library of Medicine"; A.D.A.M. encyclopedia and ASHP monographs copyrighted; direct links permitted. |
+| NCBI (PubMed, PubChem) | <https://www.ncbi.nlm.nih.gov/home/about/policies/> | Fetched. Public domain for U.S.-government-created info with requested NLM acknowledgment; PubChem named among resources with contributed/licensed content; E-utilities scripting guidelines (no more than 3 requests per second; `email` and `tool` parameters); NLM does not claim copyright on PubMed abstracts. |
+| NLM (RxTerms, RxClass, MeSH, ClinicalTrials.gov) | <https://www.nlm.nih.gov/web_policies.html> | Fetched (Last Reviewed December 2, 2024). Government works not subject to U.S. copyright; acknowledge "Courtesy of the National Library of Medicine"; non-government content may be copyrighted; no-endorsement and medical-information disclaimers. |
+| ClinicalTrials.gov | <https://clinicaltrials.gov/content/about-site/terms-conditions> | **Could not be text-verified:** the page is JavaScript-rendered and returned no content to plain fetches on 2026-10-22. The NLM Web Policies row above is the verified basis for this NLM website. |
 
 ## Reporting a problem
 

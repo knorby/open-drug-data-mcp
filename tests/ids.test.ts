@@ -85,9 +85,6 @@ describe("normalizeSlug", () => {
 
   it("strips an allowed URL down to its slug", () => {
     expect(normalizeSlug("https://inkeedecoder.com/products/x")).toBe("x");
-    expect(
-      normalizeSlug("https://www.incidecoder.com/ingredients/squalane"),
-    ).toBe("squalane");
     expect(normalizeSlug("http://inkeedecoder.com/products/x?ref=1#top")).toBe(
       "x",
     );
@@ -121,6 +118,14 @@ describe("normalizeSlug", () => {
     expect(() => normalizeSlug("https://example.com/products/x")).toThrow(
       /not an INKEEDecoder link/,
     );
+    // The site's former domain is not accepted either: it redirects to the
+    // current one, so callers can be told to pass the slug instead.
+    expect(() =>
+      normalizeSlug("https://www.incidecoder.com/ingredients/squalane"),
+    ).toThrow(/not an INKEEDecoder link/);
+    expect(() =>
+      normalizeSlug("https://incidecoder.com/ingredients/squalane"),
+    ).toThrow(/not an INKEEDecoder link/);
   });
 
   it("rejects a malformed URL", () => {

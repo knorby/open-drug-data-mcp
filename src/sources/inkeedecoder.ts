@@ -679,9 +679,8 @@ export interface IkdBridges {
  * Builds the chain-facing INKEEDecoder bridges.
  *
  * The bridge always resolves the caller's value as a slug (bare slug, site
- * path, or inkeedecoder.com link), so a stale incidecoder.com link cannot
- * reach another host. Upstream failures are reworded to name only
- * INKEEDecoder.
+ * path, or inkeedecoder.com link), so no other host is ever contacted.
+ * Upstream failures are reworded to name only INKEEDecoder.
  *
  * @param client Optional client override, mirroring
  *   {@link createInkeedecoderAdapter}.

@@ -1,5 +1,9 @@
 import { throwIfAborted } from "../lib/abort.js";
-import { SourceRoutingError } from "../lib/errors.js";
+import {
+  SourceInputError,
+  SourceRoutingError,
+  toUserMessage,
+} from "../lib/errors.js";
 import type { DatabaseId } from "../lib/schemas.js";
 import {
   CATEGORY_ADAPTERS,
@@ -246,7 +250,6 @@ async function fanOut<TAdapter extends SourceAdapter, TGroup extends AnyGroup>(
       return;
     }
 
-    const error = describeError(outcome.reason);
     for (const source of adapter.databases) {
       // A failure group is valid for either search family: its item list is
       // empty, so only the shared group fields are present.
@@ -255,7 +258,7 @@ async function fanOut<TAdapter extends SourceAdapter, TGroup extends AnyGroup>(
         items: [],
         page,
         hasMore: false,
-        error,
+        error: describeError(outcome.reason, source),
       };
       groups.push(group as TGroup);
     }
@@ -263,9 +266,23 @@ async function fanOut<TAdapter extends SourceAdapter, TGroup extends AnyGroup>(
   return groups;
 }
 
-/** Turns a rejection reason into model-facing error text. */
-function describeError(reason: unknown): string {
-  return reason instanceof Error ? reason.message : String(reason);
+/**
+ * Turns a rejection reason into model-facing error text.
+ *
+ * Authored errors — routing and caller-input errors — pass through verbatim.
+ * Anything unexpected becomes the generic actionable message from
+ * `toUserMessage`, which logs the raw failure text to stderr for the operator.
+ * Raw rejection text never reaches the model, and ordinary record text is
+ * never rewritten.
+ */
+function describeError(reason: unknown, database: DatabaseId): string {
+  if (
+    reason instanceof SourceRoutingError ||
+    reason instanceof SourceInputError
+  ) {
+    return reason.message;
+  }
+  return toUserMessage(reason, `the ${database} search`);
 }
 
 /** Collects the distinct database labels the given adapters declare. */

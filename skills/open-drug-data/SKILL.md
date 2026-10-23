@@ -1,15 +1,19 @@
 ---
 name: open-drug-data
-description: Use when researching drugs, ingredients, dietary supplements, or cosmetics, or when looking up an NDC, UNII, RxCUI, CAS, EC, or INCI identifier. Searches openFDA, CosIng, RxNorm, DailyMed, DrugCentral, DSLD, and INKEEDecoder; resolves identifiers across databases; fetches full records with citations and confidence labels.
+description: Use when researching drugs, ingredients, dietary supplements, or cosmetics, or when looking up an NDC, UNII, RxCUI, CAS, EC, INCI, CID, PMID, or NCT identifier. Searches openFDA, CosIng, RxNorm, DailyMed, DrugCentral, DSLD, INKEEDecoder, and PubChem; resolves identifiers across databases; fetches full records with citations and confidence labels; and searches NLM reference sources — PubMed literature, ClinicalTrials.gov studies, MedlinePlus pages, RxClass, MeSH, UMLS, and the prescribable drug dataset.
 ---
 
 # Open Drug Data
 
 Open Drug Data is a local MCP server that puts openFDA, CosIng, RxNorm,
-DailyMed, DrugCentral, NIH DSLD, and INKEEDecoder behind one read-only
-research interface. Every record is credited to the upstream database that
-supplied it and carries a deep link. The server queries the sources at request
-time; it does not mirror or redistribute their data.
+DailyMed, DrugCentral, NIH DSLD, INKEEDecoder, PubChem, and the NLM reference
+sources behind one read-only research interface. Every record is credited to the
+upstream database that supplied it and carries a deep link. The server queries
+the sources at request time; it does not mirror or redistribute their data.
+
+This skill lives in the repository under `skills/open-drug-data/`. The npm
+package does not ship it — install it from the project's GitHub repository
+alongside the server.
 
 **Informational and research use only — not medical advice.** This server does
 not diagnose, treat, prescribe, or recommend anything, and it does not create a
@@ -27,9 +31,12 @@ Use it when a task involves:
 - A product label, supplement facts panel, ingredient list, or regulatory
   annex entry.
 - An identifier lookup: NDC, UNII, RxCUI, CAS, EC, INCI, SPL set id, DSLD
-  label id, barcode, or a source-specific slug.
+  label id, barcode, PubChem CID, or a source-specific slug.
 - Cross-source identity: deciding whether two records describe the same
   ingredient or product.
+- The literature and context around a substance: PubMed articles,
+  ClinicalTrials.gov studies, drug classes, MeSH descriptors, consumer-health
+  pages, or UMLS terminology.
 
 Do not use it for emergencies, diagnosis, prescribing, or dosing decisions.
 Answer those requests with the disclaimer above and a recommendation to consult
@@ -37,15 +44,18 @@ a qualified professional.
 
 ## The loop: search → resolve → get
 
-Every task follows the same three moves. Do not skip straight to a lookup with
-an identifier you invented, and do not choose a database before searching.
+Every task follows the same three moves. Do not invent or reshape an identifier
+to force a lookup — but calling a lookup directly is fine when the user's
+message already contains the database's own identifier (an NDC read off a
+package, an RxCUI from another tool, a PMID in a citation). What is never fine
+is guessing an id or reshaping one namespace into another.
 
 1. **Search by what you have.**
    - `drugdata_search_products` takes `type`: `name`, `brand`, `ingredient`,
      `barcode`, or `ndc`, plus `query`. Add `category`: `medication`,
      `supplement`, or `cosmetic` only when the task is limited to one category.
    - `drugdata_search_ingredients` takes `type`: `name`, `inci`, `unii`, `cas`,
-     `ec`, or `rxcui`, plus `query`.
+     `ec`, `rxcui`, or `cid`, plus `query`.
    - The server fans out to every source that declares the search type. A
      source that cannot answer is simply absent from the result.
 2. **Resolve cross-source identity.**
@@ -59,9 +69,20 @@ an identifier you invented, and do not choose a database before searching.
    - `drugdata_get_product` takes `source`: `openfda`, `dsld`, `dailymed`, or
      `inkeedecoder`, plus that database's own `id`.
    - `drugdata_get_ingredient` takes `source`: `openfda`, `cosing`,
-     `drugcentral`, `nlm`, or `inkeedecoder`, plus that database's own `id`.
+     `drugcentral`, `nlm`, `inkeedecoder`, or `pubchem`, plus that database's
+     own `id`.
    - Pass the id from the search or resolve result unchanged. Ids are
      source-specific even when they look alike.
+4. **For what is written about a substance, search the references.**
+   - `drugdata_search_references` searches one NLM reference source per call:
+     `pubmed`, `clinicaltrials`, `medlineplus`, `medlineplus_genetics`,
+     `medlineplus_connect`, `rxclass`, `mesh`, `umls`, or `prescribable`.
+   - Results are link-first: a title, the stable identifier (PMID, NCT
+     number, class id, MeSH id, CUI, or RxCUI), and a deep link — not article
+     or study text. Continue with the returned `cursor` when `hasMore` is
+     true.
+   - `umls` needs `UMLS_API_KEY` in the server environment; without it that
+     one source returns configuration advice while the others work.
 
 Every search and resolve result ends with `nextSteps`: concrete follow-up calls
 derived from the identifiers that were actually found. Follow them instead of
@@ -117,7 +138,8 @@ RxCUI `1191`, which is a `drugdata_get_ingredient` id under source `nlm`.
 ```
 
 The result profiles the RxNorm concept, repeats its identifiers and source
-link, and offers `nextSteps` such as opening the CosIng ingredient.
+link, and offers `nextSteps` derived from the identifiers it actually carries —
+follow those rather than assuming a particular source will appear.
 
 ## Tool catalog
 
@@ -125,10 +147,11 @@ link, and offers `nextSteps` such as opening the CosIng ingredient.
 | --- | --- | --- |
 | `drugdata_ping` | Connectivity and configuration check. | Optional `message`. |
 | `drugdata_search_products` | Find products by name, brand, ingredient, barcode, or NDC. | `type`, `query`, optional `category`, `page`. |
-| `drugdata_search_ingredients` | Find ingredients by name, INCI, UNII, CAS, EC, or RxCUI. | `type`, `query`, `page`. |
+| `drugdata_search_ingredients` | Find ingredients by name, INCI, UNII, CAS, EC, RxCUI, or PubChem CID. | `type`, `query`, `page`. |
 | `drugdata_get_product` | Fetch one product from the database that owns it. | `source`, `id`, `include_label_sections`, `include_ingredients`, `page`. |
 | `drugdata_get_ingredient` | Fetch one ingredient profile from the database that owns it. | `source`, `id`, `include_clinical`, `include_cosing_panel`. |
 | `drugdata_resolve_identifiers` | Walk cross-source identity from one identifier. | Exactly one identifier, `include_label_ingredients`, `resolve_ingredients`, `max_candidates`. |
+| `drugdata_search_references` | Search one NLM reference source: PubMed, ClinicalTrials.gov, MedlinePlus, RxClass, MeSH, UMLS, prescribable RxNorm. | `source`, `type`, `query`, `limit`, `cursor`. |
 
 The search, lookup, and resolve tools accept `response_format`: `markdown`
 (default) or `json`. The flag changes only the text block;
@@ -147,6 +170,11 @@ The search, lookup, and resolve tools accept `response_format`: `markdown`
 | SPL set id | A DailyMed Structured Product Label document. UUID-shaped. | DailyMed, openFDA labels. |
 | DSLD label id | A dietary supplement label record. Positive integer. | DSLD. |
 | structId | A DrugCentral chemical structure. Ingredients, not products. | DrugCentral. |
+| CID | A PubChem chemical compound. | PubChem; DrugCentral crosswalks. |
+| PMID | A PubMed article. | PubMed reference results. |
+| NCT number | A ClinicalTrials.gov study. | ClinicalTrials.gov reference results. |
+| CUI | A UMLS concept. | UMLS reference results. |
+| MeSH id | A MeSH descriptor. | MeSH reference results. |
 | Slug | An INKEEDecoder product or ingredient page. | INKEEDecoder. |
 | Barcode | A UPC/EAN. | DSLD; openFDA package NDC candidates. |
 
@@ -187,11 +215,18 @@ The search, lookup, and resolve tools accept `response_format`: `markdown`
 
 In `drugdata_resolve_identifiers` results:
 
-- **`links[]` are trusted matches.** `direct` means the two records share the
-  same identifier. `derived` means a documented crosswalk connected them.
+- **`links[]` are trusted matches.** Each link's `matchedVia` names the key
+  that matched and `confidence` grades that match rule, not a general promise:
+  `direct` means the link was made on an exact, unique match of a key the
+  source owns — the same UNII or RxCUI, or a unique exact INCI name at CosIng;
+  `derived` means a documented crosswalk (NDC → RxCUI, an SPL bridge) or a
+  unique exact-name match connected them. Read `matchedVia` to see which rule
+  produced the link.
 - **`candidates[]` need judgment.** A candidate set means a source had one or
   more plausible matches but not a confident one. The set records how it
   matched (`matchedVia`) and why it is weak (`reason`, often `name-match`).
+  When a set shows more options upstream than it lists, it says so with
+  `optionsTruncated` — raise `max_candidates` to see the rest.
 - **Never present a candidate as fact.** Do not silently choose one, merge its
   data into another record, or describe it as the same ingredient. When identity
   matters, use a direct link, search the candidate by name to disambiguate, or
@@ -208,8 +243,9 @@ direct links, derived links, and candidate sets the response actually contains.
   search type, a broader name, or a different source before concluding the
   record is absent.
 - **An error group is one database failing.** Other groups remain valid.
-  Retry the failed source or proceed with the rest; `drugdata_ping` shows
-  whether a source is disabled or missing a key.
+  Retry the search (there is no single-source retry: one call re-queries the
+  whole fan-out) or proceed with the rest; `drugdata_ping` shows whether a
+  source is disabled or missing a key.
 - **A malformed identifier is an error result**, not a miss. It names the
   search tool that finds a valid one. Use that tool rather than guessing.
 - **One `page` applies to every source in a search fan-out and re-queries all

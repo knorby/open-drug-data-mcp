@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { SourceRoutingError } from "../src/lib/errors.js";
+import { SourceInputError, SourceRoutingError } from "../src/lib/errors.js";
 import type {
   DatabaseId,
   IngredientRef,
@@ -189,7 +189,7 @@ describe("registry.searchProducts", () => {
         items: [],
         page: 1,
         hasMore: false,
-        error: "boom",
+        error: expect.stringContaining("the DSLD search failed unexpectedly"),
       },
     ]);
   });
@@ -237,19 +237,21 @@ describe("registry.searchProducts", () => {
         items: [],
         page: 2,
         hasMore: false,
-        error: "upstream down",
+        error: expect.stringContaining("the RxNorm search failed unexpectedly"),
       },
       {
         source: "DailyMed",
         items: [],
         page: 2,
         hasMore: false,
-        error: "upstream down",
+        error: expect.stringContaining(
+          "the DailyMed search failed unexpectedly",
+        ),
       },
     ]);
   });
 
-  it("reports a non-Error rejection as text", async () => {
+  it("reports a non-Error rejection as a generic failure", async () => {
     const adapter = makeAdapter({
       id: "fakeB",
       databases: ["DSLD"],
@@ -271,9 +273,60 @@ describe("registry.searchProducts", () => {
         items: [],
         page: 1,
         hasMore: false,
-        error: "offline",
+        error: expect.stringContaining("the DSLD search failed unexpectedly"),
       },
     ]);
+    expect(groups[0]?.error).not.toContain("offline");
+  });
+
+  it("passes an adapter's caller-input error through verbatim", async () => {
+    const adapter = makeAdapter({
+      id: "drugcentral",
+      databases: ["DrugCentral"],
+      productSearchTypes: ["name"],
+      searchProducts: vi.fn(async () => {
+        throw new SourceInputError(
+          "The identifier is ambiguous. Search ingredients first, then retry with the exact structure id.",
+        );
+      }),
+    });
+
+    const groups = await createRegistry([adapter], []).searchProducts(
+      "name",
+      "aspirin",
+      { page: 1 },
+    );
+
+    expect(groups).toEqual([
+      {
+        source: "DrugCentral",
+        items: [],
+        page: 1,
+        hasMore: false,
+        error:
+          "The identifier is ambiguous. Search ingredients first, then retry with the exact structure id.",
+      },
+    ]);
+  });
+
+  it("maps a status-bearing rejection to its HTTP message", async () => {
+    const adapter = makeAdapter({
+      id: "dsld",
+      databases: ["DSLD"],
+      productSearchTypes: ["name"],
+      searchProducts: vi.fn(async () => {
+        throw Object.assign(new Error("upstream unavailable"), { status: 503 });
+      }),
+    });
+
+    const groups = await createRegistry([adapter], []).searchProducts(
+      "name",
+      "aspirin",
+      { page: 1 },
+    );
+
+    expect(groups[0]?.error).toContain("HTTP 503");
+    expect(groups[0]?.error).toContain("temporarily unavailable");
   });
 
   it("calls only adapters that declare the requested type", async () => {
@@ -451,7 +504,7 @@ describe("registry.searchIngredients", () => {
         items: [],
         page: 2,
         hasMore: false,
-        error: "cosing down",
+        error: expect.stringContaining("the CosIng search failed unexpectedly"),
       },
     ]);
   });

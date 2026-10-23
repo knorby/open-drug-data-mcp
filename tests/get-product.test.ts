@@ -705,6 +705,13 @@ describe("get_product tool", () => {
         "https://example.com/products/nope",
         /drugdata_search_products/,
       ],
+      // The site's former domain is no longer accepted; the advice says to
+      // pass the slug.
+      [
+        "inkeedecoder",
+        "https://www.incidecoder.com/ingredients/squalane",
+        /not an INKEEDecoder link/,
+      ],
     ];
 
     for (const [source, id, pattern] of cases) {
