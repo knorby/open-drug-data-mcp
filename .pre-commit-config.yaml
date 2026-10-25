@@ -29,9 +29,14 @@ repos:
     rev: v6.0.0
     hooks:
       - id: trailing-whitespace
+        # Captured upstream fixtures are kept verbatim; whitespace fixes would
+        # change the bytes the parsers are tested against.
+        exclude: ^tests/fixtures/
       - id: mixed-line-ending
         args: [--fix=lf]
+        exclude: ^tests/fixtures/
       - id: end-of-file-fixer
+        exclude: ^tests/fixtures/
       - id: check-merge-conflict
       - id: check-case-conflict
       - id: check-symlinks

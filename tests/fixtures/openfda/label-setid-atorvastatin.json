@@ -1,0 +1,32 @@
+{
+  "meta": {
+    "disclaimer": "Hand-authored from the published DrugLabel type for tests; not a live capture.",
+    "results": {
+      "skip": 0,
+      "limit": 1,
+      "total": 1
+    }
+  },
+  "results": [
+    {
+      "id": "00000000-0000-0000-0000-000000000001",
+      "set_id": "a60cc18b-0631-4cf0-b021-9f52224ece65",
+      "version": "29",
+      "effective_time": "20260101",
+      "openfda": {
+        "application_number": ["NDA020702"],
+        "brand_name": ["Lipitor"],
+        "generic_name": ["atorvastatin calcium"],
+        "manufacturer_name": ["Viatris Specialty LLC"],
+        "product_ndc": ["58151-155", "58151-156"],
+        "package_ndc": ["58151-155-77"],
+        "product_type": ["HUMAN PRESCRIPTION DRUG"],
+        "rxcui": ["617314"],
+        "spl_set_id": ["a60cc18b-0631-4cf0-b021-9f52224ece65"],
+        "upc": ["0358151155774"]
+      },
+      "active_ingredient": ["ATORVASTATIN CALCIUM TRIHYDRATE"],
+      "inactive_ingredient": ["CALCIUM CARBONATE", "CROSCARMELLOSE SODIUM"]
+    }
+  ]
+}

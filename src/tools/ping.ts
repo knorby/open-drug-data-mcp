@@ -1,38 +1,99 @@
 import type { McpServer } from "@modelcontextprotocol/server";
 import * as z from "zod/v4";
+import {
+  type Config,
+  readConfig,
+  SOURCE_IDS,
+  SOURCE_LABELS,
+  type SourceId,
+} from "../config.js";
 import { SERVER_NAME, SERVER_VERSION } from "../constants.js";
 
 /**
- * Connectivity check that needs no credentials and no network.
+ * Connectivity and configuration check.
  *
- * TODO(template): delete this tool once you add your own.
+ * Needs no credentials and no network, so it is the one tool that always
+ * answers. It reports which sources this process will use and whether their
+ * keys are configured — never the key values.
  */
+
+/**
+ * Sources that accept an API key, mapped to the config field holding it.
+ * Sources absent from this map need no key, so they are always configured.
+ */
+const API_KEY_BY_SOURCE: Partial<
+  Record<SourceId, "OPENFDA_API_KEY" | "DSLD_API_KEY">
+> = {
+  openfda: "OPENFDA_API_KEY",
+  dsld: "DSLD_API_KEY",
+};
 
 const inputSchema = z.object({
   message: z
     .string()
     .max(500)
     .optional()
-    .describe("Optional message to echo back. Omit for a bare 'pong'."),
+    .describe(
+      "Optional message to echo back in the text response. Omit for a plain 'pong'.",
+    ),
 });
 
 const outputSchema = z.object({
   ok: z.boolean().describe("Always true — the server answered."),
-  reply: z.string().describe("The echo response."),
-  server: z.object({
-    name: z.string(),
-    version: z.string(),
-  }),
+  server: z
+    .object({
+      name: z.string().describe("Server name advertised to hosts."),
+      version: z
+        .string()
+        .describe("Server version, derived from package.json."),
+    })
+    .describe("Server identity."),
+  sources: z
+    .array(
+      z.object({
+        id: z
+          .enum(SOURCE_IDS)
+          .describe("Adapter id, as accepted by DRUGDATA_DISABLED_SOURCES."),
+        enabled: z
+          .boolean()
+          .describe(
+            "Whether this source participates in searches — false when listed in DRUGDATA_DISABLED_SOURCES.",
+          ),
+        configured: z
+          .boolean()
+          .describe(
+            "Whether this source's API key is present; always true for sources that take no key. Never reveals a key.",
+          ),
+      }),
+    )
+    .describe("Every source, in the server's fixed order."),
+  referenceSources: z
+    .object({
+      umlsConfigured: z
+        .boolean()
+        .describe(
+          "Whether UMLS_API_KEY is set; UMLS reference searches error with configuration advice when it is not. Never reveals the key.",
+        ),
+      pubmedConfigured: z
+        .boolean()
+        .describe(
+          "Whether any NLM_PUBMED_* variable is set (optional etiquette/rate-limit identification). Never reveals the values.",
+        ),
+    })
+    .describe("Key situation for the NLM reference sources."),
 });
 
-/** Registers the `example_ping` tool. */
+type PingInput = z.infer<typeof inputSchema>;
+type PingOutput = z.infer<typeof outputSchema>;
+
+/** Registers the `drugdata_ping` tool. */
 export function registerPingTool(server: McpServer): void {
   server.registerTool(
-    "example_ping",
+    "drugdata_ping",
     {
       title: "Ping the server",
       description:
-        "Check that the server is running and reachable. Returns 'pong', echoing back an optional message along with the server name and version. Use this to verify connectivity before calling tools that need credentials.",
+        "Check that the server is running and see which data sources this process will use. Reports the server name and version, each source's adapter id and whether it is enabled, and whether its API key is configured (never the key itself). Needs no credentials and no network — use it to verify connectivity before searching.",
       inputSchema,
       outputSchema,
       annotations: {
@@ -42,16 +103,63 @@ export function registerPingTool(server: McpServer): void {
         openWorldHint: false,
       },
     },
-    async ({ message }) => {
-      const output = {
+    async ({ message }: PingInput) => {
+      const config = readConfig();
+      if (!config.ok) {
+        return {
+          content: [{ type: "text", text: config.error }],
+          isError: true,
+        };
+      }
+
+      const disabled = new Set(config.config.DRUGDATA_DISABLED_SOURCES);
+      const sources = SOURCE_IDS.map((id) => ({
+        id,
+        enabled: !disabled.has(id),
+        configured: isConfigured(id, config.config),
+      }));
+      const output: PingOutput = {
         ok: true,
-        reply: message ? `pong: ${message}` : "pong",
         server: { name: SERVER_NAME, version: SERVER_VERSION },
+        sources,
+        referenceSources: {
+          umlsConfigured: config.config.UMLS_API_KEY !== undefined,
+          pubmedConfigured:
+            config.config.NLM_PUBMED_API_KEY !== undefined ||
+            config.config.NLM_PUBMED_EMAIL !== undefined ||
+            config.config.NLM_PUBMED_TOOL !== undefined,
+        },
       };
+
+      const enabledCount = sources.filter((source) => source.enabled).length;
+      const text = [
+        message ? `pong: ${message}` : "pong",
+        "",
+        `${SERVER_NAME} ${SERVER_VERSION} — ${enabledCount} of ${SOURCE_IDS.length} sources enabled.`,
+        ...sources.map(
+          (source) =>
+            `- ${SOURCE_LABELS[source.id]}: ${source.enabled ? "enabled" : "disabled"} (${keyLabel(source.id, source.configured)})`,
+        ),
+        "",
+        "API keys: openFDA and DSLD keys are optional — they raise upstream rate limits. UMLS needs UMLS_API_KEY for UMLS reference searches; PubMed identification variables are optional etiquette. Key values are never shown.",
+      ].join("\n");
+
       return {
-        content: [{ type: "text", text: output.reply }],
+        content: [{ type: "text", text }],
         structuredContent: output,
       };
     },
   );
+}
+
+/** Whether the source's optional key is set (keyless sources report true). */
+function isConfigured(id: SourceId, config: Config): boolean {
+  const field = API_KEY_BY_SOURCE[id];
+  return field === undefined ? true : config[field] !== undefined;
+}
+
+/** Describes the key situation for one source in the text response. */
+function keyLabel(id: SourceId, configured: boolean): string {
+  if (API_KEY_BY_SOURCE[id] === undefined) return "no key needed";
+  return configured ? "API key configured" : "no API key";
 }

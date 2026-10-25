@@ -2,11 +2,15 @@
 
 Instructions and steering for AI coding agents working in this repository.
 
-This is a TypeScript starter template for **local MCP (Model Context Protocol)
-servers** that wrap an API or SDK library, served over stdio and runnable with
-`npx`. It is published to npm via Changesets + OIDC trusted publishing.
+This is the repository for **Open Drug Data MCP**, a local MCP (Model Context
+Protocol) server that gives an agent one read-only research interface over
+openFDA, CosIng, RxNorm, DailyMed, DrugCentral, NIH DSLD, and INKEEDecoder. It
+is served over stdio, runnable with `npx`, and intended for npm publication
+via Changesets + OIDC trusted publishing (published after the first release).
 
-Customize per project and keep this file updated as conventions evolve.
+It began as the knorby TypeScript MCP template. The template's setup, testing,
+and release guardrails still apply and are kept below; the project-specific
+steering follows them.
 
 ---
 
@@ -111,8 +115,12 @@ scanning). Both are needed for full coverage.
     so run `npm run check` before committing if hooks are skipped)
   - `npm run typecheck` (tsc, src + tests)
   - `npm run build` (tsup)
-  - `npm test` (Vitest)
+  - `npm run test:coverage` (Vitest with the 100% thresholds)
   - `npm run test:smoke` (MCP Inspector CLI `tools/list` against `dist/`)
+  - `npm pack --dry-run` (published files are only `dist/`, `README.md`,
+    `CHANGELOG.md`, and `LICENSE`)
+  - a stdout-purity check (`echo '{}' | node dist/index.js` must write nothing
+    to stdout)
   - `npm audit --audit-level=moderate` (vulnerability scan)
 - The **pre-commit suite** (file hygiene + secret scanning) also runs in CI
   via `.github/workflows/pre-commit.yml` on every push to `main` and PRs
@@ -287,3 +295,194 @@ These rules are mandatory. Follow them strictly.
   nothing), never stdout output.
 - Verify that `AGENTS.md` and `README.md` still reflect the current state of
   the repository.
+
+---
+
+## Project: Open Drug Data MCP
+
+Project-specific rules for this server. The template guardrails above remain
+in force.
+
+### What this server is
+
+Seven tools over openFDA, CosIng, the NLM drug databases (RxNorm, RxTerms,
+RxClass, DailyMed, MeSH, PubMed, MedlinePlus, UMLS, ClinicalTrials.gov),
+DrugCentral, NIH DSLD, INKEEDecoder, and PubChem:
+
+- `drugdata_ping` — diagnostics; no network.
+- `drugdata_search_products` — name, brand, ingredient, barcode, or NDC.
+- `drugdata_search_ingredients` — name, INCI, UNII, CAS, EC, RxCUI, or
+  PubChem CID.
+- `drugdata_get_product` — openFDA, DSLD, DailyMed, or INKEEDecoder.
+- `drugdata_get_ingredient` — openFDA, CosIng, DrugCentral, RxNorm,
+  INKEEDecoder, or PubChem.
+- `drugdata_resolve_identifiers` — exactly one of `unii`, `ndc`, `rxcui`,
+  `cas`, `inci_name`, `substance_name`, `spl_setid`, `dsld_id`.
+- `drugdata_search_references` — one NLM reference source per call
+  (`prescribable`, `rxclass`, `mesh`, `pubmed`, `medlineplus`,
+  `medlineplus_genetics`, `medlineplus_connect`, `umls`, `clinicaltrials`)
+  by `name`, `rxcui`, `ndc`, or `cui`; link-first results (titles,
+  identifiers, deep links), opaque-cursor pagination; UMLS needs
+  `UMLS_API_KEY`.
+
+The loop is search → resolve → get, plus a reference step for literature and
+classification sources. Every search and resolution returns `nextSteps`.
+Results are source-grouped, bounded, and credited to the upstream database.
+
+### Hard sourcing policy
+
+These are release-blocking rules, not style preferences:
+
+- **Upstream databases only in tool output.** Never name a client library,
+  a package scope, or a client-shaped source label in result text,
+  `structuredContent`, or an agent-facing error. The allowed database labels
+  are `openFDA`, `CosIng`, `RxNorm`, `RxTerms`, `RxClass`, `DailyMed`,
+  `DrugCentral`, `DSLD`, `INKEEDecoder`, `MeSH`, `PubMed`, `MedlinePlus`,
+  `UMLS`, `ClinicalTrials.gov`, and `PubChem`. Internal logs on stderr may
+  name a package for debugging.
+- **Every record carries provenance.** A `SourceRef` has the upstream
+  `database`, its own `id`, a deep-link `url`, and `retrievedAt`. Do not
+  invent an id or a link.
+- **Regulatory and label text is verbatim and attributed.** Keep the source's
+  wording, label it, and never present it as our conclusion.
+- **Errors name the database, not the client.** Adapters and boundaries
+  author their failure text at the source: a failed source becomes an error
+  group worded for the database, and unexpected rejections are reworded by
+  `toUserMessage` (raw text goes to stderr only). There is no downstream
+  text filtering, and none may be added. A new adapter or tool must keep
+  this true.
+- **Zero matches are normal.** They are empty groups, not errors. A failed
+  source becomes an error group and must not fail the other groups.
+- **No bulk download, mirroring, or caching.** Query at request time. Honor
+  upstream rate limits and `robots.txt`; INKEEDecoder stays at one request per
+  second through its shared client.
+- **Verify source terms before adding a source.** Record the URL, retrieval
+  date, license, and attribution in `docs/SOURCES.md`. Do not add a source
+  whose terms forbid this read-only, link-back use.
+- **The leak sweep is mandatory.** `tests/server.test.ts` calls every tool and
+  asserts that serialized output contains no package names or client labels.
+  Extend it for any new tool or source.
+
+### Adapter architecture
+
+```text
+src/sources/types.ts        SourceAdapter contract + capability declarations
+src/sources/registry.ts     search fan-out (allSettled) and lookup routing
+src/sources/<source>.ts     one adapter per upstream source module
+src/sources/nlm-references/ reference search handlers + cursor pagination
+src/tools/search-support.ts SEARCH_ADAPTERS, registry resolution, error groups
+src/clients.ts              one shared client per source, uniform fetch policy
+src/config.ts               source ids, labels, lazy environment config
+```
+
+An adapter speaks only the unified schemas in `src/lib/schemas.ts`. It declares
+`databases`, `productSearchTypes`, `ingredientSearchTypes`, and
+`productCategories`, and implements only the methods it can answer. The
+registry never invents results; it forwards groups and synthesizes error groups
+for a rejected adapter.
+
+The NLM reference sources are not adapters: `drugdata_search_references`
+dispatches to one handler per source in `src/sources/nlm-references/` through
+`createReferenceSearcher`, because each answers a different shape of question
+than product/ingredient search. PubChem is an adapter
+(`src/sources/pubchem.ts`) that shares the NLM client and the `nlm`
+disable id; it serves ingredient searches (name, CID) and ingredient
+profiles (a `chemistry` block), not products or the identity chain.
+
+#### Adding a source
+
+1. Verify its terms and add a `docs/SOURCES.md` section (coverage, identifiers,
+   publisher, terms URL + date, attribution, access mechanism, update cadence).
+2. Create `src/sources/<name>.ts` with a factory that accepts an optional
+   client and a singleton adapter export. Map upstream records into
+   `ProductRef` / `IngredientRef` / profile schemas; reword every failure to
+   the database name.
+3. Add the shared client to `src/clients.ts` (one instance, same fetch policy).
+   Add the package to `package.json` and pin a published semver range.
+4. If the adapter needs a user-facing on/off id, add it to `SOURCE_IDS` and
+   `SOURCE_LABELS` in `src/config.ts`; `drugdata_ping` and `server://info`
+   pick it up from there.
+5. Add the adapter to `SEARCH_ADAPTERS` in `src/tools/search-support.ts`. If it
+   serves a product category, add it to `CATEGORY_ADAPTERS` in
+   `src/sources/types.ts`.
+6. If it participates in identity resolution, add a bridge in
+   `src/sources/identity/chain.ts` and follow ADR-0003's confidence rules. A
+   weak name match is a candidate, never a link.
+7. Add fixture-backed tests for search, lookup, zero matches, and failures;
+   extend the sourcing leak sweep; keep coverage at 100%.
+8. Update the README source table and add a changeset.
+
+Adding a search type is smaller: add the enum value in `src/sources/types.ts`,
+add it to the tool's input enum, and declare it on the adapters that can
+answer. Do not add a new tool for a new search type.
+
+### Client-library change protocol
+
+The six source dependencies in `package.json` are
+`@knorby/openfda-client`, `@knorby/eu-cosing-client`,
+`@knorby/nlm-drugs-client`, `@knorby/drugcentral-client`,
+`@knorby/nih-dsld-client`, and `@knorby/inkeedecoder-client`. They are pinned
+to published versions; this repo must never depend on a local checkout, a git
+URL, or an unpublished commit.
+
+If an upstream gap blocks a feature:
+
+1. Prefer an MCP-side workaround. The shared fetch policy already adds
+   timeout and 429 handling uniformly, and adapters can normalize ids and
+   errors themselves.
+2. If a client change is unavoidable, make it in that client's repository on
+   a **fresh branch cut from its current default branch**. Add tests, keep the
+   change minimal, and do not touch `main`.
+3. **Flag it to the user** with the repository, branch name, and rationale.
+   Never merge it, publish it, or point this repo at the branch. The user
+   decides whether and when to release the client.
+4. Until a fixed version is published, keep the MCP on the published range.
+
+Known upstream limits are documented, not worked around by inventing data:
+DrugCentral has no NDC → structure path, and CosIng CAS/EC search is
+substring-based.
+
+### Tests and coverage
+
+- **100% coverage is the bar**, enforced by Vitest thresholds on statements,
+  branches, functions, and lines. The only justified exclusion is
+  `src/index.ts`, the stdio entry shim exercised by `tests/stdio.test.ts` in a
+  subprocess. Do not lower a threshold, add an exclusion, or skip a test to
+  get green.
+- Use `tests/helpers.ts` `createTestClient()` for tool tests: a real in-process
+  MCP client against the real server. Assert on `structuredContent`; failures
+  resolve as `isError: true` results.
+- Stub HTTP through each client's injectable `fetch`. Never require an API key
+  or the network in a test. DSLD fixtures are hand-authored from the published
+  v9 types because no data.gov key is available.
+- Cover both output formats, zero matches, malformed ids, upstream failures,
+  truncation, pagination, and the no-client-name leak sweep.
+- The full gate, in order:
+  `npm run lint && npm run typecheck && npm test && npm run test:coverage && npm run build && npm run test:smoke`.
+  Then `npm pack --dry-run` and the stdout-purity check from the template
+  section above.
+
+### Protocol posture
+
+- The server is **stateless by construction** and targets the 2026-07-28
+  revision's stateless core: no sessions, no cross-call response caches, no
+  mutable configuration after start.
+- Do not use roots, sampling, or `logging/setLevel` (deprecated), and do not
+  do work at `initialize` time. Let the SDK negotiate protocol eras.
+- Keep tool registration in the fixed order in `src/server.ts`; tests pin it.
+- Never write to stdout. Protocol data owns stdout; logs go to stderr.
+- Keep `createServer()` transport-agnostic. An HTTP entrypoint, if ever added,
+  is an entrypoint, not a change to tool logic.
+
+### Documentation and release
+
+- `docs/SOURCES.md` is the source-of-truth for coverage, terms, and
+  attribution. `README.md` carries the short disclaimer and links to it.
+- ADR-0001 records the platform and protocol posture; ADR-0002 the unified
+  interface and sourcing policy; ADR-0003 the identity chain; ADR-0004 the
+  INKEEDecoder inclusion.
+- Add a changeset for any published-output change. The release workflow is
+  staged at `workflow-templates/release.yml`; activation waits for the public
+  move, and the template's release setup above still applies.
+- Keep `docs/superpowers/` out of git. It is local planning scratch for a
+  repository that is destined to be public.

@@ -1,0 +1,1535 @@
+{
+  "meta": {
+    "disclaimer": "Do not rely on openFDA to make decisions regarding medical care. While we make every effort to ensure that data is accurate, you should assume all results are unvalidated. We may limit or otherwise restrict your access to the API in line with our Terms of Service.",
+    "terms": "https://open.fda.gov/terms/",
+    "license": "https://open.fda.gov/license/",
+    "last_updated": "2026-09-09",
+    "results": {
+      "skip": 0,
+      "limit": 2,
+      "total": 1
+    }
+  },
+  "results": [
+    {
+      "codes": [
+        {
+          "uuid": "65592458-e889-4184-89aa-1708e7d3d79a",
+          "code": "CHEMBL692",
+          "type": "PRIMARY",
+          "url": "https://www.ebi.ac.uk/chembl/compound/inspect/CHEMBL692",
+          "code_system": "ChEMBL",
+          "references": ["6497e723-f046-4135-b21e-f251ce28075c"]
+        },
+        {
+          "uuid": "14ff922f-e7aa-4f4c-8e79-54248f67babd",
+          "code": "N0000006566",
+          "comments": "Glycerol [Chemical/Ingredient]",
+          "type": "PRIMARY",
+          "url": "https://nciterms.nci.nih.gov/ncitbrowser/ConceptReport.jsp?dictionary=VA_NDFRT&code=N0000006566",
+          "code_system": "NDF-RT",
+          "references": ["6497e723-f046-4135-b21e-f251ce28075c"]
+        },
+        {
+          "uuid": "3e5246f0-8810-4a02-b76b-e63ac6b2b426",
+          "code": "N0000171131",
+          "comments": "Allergens [Chemical/Ingredient]",
+          "type": "PRIMARY",
+          "url": "https://nciterms.nci.nih.gov/ncitbrowser/ConceptReport.jsp?dictionary=VA_NDFRT&code=N0000171131",
+          "code_system": "NDF-RT",
+          "references": ["6497e723-f046-4135-b21e-f251ce28075c"]
+        },
+        {
+          "uuid": "cabb8a5e-e6d9-49e0-a255-aee39617439c",
+          "code": "N0000175629",
+          "comments": "Increased Histamine Release [PE]",
+          "type": "PRIMARY",
+          "url": "https://nciterms.nci.nih.gov/ncitbrowser/ConceptReport.jsp?dictionary=VA_NDFRT&code=N0000175629",
+          "code_system": "NDF-RT",
+          "references": ["6497e723-f046-4135-b21e-f251ce28075c"]
+        },
+        {
+          "uuid": "a851f3fe-d6a0-4bc0-bb37-69a60dc97b40",
+          "code": "N0000184306",
+          "comments": "Cell-mediated Immunity [PE]",
+          "type": "PRIMARY",
+          "url": "https://nciterms.nci.nih.gov/ncitbrowser/ConceptReport.jsp?dictionary=VA_NDFRT&code=N0000184306",
+          "code_system": "NDF-RT",
+          "references": ["6497e723-f046-4135-b21e-f251ce28075c"]
+        },
+        {
+          "uuid": "dfb70df3-6a94-4ab8-a5cf-b7ed1b445192",
+          "code": "N0000185001",
+          "comments": "Increased IgG Production [PE]",
+          "type": "PRIMARY",
+          "url": "https://nciterms.nci.nih.gov/ncitbrowser/ConceptReport.jsp?dictionary=VA_NDFRT&code=N0000185001",
+          "code_system": "NDF-RT",
+          "references": ["6497e723-f046-4135-b21e-f251ce28075c"]
+        },
+        {
+          "uuid": "b447000e-8613-418d-b759-2be3abc4794a",
+          "code": "200-289-5",
+          "type": "PRIMARY",
+          "url": "https://echa.europa.eu/substance-information/-/substanceinfo/100.000.263",
+          "code_system": "ECHA (EC/EINECS)",
+          "references": ["6497e723-f046-4135-b21e-f251ce28075c"]
+        },
+        {
+          "uuid": "4e41304d-c057-4421-acc6-321f0caa39b3",
+          "code": "753",
+          "type": "PRIMARY",
+          "url": "https://pubchem.ncbi.nlm.nih.gov/compound/753",
+          "code_system": "PUBCHEM",
+          "references": ["6497e723-f046-4135-b21e-f251ce28075c"]
+        },
+        {
+          "uuid": "a26d0c3d-8183-42a4-8c78-96d93b5fc99c",
+          "code": "A06AX01",
+          "comments": "ATC|ALIMENTARY TRACT AND METABOLISM|LAXATIVES|LAXATIVES|Other laxatives|glycerol",
+          "type": "PRIMARY",
+          "url": "http://www.whocc.no/atc_ddd_index/?code=A06AX01&showdescription=yes",
+          "code_system": "WHO-ATC",
+          "references": ["6497e723-f046-4135-b21e-f251ce28075c"]
+        },
+        {
+          "uuid": "80fef152-6f5b-410f-8fb4-1afca83c74f0",
+          "code": "A06AG04",
+          "comments": "ATC|ALIMENTARY TRACT AND METABOLISM|LAXATIVES|LAXATIVES|Enemas|glycerol",
+          "type": "PRIMARY",
+          "url": "http://www.whocc.no/atc_ddd_index/?code=A06AG04&showdescription=yes",
+          "code_system": "WHO-ATC",
+          "references": ["6497e723-f046-4135-b21e-f251ce28075c"]
+        },
+        {
+          "uuid": "bc7a609e-7f99-47e7-bbb7-5df1e0431790",
+          "code": "QA06AG04",
+          "comments": "VATC|DRUGS FOR CONSTIPATION|DRUGS FOR CONSTIPATION|Enemas|glycerol",
+          "type": "PRIMARY",
+          "url": "http://www.whocc.no/atcvet/atcvet_index/?code=QA06AG04&showdescription=yes",
+          "code_system": "WHO-VATC",
+          "references": ["6497e723-f046-4135-b21e-f251ce28075c"]
+        },
+        {
+          "uuid": "3e671868-b297-4167-9bbf-6df682bc7c20",
+          "code": "QA16QA03",
+          "comments": "VATC|OTHER ALIMENTARY TRACT AND METABOLISM PRODUCTS|OTHER ALIMENTARY TRACT AND METABOLISM PRODUCTS FOR VETERINARY USE|Drugs for prevention and/or treatment of acetonemia|glycerol",
+          "type": "PRIMARY",
+          "url": "http://www.whocc.no/atcvet/atcvet_index/?code=QA16QA03&showdescription=yes",
+          "code_system": "WHO-VATC",
+          "references": ["6497e723-f046-4135-b21e-f251ce28075c"]
+        },
+        {
+          "uuid": "e4145685-4037-4a18-a707-0a548a6238cf",
+          "code": "QA06AX01",
+          "comments": "VATC|DRUGS FOR CONSTIPATION|DRUGS FOR CONSTIPATION|Other drugs for constipation|glycerol",
+          "type": "PRIMARY",
+          "url": "http://www.whocc.no/atcvet/atcvet_index/?code=QA06AX01&showdescription=yes",
+          "code_system": "WHO-VATC",
+          "references": ["6497e723-f046-4135-b21e-f251ce28075c"]
+        },
+        {
+          "uuid": "15c0f2de-080f-4b79-bc74-b6ba28728423",
+          "code": "GLYCEROL",
+          "comments": "JECFA|FUNCTIONAL CLASSIFICATION|Flavouring Agent",
+          "type": "PRIMARY",
+          "url": "http://apps.who.int/food-additives-contaminants-jecfa-database/chemical.aspx?chemID=1565",
+          "code_system": "JECFA EVALUATION",
+          "references": ["6497e723-f046-4135-b21e-f251ce28075c"]
+        },
+        {
+          "uuid": "57d4e008-f6f6-49f4-8d83-209bc1ceeb93",
+          "code": "56-81-5",
+          "type": "PRIMARY",
+          "url": "https://commonchemistry.cas.org/detail?cas_rn=56-81-5",
+          "code_system": "CAS",
+          "references": [
+            "6497e723-f046-4135-b21e-f251ce28075c",
+            "be1b3705-ee67-4fae-a071-b95810c139ac"
+          ]
+        },
+        {
+          "uuid": "a07663ac-23e7-4da4-a5f1-eba9be0a0387",
+          "code": "C29077",
+          "type": "PRIMARY",
+          "url": "https://ncit.nci.nih.gov/ncitbrowser/ConceptReport.jsp?dictionary=NCI%20Thesaurus&code=C29077",
+          "code_system": "NCI_THESAURUS",
+          "references": ["6497e723-f046-4135-b21e-f251ce28075c"]
+        },
+        {
+          "uuid": "df9216e4-a626-4753-a1e2-06b26d0bdb77",
+          "code": "D005990",
+          "type": "PRIMARY",
+          "url": "http://www.ncbi.nlm.nih.gov/mesh/68005990",
+          "code_system": "MESH",
+          "references": ["6497e723-f046-4135-b21e-f251ce28075c"]
+        },
+        {
+          "uuid": "e8b4e51c-bb4a-4c19-9df3-99658a99e1c9",
+          "code": "21 CFR 347.10",
+          "comments": "PART 347 -- SKIN PROTECTANT DRUG PRODUCTS FOR OVER-THE-COUNTER HUMAN USE|Subpart B--Active Ingredients|Sec. 347.10 Skin protectant active ingredients.",
+          "type": "PRIMARY",
+          "url": "http://www.accessdata.fda.gov/scripts/cdrh/cfdocs/cfCFR/CFRSearch.cfm?fr=347.10",
+          "code_system": "CFR",
+          "references": ["6497e723-f046-4135-b21e-f251ce28075c"]
+        },
+        {
+          "uuid": "2e3cdfa7-b1d7-4dfd-bfb1-e3c0262c9523",
+          "code": "GLYCEROL",
+          "type": "PRIMARY",
+          "url": "https://en.wikipedia.org/wiki/Glycerol",
+          "code_system": "WIKIPEDIA",
+          "references": ["6497e723-f046-4135-b21e-f251ce28075c"]
+        },
+        {
+          "uuid": "9a07a9dd-13d9-4ad7-befd-60a3d505d70d",
+          "code": "21 CFR 349.12",
+          "comments": "PART 349 -- OPHTHALMIC DRUG PRODUCTS FOR OVER-THE-COUNTER HUMAN USE|Subpart B--Active Ingredients|Sec. 349.12 Ophthalmic demulcents.",
+          "type": "PRIMARY",
+          "url": "http://www.accessdata.fda.gov/scripts/cdrh/cfdocs/cfCFR/CFRSearch.cfm?fr=349.12",
+          "code_system": "CFR",
+          "references": ["6497e723-f046-4135-b21e-f251ce28075c"]
+        },
+        {
+          "uuid": "db359226-3a27-493a-9c6a-64cfb0f7d4ab",
+          "code": "N0000185370",
+          "comments": "Established Pharmacologic Class [EPC]|Non-Standardized Chemical Allergen [EPC]",
+          "type": "PRIMARY",
+          "url": "https://nciterms.nci.nih.gov/ncitbrowser/ConceptReport.jsp?dictionary=VA_NDFRT&code=N0000185370",
+          "code_system": "NDF-RT",
+          "references": ["6497e723-f046-4135-b21e-f251ce28075c"]
+        },
+        {
+          "uuid": "e0f032e7-5f06-42c6-90a9-978e2923f97f",
+          "code": "63507",
+          "comments": "EPA PESTICIDE|CONVENTIONAL CHEMICAL",
+          "type": "PRIMARY",
+          "url": "http://iaspub.epa.gov/apex/pesticides/f?p=CHEMICALSEARCH:3:0::NO:21,3,31,7,12,25:P3_XCHEMICAL_ID:2461",
+          "code_system": "EPA PESTICIDE CODE",
+          "references": ["6497e723-f046-4135-b21e-f251ce28075c"]
+        },
+        {
+          "uuid": "1aa9fdf8-5bd3-4e38-86e0-3ab302b4aa41",
+          "code": "INS-422",
+          "comments": "Codex Alimentarius|Functional Classification|Emulsifier|Humectant|Thickener",
+          "type": "PRIMARY",
+          "url": "http://www.fao.org/gsfaonline/additives/details.html?id=62",
+          "code_system": "CODEX ALIMENTARIUS (GSFA)",
+          "references": ["6497e723-f046-4135-b21e-f251ce28075c"]
+        },
+        {
+          "uuid": "1a40ea51-90ba-4fa5-813b-7fb546e99092",
+          "code": "INS-422",
+          "comments": "JECFA|Functional Classification|FLAVOURING AGENT|CARRIER SOLVENT|EMULSIFIER|HUMECTANT|THICKENER",
+          "type": "PRIMARY",
+          "url": "http://apps.who.int/food-additives-contaminants-jecfa-database/chemical.aspx?chemINS=422",
+          "code_system": "JECFA EVALUATION",
+          "references": ["6497e723-f046-4135-b21e-f251ce28075c"]
+        },
+        {
+          "uuid": "c4612852-9da7-4d67-b095-a446f7b42894",
+          "code": "444",
+          "type": "PRIMARY",
+          "url": "https://extranet.who.int/soinn/mod/page/view.php?id=137&inn_n=444",
+          "code_system": "INN",
+          "references": ["6497e723-f046-4135-b21e-f251ce28075c"]
+        },
+        {
+          "uuid": "53cb200d-029b-4966-ae26-9bd95ae5f8a8",
+          "code": "GLYCERIN",
+          "comments": "Description: A clear, colourless or almost colourless, syrupy liquid; odourless. Miscibility: Miscible with water and ethanol (~750 g/l) TS; slightly miscible with acetone R; practically immiscible with ether R. Category: Solvent; humectant.Storage: Glycerol should be kept in a tightly closed container. Additional information: Glycerol is hygroscopic. Requirement: Glycerol contains not less than 95.0% and not more than the equivalent of 101.0% of C3H8O3, calculated with reference to theanhydrous substance.",
+          "type": "PRIMARY",
+          "url": "http://apps.who.int/phint/pdf/b/Jb.6.1.194.pdf",
+          "code_system": "WHO INTERNATIONAL PHARMACOPEIA",
+          "references": ["6497e723-f046-4135-b21e-f251ce28075c"]
+        },
+        {
+          "uuid": "da333765-76ff-4d52-bb2b-7c123cf027fa",
+          "code": "4910",
+          "comments": "RxNorm",
+          "type": "PRIMARY",
+          "url": "https://rxnav.nlm.nih.gov/REST/rxcui/4910/allProperties.xml?prop=all",
+          "code_system": "RXCUI",
+          "references": ["6497e723-f046-4135-b21e-f251ce28075c"]
+        },
+        {
+          "uuid": "bfab17c8-4b3d-4cbe-b34a-b64be949dc6e",
+          "code": "m5790",
+          "comments": "Merck Index",
+          "type": "PRIMARY",
+          "url": "https://merckindex.rsc.org/monographs/m5790?q=authorize",
+          "code_system": "MERCK INDEX",
+          "references": ["6497e723-f046-4135-b21e-f251ce28075c"]
+        },
+        {
+          "uuid": "3af32a1f-c120-46c1-995c-2604b8650f73",
+          "code": "SUB13992MIG",
+          "type": "PRIMARY",
+          "code_system": "EVMPD",
+          "references": ["6497e723-f046-4135-b21e-f251ce28075c"]
+        },
+        {
+          "uuid": "349d8c10-7efe-4864-b712-cb655ffb602a",
+          "code": "SUB07948MIG",
+          "type": "PRIMARY",
+          "code_system": "EVMPD",
+          "references": ["6497e723-f046-4135-b21e-f251ce28075c"]
+        },
+        {
+          "uuid": "efc0ce7b-8bba-bafd-89aa-9cf9908ea49a",
+          "code": "492",
+          "type": "PRIMARY",
+          "url": "https://pubchem.ncbi.nlm.nih.gov/source/hsdb/492",
+          "code_system": "HSDB",
+          "references": ["105fe233-d6a7-182b-4d19-9050139bfa8c"]
+        },
+        {
+          "uuid": "029b8ace-4225-882f-171c-65155de2d795",
+          "code": "DTXSID9020663",
+          "type": "PRIMARY",
+          "url": "https://comptox.epa.gov/dashboard/chemical/details/DTXSID9020663",
+          "code_system": "EPA CompTox",
+          "references": ["244bafc9-54af-c8db-2ea2-9524ea9a8597"]
+        },
+        {
+          "uuid": "0c17c4d8-a56b-3756-ec9c-df6c874b7b17",
+          "code": "28188",
+          "comments": "ORPHAN DRUG|Designated/Withdrawn|To decrease intracranial hypertension and/or alleviate cerebral edema in patients who may benefit from osmotherapy.",
+          "type": "PRIMARY",
+          "url": "https://www.accessdata.fda.gov/scripts/opdlisting/oopd/detailedIndex.cfm?cfgridkey=28188",
+          "code_system": "FDA ORPHAN DRUG"
+        },
+        {
+          "uuid": "abf0621c-149d-6c0d-8476-a73e694e6879",
+          "code": "C29697",
+          "comments": "Pharmacologic Substance[C1909]|Agent Affecting Digestive System or Metabolism[C78276]|Laxative",
+          "type": "CONCEPT",
+          "url": "https://ncit.nci.nih.gov/ncitbrowser/ConceptReport.jsp?dictionary=NCI%20Thesaurus&code=C29697",
+          "code_system": "NCI_THESAURUS",
+          "references": ["0e620b16-4baa-cec7-a7fe-f5961cb0e8a7"]
+        },
+        {
+          "uuid": "6851113b-2e18-4ff7-ec9c-6890c94ff672",
+          "code": "2387-9",
+          "comments": "LOINC|ACTIVE|CHEM|Ser/Plas|Glycerol [Mass/volume] in Serum or Plasma",
+          "type": "PRIMARY",
+          "url": "https://loinc.org/2387-9/",
+          "code_system": "LOINC",
+          "references": ["0e620b16-4baa-cec7-a7fe-f5961cb0e8a7"]
+        },
+        {
+          "uuid": "fc9c7609-25c6-7024-5cc4-2ae914d64b53",
+          "code": "47632-5",
+          "comments": "LOINC|ACTIVE|CHEM|Urine|Glycerol/Creatinine [Molar ratio] in Urine",
+          "type": "PRIMARY",
+          "url": "https://loinc.org/47632-5/",
+          "code_system": "LOINC",
+          "references": ["0e620b16-4baa-cec7-a7fe-f5961cb0e8a7"]
+        },
+        {
+          "uuid": "0655074e-3fe6-656a-ec7e-a4d16ee3bcf2",
+          "code": "54283-7",
+          "comments": "LOINC|ACTIVE|CHEM|Body fld|Glycerol [Mass/volume] in Body fluid",
+          "type": "PRIMARY",
+          "url": "https://loinc.org/54283-7/",
+          "code_system": "LOINC",
+          "references": ["0e620b16-4baa-cec7-a7fe-f5961cb0e8a7"]
+        },
+        {
+          "uuid": "443a9b4b-fce8-5293-c93c-bbd06bd7583b",
+          "code": "54285-2",
+          "comments": "LOINC|ACTIVE|CHEM|Urine|Glycerol [Moles/volume] in Urine",
+          "type": "PRIMARY",
+          "url": "https://loinc.org/54285-2/",
+          "code_system": "LOINC",
+          "references": ["0e620b16-4baa-cec7-a7fe-f5961cb0e8a7"]
+        },
+        {
+          "uuid": "a5d612a9-876d-029f-5714-5c81c7629052",
+          "code": "54284-5",
+          "comments": "LOINC|ACTIVE|CHEM|Body fld|Glycerol [Moles/volume] in Body fluid",
+          "type": "PRIMARY",
+          "url": "https://loinc.org/54284-5/",
+          "code_system": "LOINC",
+          "references": ["0e620b16-4baa-cec7-a7fe-f5961cb0e8a7"]
+        },
+        {
+          "uuid": "38ed1879-41c9-0844-eadd-07587dadf9da",
+          "code": "45300-1",
+          "comments": "LOINC|ACTIVE|CHEM|Ser/Plas|Glycerol [Moles/volume] in Serum or Plasma",
+          "type": "PRIMARY",
+          "url": "https://loinc.org/45300-1/",
+          "code_system": "LOINC",
+          "references": ["0e620b16-4baa-cec7-a7fe-f5961cb0e8a7"]
+        },
+        {
+          "uuid": "61c7c1e1-5389-7b12-81f7-60e4d04191f0",
+          "code": "2388-7",
+          "comments": "LOINC|DEPRECATED|CHEM|Ser|Deprecated Glycerol [Mass/volume] in Serum or Plasma",
+          "type": "PRIMARY",
+          "url": "https://loinc.org/2388-7/",
+          "code_system": "LOINC",
+          "references": ["0e620b16-4baa-cec7-a7fe-f5961cb0e8a7"]
+        },
+        {
+          "uuid": "57005312-07df-427b-962c-17a31e355435",
+          "code": "PDC6A3C0OX",
+          "type": "PRIMARY",
+          "code_system": "FDA UNII"
+        },
+        {
+          "uuid": "bc5aa40c-62eb-99d2-92be-84908a80863d",
+          "code": "1316",
+          "type": "PRIMARY",
+          "url": "https://drugcentral.org/drugcard/1316",
+          "code_system": "DRUG CENTRAL",
+          "references": ["0e620b16-4baa-cec7-a7fe-f5961cb0e8a7"]
+        },
+        {
+          "uuid": "6f8810d4-6a41-c968-1d46-db60d00c9bb2",
+          "code": "1110 (Number of products:309)",
+          "comments": "Dietary Supplement Label Database|Chemical|Glycerol",
+          "type": "PRIMARY",
+          "url": "https://dsld.od.nih.gov/dsld/rptIngredient.jsp?grpid=1110&item=Glycerol",
+          "code_system": "DSLD",
+          "references": ["0e620b16-4baa-cec7-a7fe-f5961cb0e8a7"]
+        },
+        {
+          "uuid": "03383d1c-7078-bd08-8fa6-820b43f38265",
+          "code": "DB09462",
+          "type": "PRIMARY",
+          "url": "https://go.drugbank.com/drugs/DB09462",
+          "code_system": "DRUG BANK",
+          "references": ["0e620b16-4baa-cec7-a7fe-f5961cb0e8a7"]
+        },
+        {
+          "uuid": "fa5a6b9e-c354-3642-aaa7-21ef8ad48776",
+          "code": "17754",
+          "type": "PRIMARY",
+          "url": "https://www.ebi.ac.uk/chebi/chebiOntology.do?chebiId=CHEBI:17754",
+          "code_system": "CHEBI",
+          "references": ["0e620b16-4baa-cec7-a7fe-f5961cb0e8a7"]
+        },
+        {
+          "uuid": "ce198050-c8bd-2e66-5a25-3a50f0fc4f87",
+          "code": "1295607",
+          "type": "PRIMARY",
+          "url": "https://store.usp.org/product/1295607",
+          "code_system": "RS_ITEM_NUM",
+          "references": ["0e620b16-4baa-cec7-a7fe-f5961cb0e8a7"]
+        },
+        {
+          "uuid": "fd9e2dfc-d902-7e4c-b5d3-f77eb888d8f7",
+          "code": "100000092821",
+          "type": "PRIMARY",
+          "code_system": "SMS_ID",
+          "references": ["ae6d30b0-9b4a-f794-3e00-370bed34cbb9"]
+        },
+        {
+          "uuid": "d0126e3f-18a4-cc3f-67a8-409b3f9811d5",
+          "code": "9230",
+          "type": "PRIMARY",
+          "url": "https://dtp.cancer.gov/dtpstandard/servlet/dwindex?searchtype=NSC&outputformat=html&searchlist=9230",
+          "code_system": "NSC",
+          "references": ["ca823de1-113e-8476-cc02-2eeb50cba792"]
+        },
+        {
+          "uuid": "b940e14e-a277-2b94-21d0-6eb6e714670d",
+          "code": "PDC6A3C0OX",
+          "type": "PRIMARY",
+          "url": "https://dailymed.nlm.nih.gov/dailymed/search.cfm?adv=1&query=PDC6A3C0OX",
+          "code_system": "DAILYMED",
+          "references": ["d45eebf9-de70-0dfe-0071-f651326df187"]
+        }
+      ],
+      "relationships": [
+        {
+          "uuid": "34d11ed8-28ab-4dcb-972c-037eb04637ee",
+          "amount": {
+            "uuid": "4f6c730c-a477-4ce7-bea3-2410bba97928"
+          },
+          "type": "ACTIVE MOIETY",
+          "related_substance": {
+            "uuid": "98542e10-e564-4280-adb9-e6dbc57e2f5d",
+            "refuuid": "8965eda9-1f32-473f-b875-cff6eeadb56b",
+            "name": "Glycerin",
+            "unii": "PDC6A3C0OX",
+            "linking_id": "PDC6A3C0OX",
+            "ref_pname": "Glycerin",
+            "substance_class": "reference"
+          }
+        },
+        {
+          "uuid": "048c0787-21b0-4af2-bb08-ba882b8d0fcf",
+          "amount": {
+            "uuid": "689586f0-696c-43e7-8ad4-446acca9125a"
+          },
+          "type": "SALT/SOLVATE->PARENT",
+          "related_substance": {
+            "uuid": "fdf71e3e-019e-4817-a5d0-8a6776db4701",
+            "refuuid": "7824f5c1-3835-4716-8319-2a12f2ec2a8e",
+            "name": "PHENBUTAZONE SODIUM GLYCERATE",
+            "unii": "RKC4AOX590",
+            "linking_id": "RKC4AOX590",
+            "ref_pname": "PHENBUTAZONE SODIUM GLYCERATE",
+            "substance_class": "reference"
+          }
+        },
+        {
+          "uuid": "588ef594-5b6a-45ab-a708-57b4affdc906",
+          "amount": {
+            "uuid": "cc95b55e-9cb7-4333-bf50-c29798559a81"
+          },
+          "type": "SALT/SOLVATE->PARENT",
+          "related_substance": {
+            "uuid": "66a7d479-e1af-44c5-aae3-32e13b5d6cfe",
+            "refuuid": "5d71f4dc-03bf-4519-839c-ad785a077a78",
+            "name": "GLUCALOX",
+            "unii": "LGN1C78VBM",
+            "linking_id": "LGN1C78VBM",
+            "ref_pname": "GLUCALOX",
+            "substance_class": "reference"
+          }
+        },
+        {
+          "uuid": "69f2cc0b-22b1-46d2-aef6-33d7fb0c10c4",
+          "amount": {
+            "uuid": "c688f413-17ee-41eb-9031-a2cff97c60fc"
+          },
+          "comments": "Glycerol (mg/cigarette)\nCanadian = 13.2 SD(1.3)\nImported = 13.5 SD(0.0)",
+          "type": "PARENT->CONSTITUENT ALWAYS PRESENT",
+          "references": ["ec188796-b003-4a5e-ab01-21d76ff87423"],
+          "related_substance": {
+            "uuid": "a18f35ea-adc3-40fe-beef-17991c6291b4",
+            "refuuid": "58f6d6ce-a65e-4351-b483-33cad323b1b8",
+            "name": "TOBACCO LEAF",
+            "unii": "6YR2608RSU",
+            "linking_id": "6YR2608RSU",
+            "ref_pname": "TOBACCO LEAF",
+            "substance_class": "reference"
+          }
+        },
+        {
+          "uuid": "5133460b-c8d0-47ed-9b0d-d117a8e626cd",
+          "amount": {
+            "uuid": "c08befc6-e8db-431e-82ec-065bc781a939",
+            "units": "PERCENT PEAK AREA",
+            "high_limit": 0.1
+          },
+          "qualification": "USP",
+          "type": "IMPURITY->PARENT",
+          "interaction_type": "CHROMATOGRAPHIC PURITY (GC)",
+          "references": ["a30d9b4d-bca4-02c2-137d-c22a9695aa3c"],
+          "related_substance": {
+            "uuid": "96a573ab-4da3-4248-852d-d3c4fc2e511b",
+            "refuuid": "677389ef-cd01-44bc-9f5b-6ec80bbc93e6",
+            "name": "Ethylene glycol",
+            "unii": "FC72KVT52F",
+            "linking_id": "FC72KVT52F",
+            "ref_pname": "Ethylene glycol"
+          }
+        },
+        {
+          "uuid": "3907ed47-5427-440e-b11c-a8b648f970f9",
+          "amount": {
+            "uuid": "8cc276f9-0693-46d0-a8a0-8ff8db6ab4ee",
+            "type": "WEIGHT PERCENT",
+            "units": "%",
+            "high_limit": 0.1,
+            "non_numeric_value": "PEAK VALUE"
+          },
+          "type": "IMPURITY->PARENT",
+          "related_substance": {
+            "uuid": "6e484344-8a63-4d66-81c9-d5beed08452a",
+            "refuuid": "d1df55d9-346c-4385-b4ee-95cb834c070c",
+            "name": "PROPYLENE GLYCOL",
+            "unii": "6DC9Q167V3",
+            "linking_id": "6DC9Q167V3",
+            "ref_pname": "PROPYLENE GLYCOL"
+          }
+        },
+        {
+          "uuid": "033f8c84-a594-4eac-8b56-9a42b97afccb",
+          "amount": {
+            "uuid": "0bb6ae87-fffb-4479-ad41-003a862a556d",
+            "units": "PERCENT PEAK AREA",
+            "high_limit": 0.1
+          },
+          "qualification": "USP",
+          "type": "IMPURITY->PARENT",
+          "interaction_type": "CHROMATOGRAPHIC PURITY (GC)",
+          "references": ["a30d9b4d-bca4-02c2-137d-c22a9695aa3c"],
+          "related_substance": {
+            "uuid": "cc6e61ef-32ef-4a55-95fc-6939ba980e64",
+            "refuuid": "e96a41a1-a87d-4fce-ba41-beba10d76e47",
+            "name": "Diethylene Glycol",
+            "unii": "61BR964293",
+            "linking_id": "61BR964293",
+            "ref_pname": "Diethylene Glycol"
+          }
+        },
+        {
+          "uuid": "b83731ac-1b40-431c-a4d2-68e05b7cb3f8",
+          "amount": {
+            "uuid": "45022465-92d5-4c82-8f0f-16aed3564d4b",
+            "units": "PERCENT PEAK AREA",
+            "high_limit": 0.1
+          },
+          "qualification": "USP",
+          "type": "PARENT->IMPURITY",
+          "interaction_type": "CHROMATOGRAPHIC PURITY (GC)",
+          "references": ["77ae28e5-b1bd-0d5c-831d-d8e1d18b7c21"],
+          "related_substance": {
+            "uuid": "5113ee5b-3af0-4531-866a-94b8e022eb8f",
+            "refuuid": "332a6af2-cfaa-4b2e-9004-6a7a589dbed1",
+            "name": "Triacetin",
+            "unii": "XHX3C3X673",
+            "linking_id": "XHX3C3X673",
+            "ref_pname": "Triacetin",
+            "substance_class": "reference"
+          }
+        }
+      ],
+      "substance_class": "chemical",
+      "names": [
+        {
+          "uuid": "3ea6b1d6-926b-4e8c-a1bf-363798c1e0e6",
+          "name": "1,2,3-PROPANETRIOL",
+          "stdName": "1,2,3-PROPANETRIOL",
+          "type": "sys",
+          "languages": ["en"],
+          "preferred": false,
+          "references": ["bdf7bdeb-c3af-4f08-8e68-56dd61068b75"],
+          "display_name": false
+        },
+        {
+          "uuid": "612f021d-364d-4de1-a2b3-43dd33685e29",
+          "name": "1,2,3-TRIHYDROXYPROPANE",
+          "stdName": "1,2,3-TRIHYDROXYPROPANE",
+          "type": "sys",
+          "languages": ["en"],
+          "preferred": false,
+          "references": [
+            "f0aa1de6-5fb9-4a22-af69-fd3669299f36",
+            "82b66511-605c-4192-aba0-8414ead57d12"
+          ],
+          "display_name": false
+        },
+        {
+          "uuid": "5639792c-7e56-42f7-8808-4af257aec664",
+          "name": "2-PROPANOL, 1,3-DIHYDROXY-",
+          "stdName": "2-PROPANOL, 1,3-DIHYDROXY-",
+          "type": "sys",
+          "languages": ["en"],
+          "preferred": false,
+          "references": [
+            "f0aa1de6-5fb9-4a22-af69-fd3669299f36",
+            "82b66511-605c-4192-aba0-8414ead57d12"
+          ],
+          "display_name": false
+        },
+        {
+          "uuid": "5e7f527e-5012-4345-b1ed-7f529158182d",
+          "name": "E-422",
+          "stdName": "E-422",
+          "type": "cd",
+          "languages": ["en"],
+          "preferred": false,
+          "references": [
+            "828efbdb-a48e-4c1b-ae80-5b26d7074a1a",
+            "f0aa1de6-5fb9-4a22-af69-fd3669299f36"
+          ],
+          "display_name": false
+        },
+        {
+          "uuid": "ce1cf2fc-51a7-41e4-82f5-bf59645d508b",
+          "name": "FEMA NO. 2525",
+          "stdName": "FEMA NO. 2525",
+          "type": "cd",
+          "languages": ["en"],
+          "preferred": false,
+          "references": ["2c5faf0b-5c83-4efc-9fd4-6d403d5d0fa6"],
+          "display_name": false
+        },
+        {
+          "uuid": "b57ae912-2ca0-45b0-9ba3-638bf3e0d288",
+          "name": "GLYCERIN [HSDB]",
+          "stdName": "GLYCERIN [HSDB]",
+          "type": "cn",
+          "languages": ["en"],
+          "preferred": false,
+          "references": [
+            "fe3f1ff0-9461-456b-878c-2c3a87f6013e",
+            "f0aa1de6-5fb9-4a22-af69-fd3669299f36"
+          ],
+          "display_name": false
+        },
+        {
+          "uuid": "4e835fc5-052c-4e6d-b080-954958cd87f2",
+          "name": "GLYCERIN [II]",
+          "stdName": "GLYCERIN [II]",
+          "type": "cn",
+          "languages": ["en"],
+          "preferred": false,
+          "references": ["9c1d520f-5e1b-421f-a16e-8efd5c264da7"],
+          "display_name": false
+        },
+        {
+          "uuid": "9bbbaecf-368f-ec6a-dc4b-456b72990b10",
+          "name": "GLYCERIN [JAN]",
+          "stdName": "GLYCERIN [JAN]",
+          "type": "cn",
+          "languages": ["en"],
+          "preferred": false,
+          "references": ["d983f579-0f48-8f5d-b50c-daf4e0f1bc0b"],
+          "display_name": false
+        },
+        {
+          "uuid": "335faa46-1785-4849-91e0-174d4a5ec34c",
+          "name": "GLYCERIN [ORANGE BOOK]",
+          "stdName": "GLYCERIN [ORANGE BOOK]",
+          "type": "cn",
+          "languages": ["en"],
+          "preferred": false,
+          "references": ["6a63a3f3-4ce0-403f-80a8-5a34199df829"],
+          "display_name": false
+        },
+        {
+          "uuid": "27920902-92fc-3a17-3b9c-acfa8cd46d19",
+          "name": "GLYCERIN [USP MONOGRAPH]",
+          "stdName": "GLYCERIN [USP MONOGRAPH]",
+          "type": "cn",
+          "languages": ["en"],
+          "preferred": false,
+          "references": ["79363483-db5a-186d-0c6e-592c96125a29"],
+          "display_name": false
+        },
+        {
+          "uuid": "7b8ca40f-0fe3-4f28-95fe-96b014383bb1",
+          "name": "GLYCERIN [USP-RS]",
+          "stdName": "GLYCERIN [USP-RS]",
+          "type": "cn",
+          "languages": ["en"],
+          "preferred": false,
+          "references": [
+            "f0aa1de6-5fb9-4a22-af69-fd3669299f36",
+            "50f3e46a-7549-4550-be48-7e2f81e7aaf5"
+          ],
+          "display_name": false
+        },
+        {
+          "uuid": "fd6c3487-c0bb-47f2-b544-d33938b2b2f5",
+          "name": "GLYCERIN [VANDF]",
+          "stdName": "GLYCERIN [VANDF]",
+          "type": "cn",
+          "languages": ["en"],
+          "preferred": false,
+          "references": [
+            "f0aa1de6-5fb9-4a22-af69-fd3669299f36",
+            "2d99178b-af56-42d0-be9e-75beed5e91ff"
+          ],
+          "display_name": false
+        },
+        {
+          "uuid": "17f23623-1742-4953-aca6-4d89993ab756",
+          "name": "GLYCERIN,ANHYDROUS",
+          "stdName": "GLYCERIN,ANHYDROUS",
+          "type": "cn",
+          "languages": ["en"],
+          "preferred": false,
+          "references": [
+            "937d403f-f78f-416c-91bb-3e0e337de0d5",
+            "f0aa1de6-5fb9-4a22-af69-fd3669299f36",
+            "2d99178b-af56-42d0-be9e-75beed5e91ff"
+          ],
+          "display_name": false
+        },
+        {
+          "uuid": "70c773fb-1e7f-4366-84fa-fc8bea023663",
+          "name": "GLYCERIN,ANHYDROUS [VANDF]",
+          "stdName": "GLYCERIN,ANHYDROUS [VANDF]",
+          "type": "cn",
+          "languages": ["en"],
+          "preferred": false,
+          "references": [
+            "f0aa1de6-5fb9-4a22-af69-fd3669299f36",
+            "2d99178b-af56-42d0-be9e-75beed5e91ff"
+          ],
+          "display_name": false
+        },
+        {
+          "uuid": "6582d959-7883-4e7e-8529-e9612b9538b6",
+          "name": "GLYCERINE",
+          "stdName": "GLYCERINE",
+          "type": "sys",
+          "languages": ["en"],
+          "preferred": false,
+          "references": [
+            "7c50a801-f6f8-4aab-a38a-3d694ec45a37",
+            "f0aa1de6-5fb9-4a22-af69-fd3669299f36"
+          ],
+          "display_name": false
+        },
+        {
+          "uuid": "4f3dc0df-2dcb-4846-9b64-86d5b5039a14",
+          "name": "GLYCERINUM",
+          "stdName": "GLYCERINUM",
+          "type": "cn",
+          "languages": ["en"],
+          "preferred": false,
+          "references": [
+            "8aa249f4-369d-4968-8804-4ae362122e08",
+            "322d0084-17a0-4124-a80e-4a030087ad0d",
+            "0990014d-3ce5-4c79-a51b-88d20baf933b",
+            "af4615a1-f3d9-48d8-8539-2b5b88006a64"
+          ],
+          "display_name": false
+        },
+        {
+          "uuid": "c8e8eb90-fee8-4204-ac5b-3d96c6c07f4b",
+          "name": "GLYCERINUM [HPUS]",
+          "stdName": "GLYCERINUM [HPUS]",
+          "type": "cn",
+          "languages": ["en"],
+          "preferred": false,
+          "references": [
+            "8aa249f4-369d-4968-8804-4ae362122e08",
+            "322d0084-17a0-4124-a80e-4a030087ad0d"
+          ],
+          "display_name": false
+        },
+        {
+          "uuid": "a3bd50f5-1866-1fae-e3c7-4d51bff04c97",
+          "name": "GLYCEROL [EP IMPURITY]",
+          "stdName": "GLYCEROL [EP IMPURITY]",
+          "type": "cn",
+          "languages": ["en"],
+          "preferred": false,
+          "references": ["d2d17d9b-99c0-4b04-8590-50ad2615a702"],
+          "display_name": false
+        },
+        {
+          "uuid": "722dd05a-3954-9158-d4c2-9106aaeabb41",
+          "name": "GLYCEROL [EP MONOGRAPH]",
+          "stdName": "GLYCEROL [EP MONOGRAPH]",
+          "type": "cn",
+          "languages": ["en"],
+          "preferred": false,
+          "references": ["4f31a334-8fc4-b406-5716-f29f2a9718cb"],
+          "display_name": false
+        },
+        {
+          "uuid": "b6ccb934-a82a-475f-a962-46e60a37d83d",
+          "name": "GLYCEROL [FHFI]",
+          "stdName": "GLYCEROL [FHFI]",
+          "type": "cn",
+          "languages": ["en"],
+          "preferred": false,
+          "references": [
+            "cdabf88f-dd88-4018-9f17-027503cfcf9e",
+            "f0aa1de6-5fb9-4a22-af69-fd3669299f36"
+          ],
+          "display_name": false
+        },
+        {
+          "uuid": "de037088-4c0c-4e9c-b0a8-4c8d8084f04a",
+          "name": "GLYCEROL [MART.]",
+          "stdName": "GLYCEROL [MART.]",
+          "type": "cn",
+          "languages": ["en"],
+          "preferred": false,
+          "references": ["aeced97a-f8df-447a-b85f-3cb119f63907"],
+          "display_name": false
+        },
+        {
+          "uuid": "e003b2af-f8b8-4ce3-b870-e339f3ba9671",
+          "name": "GLYCEROL [MI]",
+          "stdName": "GLYCEROL [MI]",
+          "type": "cn",
+          "languages": ["en"],
+          "preferred": false,
+          "references": [
+            "f0aa1de6-5fb9-4a22-af69-fd3669299f36",
+            "c4cd50e9-16e6-422a-a6fd-f37e660c8f8b"
+          ],
+          "display_name": false
+        },
+        {
+          "uuid": "dd4fa70a-186e-40b9-a5f4-1bd3e4da7057",
+          "name": "GLYCEROL [WHO-IP]",
+          "stdName": "GLYCEROL [WHO-IP]",
+          "type": "cn",
+          "languages": ["en"],
+          "preferred": false,
+          "references": [
+            "f0aa1de6-5fb9-4a22-af69-fd3669299f36",
+            "ae29d91f-f1af-4fbb-b7df-2223cc7e5006"
+          ],
+          "display_name": false
+        },
+        {
+          "uuid": "6834a2a5-5948-40f5-b2bc-cfa3325a50b0",
+          "name": "GLYCEROLUM [WHO-IP LATIN]",
+          "stdName": "GLYCEROLUM [WHO-IP LATIN]",
+          "type": "cn",
+          "languages": ["en"],
+          "preferred": false,
+          "references": [
+            "f0aa1de6-5fb9-4a22-af69-fd3669299f36",
+            "ae29d91f-f1af-4fbb-b7df-2223cc7e5006"
+          ],
+          "display_name": false
+        },
+        {
+          "uuid": "2d8adc0c-5bc1-4174-a421-4a6c0bd53f3c",
+          "name": "Glycerin",
+          "stdName": "GLYCERIN",
+          "type": "of",
+          "languages": ["en"],
+          "preferred": false,
+          "references": [
+            "972983a5-5d2b-4419-8354-df6456aadba9",
+            "9c1d520f-5e1b-421f-a16e-8efd5c264da7",
+            "818251b5-1ec0-4114-a5e2-37de3f0a20f3",
+            "f0aa1de6-5fb9-4a22-af69-fd3669299f36",
+            "992f1deb-f481-4d87-a76f-dc52403c31f9",
+            "6a63a3f3-4ce0-403f-80a8-5a34199df829",
+            "bee88dc0-5404-4ee9-a18d-bdac68713e8c",
+            "43f32a74-c271-4d6c-926c-a99aa9cfdfb3",
+            "fe3f1ff0-9461-456b-878c-2c3a87f6013e",
+            "0b75dc8b-8c3f-41bf-b6c4-30201e44a16f",
+            "b114af7e-b738-406a-b8c5-c5a12d6454da",
+            "f58bcf6e-7b47-4659-aa4d-3a719ad4986e",
+            "50f3e46a-7549-4550-be48-7e2f81e7aaf5",
+            "9f9ebe60-7e1c-41bc-8977-d6def5031e47",
+            "4276f5d2-4a2a-460d-9287-3dfe82b52f87",
+            "2d99178b-af56-42d0-be9e-75beed5e91ff",
+            "d2fad73c-4905-4486-ad33-df8f0a8eea80"
+          ],
+          "display_name": true,
+          "domains": ["cosmetic"],
+          "name_orgs": [
+            {
+              "uuid": "9efcbcd6-be1b-4dbb-bbb5-cce6a923d498",
+              "name_org": "INCI"
+            }
+          ]
+        },
+        {
+          "uuid": "40605e4e-31b2-4a7b-aa0f-929c20a509a1",
+          "name": "Glycerol",
+          "stdName": "GLYCEROL",
+          "type": "of",
+          "languages": ["en"],
+          "preferred": false,
+          "references": [
+            "a0ca7339-c76e-44cb-aed6-cd1633c9f111",
+            "c828953e-950e-4a2f-a675-7a659fc8aa59",
+            "f0aa1de6-5fb9-4a22-af69-fd3669299f36",
+            "cdabf88f-dd88-4018-9f17-027503cfcf9e",
+            "d2d17d9b-99c0-4b04-8590-50ad2615a702",
+            "aeced97a-f8df-447a-b85f-3cb119f63907",
+            "c4cd50e9-16e6-422a-a6fd-f37e660c8f8b",
+            "428e02cb-0a69-4ed1-a8a0-ced969ce4ca5",
+            "a01edb57-36a5-48da-b2d3-542540ff5928",
+            "99e2b237-b9a6-49ad-83c8-57ae911c4b15",
+            "3a472171-0b51-4342-b4dc-a5304588082a",
+            "bdf7bdeb-c3af-4f08-8e68-56dd61068b75",
+            "ae29d91f-f1af-4fbb-b7df-2223cc7e5006",
+            "e7e63639-8897-4cc8-99a2-e1233b019b1a",
+            "05f72d5d-d653-47b7-95d3-a3836d4dcef5",
+            "98eb0321-6d52-4580-b9d3-c16bca4ff5e4"
+          ],
+          "display_name": false,
+          "domains": ["drug"],
+          "name_orgs": [
+            {
+              "uuid": "74e96867-52cc-484d-bf87-f9ed1ea736d0",
+              "name_org": "INN"
+            }
+          ]
+        },
+        {
+          "uuid": "b39d34f5-1ffe-40b5-026b-714dbbadacb0",
+          "name": "Glycerol 85% [WHO-DD]",
+          "stdName": "GLYCEROL 85% [WHO-DD]",
+          "type": "cn",
+          "languages": ["en"],
+          "preferred": false,
+          "references": ["e65ec53f-edfb-9029-7bad-98783fbe0817"],
+          "display_name": false
+        },
+        {
+          "uuid": "ba689e82-7db6-47f2-061c-1c2cf04ec416",
+          "name": "Glycerol [WHO-DD]",
+          "stdName": "GLYCEROL [WHO-DD]",
+          "type": "cn",
+          "languages": ["en"],
+          "preferred": false,
+          "references": ["e65ec53f-edfb-9029-7bad-98783fbe0817"],
+          "display_name": false
+        },
+        {
+          "uuid": "dedf521f-26b7-4e28-b8ec-454f7a7441a8",
+          "name": "INS NO.422",
+          "stdName": "INS NO.422",
+          "type": "cd",
+          "languages": ["en"],
+          "preferred": false,
+          "references": [
+            "828efbdb-a48e-4c1b-ae80-5b26d7074a1a",
+            "f0aa1de6-5fb9-4a22-af69-fd3669299f36"
+          ],
+          "display_name": false
+        },
+        {
+          "uuid": "73ca14e3-b8c1-4904-9e61-d45e186e7fa3",
+          "name": "INS-422",
+          "stdName": "INS-422",
+          "type": "cd",
+          "languages": ["en"],
+          "preferred": false,
+          "references": [
+            "828efbdb-a48e-4c1b-ae80-5b26d7074a1a",
+            "f0aa1de6-5fb9-4a22-af69-fd3669299f36"
+          ],
+          "display_name": false
+        },
+        {
+          "uuid": "b6e2bc01-9686-4e10-ad9b-3f59506ae054",
+          "name": "M 314429",
+          "stdName": "M 314429",
+          "type": "cd",
+          "languages": ["en"],
+          "preferred": false,
+          "references": [
+            "f0aa1de6-5fb9-4a22-af69-fd3669299f36",
+            "82b66511-605c-4192-aba0-8414ead57d12"
+          ],
+          "display_name": false
+        },
+        {
+          "uuid": "a3d2b0f1-1d7a-4cfb-870e-bc9e14a66e14",
+          "name": "MONOCTANOIN COMPONENT D",
+          "stdName": "MONOCTANOIN COMPONENT D",
+          "type": "cn",
+          "languages": ["en"],
+          "preferred": false,
+          "references": [
+            "12cc54e6-f4ff-4e37-a12d-fe11c15d4f67",
+            "f0aa1de6-5fb9-4a22-af69-fd3669299f36"
+          ],
+          "display_name": false
+        },
+        {
+          "uuid": "85752430-b0d0-4cc7-a775-763796ba0f0f",
+          "name": "NSC-9230",
+          "stdName": "NSC-9230",
+          "type": "cd",
+          "languages": ["en"],
+          "preferred": false,
+          "references": [
+            "f0aa1de6-5fb9-4a22-af69-fd3669299f36",
+            "82b66511-605c-4192-aba0-8414ead57d12"
+          ],
+          "display_name": false
+        },
+        {
+          "uuid": "0a230192-01f5-4e8c-8c67-ba187e67da04",
+          "name": "PZN 7474853",
+          "stdName": "PZN 7474853",
+          "type": "cd",
+          "languages": ["en"],
+          "preferred": false,
+          "references": [
+            "f0aa1de6-5fb9-4a22-af69-fd3669299f36",
+            "82b66511-605c-4192-aba0-8414ead57d12"
+          ],
+          "display_name": false
+        },
+        {
+          "uuid": "6acab1f3-e447-454f-bfbe-048d4ac1a089",
+          "name": "TRYHYDROXYPROPANE",
+          "stdName": "TRYHYDROXYPROPANE",
+          "type": "cn",
+          "languages": ["en"],
+          "preferred": false,
+          "references": [
+            "f0aa1de6-5fb9-4a22-af69-fd3669299f36",
+            "82b66511-605c-4192-aba0-8414ead57d12"
+          ],
+          "display_name": false
+        },
+        {
+          "uuid": "1bc92601-9eb5-462e-86ac-7c355f8115ee",
+          "name": "glycerol [INN]",
+          "stdName": "GLYCEROL [INN]",
+          "type": "cn",
+          "languages": ["en"],
+          "preferred": false,
+          "references": ["a0ca7339-c76e-44cb-aed6-cd1633c9f111"],
+          "display_name": false
+        }
+      ],
+      "references": [
+        {
+          "uuid": "9c1d520f-5e1b-421f-a16e-8efd5c264da7",
+          "citation": "USP Dictionary",
+          "doc_type": "SRS",
+          "public_domain": true,
+          "tags": ["NOMEN", "PUBLIC_DOMAIN_RELEASE", "AUTO_SELECTED"]
+        },
+        {
+          "uuid": "322d0084-17a0-4124-a80e-4a030087ad0d",
+          "citation": "HPUS",
+          "doc_type": "SRS",
+          "public_domain": true,
+          "tags": ["NOMEN"]
+        },
+        {
+          "uuid": "af4615a1-f3d9-48d8-8539-2b5b88006a64",
+          "citation": "DL",
+          "doc_type": "HOMEOPATHIC PHARMACOPOEIA US",
+          "public_domain": true,
+          "tags": ["NOMEN"]
+        },
+        {
+          "uuid": "bdf7bdeb-c3af-4f08-8e68-56dd61068b75",
+          "citation": "USP DICTIONARY 2009",
+          "doc_type": "SRS",
+          "public_domain": true,
+          "tags": ["NOMEN"]
+        },
+        {
+          "uuid": "2c5faf0b-5c83-4efc-9fd4-6d403d5d0fa6",
+          "citation": "CHEMID 2010",
+          "doc_type": "SRS",
+          "public_domain": true,
+          "tags": ["NOMEN"]
+        },
+        {
+          "uuid": "a0ca7339-c76e-44cb-aed6-cd1633c9f111",
+          "citation": "INN Proposed List 4",
+          "url": "https://www.who.int/medicines/publications/druginformation/innlists/PL04.pdf",
+          "doc_type": "INN_LIST",
+          "public_domain": true,
+          "tags": ["PUBLIC_DOMAIN_RELEASE"]
+        },
+        {
+          "uuid": "8aa249f4-369d-4968-8804-4ae362122e08",
+          "citation": "HPUS 2011",
+          "doc_type": "HOMEOPATHIC PHARMACOPOEIA US",
+          "public_domain": true,
+          "tags": ["NOMEN"]
+        },
+        {
+          "uuid": "d2d17d9b-99c0-4b04-8590-50ad2615a702",
+          "citation": "EP 7.2",
+          "doc_type": "SRS",
+          "public_domain": true,
+          "tags": ["NOMEN"]
+        },
+        {
+          "uuid": "818251b5-1ec0-4114-a5e2-37de3f0a20f3",
+          "citation": "USP 33",
+          "doc_type": "SRS",
+          "public_domain": true,
+          "tags": ["NOMEN"]
+        },
+        {
+          "uuid": "6a63a3f3-4ce0-403f-80a8-5a34199df829",
+          "citation": "ORANGE BOOK 2011",
+          "doc_type": "SRS",
+          "public_domain": true,
+          "tags": ["NOMEN"]
+        },
+        {
+          "uuid": "aeced97a-f8df-447a-b85f-3cb119f63907",
+          "citation": "MARTINDALE 2011",
+          "doc_type": "SRS",
+          "public_domain": true,
+          "tags": ["NOMEN"]
+        },
+        {
+          "uuid": "7c50a801-f6f8-4aab-a38a-3d694ec45a37",
+          "citation": "CHEMID",
+          "doc_type": "SRS",
+          "public_domain": true,
+          "tags": ["NOMEN"]
+        },
+        {
+          "uuid": "f0aa1de6-5fb9-4a22-af69-fd3669299f36",
+          "citation": "CHEMID",
+          "doc_type": "CHEMID",
+          "public_domain": true,
+          "tags": ["NOMEN"]
+        },
+        {
+          "uuid": "c4cd50e9-16e6-422a-a6fd-f37e660c8f8b",
+          "citation": "MERCK INDEX",
+          "doc_type": "SRS",
+          "public_domain": true,
+          "tags": ["NOMEN"]
+        },
+        {
+          "uuid": "cdabf88f-dd88-4018-9f17-027503cfcf9e",
+          "citation": "FHFI",
+          "doc_type": "SRS",
+          "public_domain": true,
+          "tags": ["NOMEN"]
+        },
+        {
+          "uuid": "4276f5d2-4a2a-460d-9287-3dfe82b52f87",
+          "citation": "PCPC",
+          "doc_type": "SRS",
+          "public_domain": true,
+          "tags": ["NOMEN"]
+        },
+        {
+          "uuid": "992f1deb-f481-4d87-a76f-dc52403c31f9",
+          "citation": "FCC",
+          "doc_type": "SRS",
+          "public_domain": true,
+          "tags": ["NOMEN"]
+        },
+        {
+          "uuid": "12cc54e6-f4ff-4e37-a12d-fe11c15d4f67",
+          "citation": "USP DICTIONARY 2011",
+          "doc_type": "SRS",
+          "public_domain": true,
+          "tags": ["NOMEN"]
+        },
+        {
+          "uuid": "fe3f1ff0-9461-456b-878c-2c3a87f6013e",
+          "citation": "HSDB",
+          "doc_type": "SRS",
+          "public_domain": true,
+          "tags": ["NOMEN"]
+        },
+        {
+          "uuid": "50f3e46a-7549-4550-be48-7e2f81e7aaf5",
+          "citation": "USP/NF",
+          "doc_type": "SRS",
+          "public_domain": true,
+          "tags": ["NOMEN"]
+        },
+        {
+          "uuid": "99e2b237-b9a6-49ad-83c8-57ae911c4b15",
+          "citation": "WHO-DD",
+          "doc_type": "SRS",
+          "public_domain": true,
+          "tags": ["NOMEN"]
+        },
+        {
+          "uuid": "2d99178b-af56-42d0-be9e-75beed5e91ff",
+          "citation": "NDF-RT",
+          "doc_type": "SRS",
+          "public_domain": true,
+          "tags": ["NOMEN"]
+        },
+        {
+          "uuid": "82b66511-605c-4192-aba0-8414ead57d12",
+          "citation": "SCIFINDER",
+          "doc_type": "SRS",
+          "public_domain": true,
+          "tags": ["NOMEN"]
+        },
+        {
+          "uuid": "828efbdb-a48e-4c1b-ae80-5b26d7074a1a",
+          "citation": "http://www.codexalimentarius.net/gsfaonline/additives/details.html?id=62",
+          "url": "http://www.codexalimentarius.net/gsfaonline/additives/details.html?id=62",
+          "doc_type": "SRS",
+          "public_domain": true,
+          "tags": ["NOMEN"]
+        },
+        {
+          "uuid": "ae29d91f-f1af-4fbb-b7df-2223cc7e5006",
+          "citation": "WHO-IP",
+          "doc_type": "SRS",
+          "public_domain": true,
+          "tags": ["NOMEN"]
+        },
+        {
+          "uuid": "6497e723-f046-4135-b21e-f251ce28075c",
+          "citation": "SRS CODE IMPORT",
+          "doc_type": "SRS",
+          "public_domain": true,
+          "document_date": 1493389646000,
+          "tags": ["NOMEN"]
+        },
+        {
+          "uuid": "35ecd284-5ec4-4104-87f4-0ded49b3d3aa",
+          "citation": "AN OVERVIEW OF THE EFFECTS OF TOBACCO INGREDIENTS ON SMOKE CHEMISTRY AND TOXICITY; FOOD AND CHEMICAL TOXICOLOGY; BAKER, RR; 42(SUPPL):53-83, 2004",
+          "url": "http://www.sciencedirect.com/science/article/pii/S0278691504000043",
+          "doc_type": "JOURNAL ARTICLE",
+          "public_domain": true,
+          "tags": ["NOMEN"]
+        },
+        {
+          "uuid": "ec188796-b003-4a5e-ab01-21d76ff87423",
+          "citation": "CONSTITUENTS IN TOBACCO AND SMOKE EMISSIONS FROM CANADIAN CIGARETTES; TOBACCO CONTROL; HAMMOND, D; VOL:17 SUPPL 1 PG:I24-I31; 2008",
+          "url": "http://tobaccocontrol.bmj.com/content/17/Suppl_1/i24.full.pdf+html",
+          "doc_type": "JOURNAL ARTICLE",
+          "public_domain": true,
+          "tags": ["NOMEN"]
+        },
+        {
+          "uuid": "e2a9b1c1-8f58-41af-ae1d-6d885bfd7a28",
+          "citation": "SRS import [PDC6A3C0OX]",
+          "url": "http://fdasis.nlm.nih.gov/srs/srsdirect.jsp?regno=PDC6A3C0OX",
+          "doc_type": "SRS",
+          "public_domain": true,
+          "document_date": 1493389646000,
+          "tags": ["NOMEN"]
+        },
+        {
+          "uuid": "81236e45-c3b2-40f0-b378-2d98dd72aebe",
+          "citation": "USP Dictionary 2009",
+          "doc_type": "SRS",
+          "public_domain": true,
+          "tags": ["NOMEN"]
+        },
+        {
+          "uuid": "98eb0321-6d52-4580-b9d3-c16bca4ff5e4",
+          "citation": "GLYCEROL [INN]",
+          "doc_type": "SRS_LOCATOR",
+          "public_domain": true
+        },
+        {
+          "uuid": "0990014d-3ce5-4c79-a51b-88d20baf933b",
+          "citation": "GLYCERINUM [HPUS]",
+          "doc_type": "SRS_LOCATOR",
+          "public_domain": true
+        },
+        {
+          "uuid": "3a472171-0b51-4342-b4dc-a5304588082a",
+          "citation": "GLYCEROL [EP]",
+          "doc_type": "SRS_LOCATOR",
+          "public_domain": true
+        },
+        {
+          "uuid": "b114af7e-b738-406a-b8c5-c5a12d6454da",
+          "citation": "GLYCERIN [USP]",
+          "doc_type": "SRS_LOCATOR",
+          "public_domain": true
+        },
+        {
+          "uuid": "972983a5-5d2b-4419-8354-df6456aadba9",
+          "citation": "GLYCERIN [ORANGE BOOK]",
+          "doc_type": "SRS_LOCATOR",
+          "public_domain": true
+        },
+        {
+          "uuid": "a01edb57-36a5-48da-b2d3-542540ff5928",
+          "citation": "GLYCEROL [MART.]",
+          "doc_type": "SRS_LOCATOR",
+          "public_domain": true
+        },
+        {
+          "uuid": "05f72d5d-d653-47b7-95d3-a3836d4dcef5",
+          "citation": "GLYCEROL [MI]",
+          "doc_type": "SRS_LOCATOR",
+          "public_domain": true
+        },
+        {
+          "uuid": "428e02cb-0a69-4ed1-a8a0-ced969ce4ca5",
+          "citation": "GLYCEROL [FHFI]",
+          "doc_type": "SRS_LOCATOR",
+          "public_domain": true
+        },
+        {
+          "uuid": "0b75dc8b-8c3f-41bf-b6c4-30201e44a16f",
+          "citation": "GLYCERIN [INCI]",
+          "doc_type": "SRS_LOCATOR",
+          "public_domain": true
+        },
+        {
+          "uuid": "f58bcf6e-7b47-4659-aa4d-3a719ad4986e",
+          "citation": "GLYCERIN [FCC]",
+          "doc_type": "SRS_LOCATOR",
+          "public_domain": true
+        },
+        {
+          "uuid": "43f32a74-c271-4d6c-926c-a99aa9cfdfb3",
+          "citation": "GLYCERIN [II]",
+          "doc_type": "SRS_LOCATOR",
+          "public_domain": true
+        },
+        {
+          "uuid": "9f9ebe60-7e1c-41bc-8977-d6def5031e47",
+          "citation": "GLYCERIN [HSDB]",
+          "doc_type": "SRS_LOCATOR",
+          "public_domain": true
+        },
+        {
+          "uuid": "d2fad73c-4905-4486-ad33-df8f0a8eea80",
+          "citation": "GLYCERIN [USP-RS]",
+          "doc_type": "SRS_LOCATOR",
+          "public_domain": true
+        },
+        {
+          "uuid": "c828953e-950e-4a2f-a675-7a659fc8aa59",
+          "citation": "GLYCEROL [WHO-DD]",
+          "doc_type": "SRS_LOCATOR",
+          "public_domain": true
+        },
+        {
+          "uuid": "bee88dc0-5404-4ee9-a18d-bdac68713e8c",
+          "citation": "GLYCERIN [VANDF]",
+          "doc_type": "SRS_LOCATOR",
+          "public_domain": true
+        },
+        {
+          "uuid": "937d403f-f78f-416c-91bb-3e0e337de0d5",
+          "citation": "GLYCERIN,ANHYDROUS [VANDF]",
+          "doc_type": "SRS_LOCATOR",
+          "public_domain": true
+        },
+        {
+          "uuid": "e7e63639-8897-4cc8-99a2-e1233b019b1a",
+          "citation": "GLYCEROL [WHO-IP]",
+          "doc_type": "SRS_LOCATOR",
+          "public_domain": true
+        },
+        {
+          "uuid": "105fe233-d6a7-182b-4d19-9050139bfa8c",
+          "citation": "WEBSITE",
+          "url": "https://toxnet.nlm.nih.gov/cgi-bin/sis/search2/r?dbs+hsdb:@term+@rn+@rel+56-81-5",
+          "doc_type": "WEBSITE",
+          "public_domain": true,
+          "tags": ["NOMEN", "PUBLIC_DOMAIN_RELEASE"]
+        },
+        {
+          "uuid": "244bafc9-54af-c8db-2ea2-9524ea9a8597",
+          "citation": "WEBSITE",
+          "url": "https://comptox.epa.gov/dashboard/dsstoxdb/results?utf8=%E2%9C%93&search=56-81-5",
+          "doc_type": "WEBSITE",
+          "public_domain": true,
+          "tags": ["NOMEN", "PUBLIC_DOMAIN_RELEASE"]
+        },
+        {
+          "uuid": "bcf00359-7bad-4c5e-d114-afdd1a4bd750",
+          "citation": "EP",
+          "doc_type": "EP",
+          "public_domain": true,
+          "tags": ["PUBLIC_DOMAIN_RELEASE", "NOMEN"]
+        },
+        {
+          "uuid": "0e620b16-4baa-cec7-a7fe-f5961cb0e8a7",
+          "doc_type": "SYSTEM",
+          "public_domain": true
+        },
+        {
+          "uuid": "d983f579-0f48-8f5d-b50c-daf4e0f1bc0b",
+          "citation": "JAN",
+          "doc_type": "JAN",
+          "public_domain": true
+        },
+        {
+          "uuid": "77ae28e5-b1bd-0d5c-831d-d8e1d18b7c21",
+          "citation": "USP42-NF37 - 4441, Triacetin Monograph",
+          "doc_type": "USPNF",
+          "public_domain": true,
+          "tags": ["PUBLIC_DOMAIN_RELEASE"]
+        },
+        {
+          "uuid": "be1b3705-ee67-4fae-a071-b95810c139ac",
+          "citation": "STN",
+          "doc_type": "STN (SCIFINDER)",
+          "public_domain": true
+        },
+        {
+          "uuid": "a30d9b4d-bca4-02c2-137d-c22a9695aa3c",
+          "citation": "USP43-NF38 - 2132, Glycerin Monograph",
+          "doc_type": "USPNF",
+          "public_domain": true,
+          "tags": ["PUBLIC_DOMAIN_RELEASE"]
+        },
+        {
+          "uuid": "4f31a334-8fc4-b406-5716-f29f2a9718cb",
+          "citation": "EP 10.5",
+          "doc_type": "EP",
+          "public_domain": true
+        },
+        {
+          "uuid": "79363483-db5a-186d-0c6e-592c96125a29",
+          "citation": "USP/NF",
+          "doc_type": "USPNF",
+          "public_domain": true
+        },
+        {
+          "uuid": "e65ec53f-edfb-9029-7bad-98783fbe0817",
+          "citation": "WHO-DD",
+          "doc_type": "WHO DRUG DICTIONARY",
+          "public_domain": true
+        },
+        {
+          "uuid": "ca823de1-113e-8476-cc02-2eeb50cba792",
+          "citation": "NCI",
+          "doc_type": "NCI DRUG DICTIONARY",
+          "public_domain": true
+        },
+        {
+          "uuid": "d45eebf9-de70-0dfe-0071-f651326df187",
+          "citation": "DailyMed",
+          "doc_type": "DAILYMED",
+          "public_domain": true
+        },
+        {
+          "uuid": "ae6d30b0-9b4a-f794-3e00-370bed34cbb9",
+          "citation": "EU-SRS",
+          "doc_type": "EMA LIST",
+          "public_domain": true
+        }
+      ],
+      "definition_type": "PRIMARY",
+      "moieties": [
+        {
+          "uuid": "e454ec46-be81-437f-a3de-fdc955bc8cb2",
+          "id": "e454ec46-be81-437f-a3de-fdc955bc8cb2",
+          "molfile": "\n  CDK     02042512332D\n\n  6  5  0  0  0  0  0  0  0  0999 V2000\n   22.5690   -6.5260    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n   23.9201   -7.3060    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n   25.2710   -6.5260    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n   26.6220   -7.3060    0.0000 O   0  0  0  0  0  0  0  0  0  0  0  0\n   23.9201   -8.8660    0.0000 O   0  0  0  0  0  0  0  0  0  0  0  0\n   21.2180   -7.3060    0.0000 O   0  0  0  0  0  0  0  0  0  0  0  0\n  1  2  1  0  0  0  0\n  2  3  1  0  0  0  0\n  3  4  1  0  0  0  0\n  2  5  1  0  0  0  0\n  1  6  1  0  0  0  0\nM  END",
+          "smiles": "C(C(CO)O)O",
+          "formula": "C3H8O3",
+          "atropisomerism": "No",
+          "charge": 0,
+          "count": 1,
+          "stereochemistry": "ACHIRAL",
+          "count_amount": {
+            "type": "MOL RATIO",
+            "average": 1,
+            "units": "MOL RATIO",
+            "uuid": "82b082a2-4be0-41c3-bd12-c83bd775c74c"
+          },
+          "defined_stereo": 0,
+          "ez_centers": 0,
+          "molecular_weight": "92.0939",
+          "optical_activity": "NONE",
+          "stereo_centers": 0
+        }
+      ],
+      "definition_level": "COMPLETE",
+      "uuid": "8965eda9-1f32-473f-b875-cff6eeadb56b",
+      "version": "61",
+      "structure": {
+        "id": "bf3c68a3-a90a-48ea-bf15-503fa41d5e7f",
+        "molfile": "\n   JSDraw202042512332D\n\n  6  5  0  0  0  0              0 V2000\n   22.5690   -6.5260    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n   23.9201   -7.3060    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n   25.2710   -6.5260    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n   26.6220   -7.3060    0.0000 O   0  0  0  0  0  0  0  0  0  0  0  0\n   23.9201   -8.8660    0.0000 O   0  0  0  0  0  0  0  0  0  0  0  0\n   21.2180   -7.3060    0.0000 O   0  0  0  0  0  0  0  0  0  0  0  0\n  1  2  1  0  0  0  0\n  2  3  1  0  0  0  0\n  3  4  1  0  0  0  0\n  2  5  1  0  0  0  0\n  1  6  1  0  0  0  0\nM  END",
+        "smiles": "C(C(CO)O)O",
+        "formula": "C3H8O3",
+        "atropisomerism": "No",
+        "charge": 0,
+        "count": 1,
+        "stereochemistry": "ACHIRAL",
+        "defined_stereo": 0,
+        "ez_centers": 0,
+        "molecular_weight": "92.0939",
+        "optical_activity": "NONE",
+        "references": [
+          "81236e45-c3b2-40f0-b378-2d98dd72aebe",
+          "e2a9b1c1-8f58-41af-ae1d-6d885bfd7a28",
+          "a0ca7339-c76e-44cb-aed6-cd1633c9f111"
+        ],
+        "stereo_centers": 0
+      },
+      "unii": "PDC6A3C0OX"
+    }
+  ]
+}

@@ -1,0 +1,82 @@
+[
+  {
+    "id": 74,
+    "name": "aspirin",
+    "preferred_name": null,
+    "lname": "aspirin",
+    "syn_id": 2006,
+    "parent_id": null
+  },
+  {
+    "id": 3443,
+    "name": "aspirin phenyl ester",
+    "preferred_name": null,
+    "lname": "aspirin phenyl ester",
+    "syn_id": 10515,
+    "parent_id": null
+  },
+  {
+    "id": 4387,
+    "name": "calcium carbaspirin",
+    "preferred_name": null,
+    "lname": "calcium carbaspirin",
+    "syn_id": 11820,
+    "parent_id": null
+  },
+  {
+    "id": 4387,
+    "name": "carbaspirin calcium",
+    "preferred_name": null,
+    "lname": "carbaspirin calcium",
+    "syn_id": 11822,
+    "parent_id": null
+  },
+  {
+    "id": 74,
+    "name": "aspirin sodium",
+    "preferred_name": null,
+    "lname": "aspirin sodium",
+    "syn_id": 17224,
+    "parent_id": null
+  },
+  {
+    "id": 74,
+    "name": "aspirin magnesium",
+    "preferred_name": null,
+    "lname": "aspirin magnesium",
+    "syn_id": 19971,
+    "parent_id": null
+  },
+  {
+    "id": 74,
+    "name": "aspirin potassium",
+    "preferred_name": null,
+    "lname": "aspirin potassium",
+    "syn_id": 19972,
+    "parent_id": null
+  },
+  {
+    "id": 74,
+    "name": "aspirin calcium",
+    "preferred_name": null,
+    "lname": "aspirin calcium",
+    "syn_id": 19973,
+    "parent_id": null
+  },
+  {
+    "id": 74,
+    "name": "aspirin anhydride",
+    "preferred_name": null,
+    "lname": "aspirin anhydride",
+    "syn_id": 19974,
+    "parent_id": null
+  },
+  {
+    "id": 74,
+    "name": "aspirin lysine",
+    "preferred_name": null,
+    "lname": "aspirin lysine",
+    "syn_id": 19975,
+    "parent_id": null
+  }
+]

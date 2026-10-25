@@ -1,0 +1,68 @@
+[
+  {
+    "relationship_name": "indication",
+    "id": 174043,
+    "concept_name": "Severe pain",
+    "snomed_full_name": "Severe pain",
+    "snomed_conceptid": 76948002,
+    "struct_id": 5406,
+    "concept_id": 21003084,
+    "umls_cui": "C0278140",
+    "cui_semantic_type": "T184"
+  },
+  {
+    "relationship_name": "indication",
+    "id": 174044,
+    "concept_name": "Moderate pain",
+    "snomed_full_name": "Moderate pain",
+    "snomed_conceptid": 50415004,
+    "struct_id": 5406,
+    "concept_id": 40249290,
+    "umls_cui": "C0278139",
+    "cui_semantic_type": "T184"
+  },
+  {
+    "relationship_name": "contraindication",
+    "id": 174045,
+    "concept_name": "Decreased respiratory function",
+    "snomed_full_name": "Decreased respiratory function",
+    "snomed_conceptid": 80954004,
+    "struct_id": 5406,
+    "concept_id": 21001914,
+    "umls_cui": "C0235063",
+    "cui_semantic_type": "T046"
+  },
+  {
+    "relationship_name": "contraindication",
+    "id": 174046,
+    "concept_name": "Asthma",
+    "snomed_full_name": "Asthma",
+    "snomed_conceptid": 195967001,
+    "struct_id": 5406,
+    "concept_id": 21001860,
+    "umls_cui": "C0004096",
+    "cui_semantic_type": "T047"
+  },
+  {
+    "relationship_name": "contraindication",
+    "id": 174047,
+    "concept_name": "Gastrointestinal obstruction",
+    "snomed_full_name": "Gastrointestinal obstruction",
+    "snomed_conceptid": 126765001,
+    "struct_id": 5406,
+    "concept_id": 21002109,
+    "umls_cui": "C0236124",
+    "cui_semantic_type": "T046"
+  },
+  {
+    "relationship_name": "contraindication",
+    "id": 174048,
+    "concept_name": "Paralytic ileus",
+    "snomed_full_name": "Paralytic ileus",
+    "snomed_conceptid": 55525008,
+    "struct_id": 5406,
+    "concept_id": 21002104,
+    "umls_cui": "C0030446",
+    "cui_semantic_type": "T047"
+  }
+]

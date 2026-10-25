@@ -1,0 +1,57 @@
+[
+  {
+    "relationship_name": "off-label use",
+    "id": 173868,
+    "concept_name": "Coronavirus infection",
+    "snomed_full_name": "Coronavirus infection",
+    "snomed_conceptid": 186747009,
+    "struct_id": 5375,
+    "concept_id": 40249416,
+    "umls_cui": "C0206750",
+    "cui_semantic_type": "T047"
+  },
+  {
+    "relationship_name": "indication",
+    "id": 173869,
+    "concept_name": "Leukopenia",
+    "snomed_full_name": "Leukopenia",
+    "snomed_conceptid": 84828003,
+    "struct_id": 5375,
+    "concept_id": 21000886,
+    "umls_cui": "C0023530",
+    "cui_semantic_type": "T047"
+  },
+  {
+    "relationship_name": "indication",
+    "id": 173870,
+    "concept_name": "Snake bite - wound",
+    "snomed_full_name": "Snake bite - wound",
+    "snomed_conceptid": 283840005,
+    "struct_id": 5375,
+    "concept_id": 40249417,
+    "umls_cui": "C0561696",
+    "cui_semantic_type": "T037"
+  },
+  {
+    "relationship_name": "indication",
+    "id": 173871,
+    "concept_name": "Aptyalism",
+    "snomed_full_name": "Aptyalism",
+    "snomed_conceptid": 87715008,
+    "struct_id": 5375,
+    "concept_id": 21001968,
+    "umls_cui": "C0043352",
+    "cui_semantic_type": "T184"
+  },
+  {
+    "relationship_name": "indication",
+    "id": 173872,
+    "concept_name": "Alopecia",
+    "snomed_full_name": "Alopecia",
+    "snomed_conceptid": 56317004,
+    "struct_id": 5375,
+    "concept_id": 21002714,
+    "umls_cui": "C0002170",
+    "cui_semantic_type": "T033"
+  }
+]

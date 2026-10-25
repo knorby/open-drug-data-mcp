@@ -1,0 +1,47 @@
+{
+  "_note": "HAND-AUTHORED 2026-10-22 from @knorby/nih-dsld-client v0.1.1 documented v9 types (no data.gov key available; not a live capture). Ingredient-group response shape: IngredientGroupResult, used for nutrient-info CAS enrichment of label rows without a UNII.",
+  "total": {
+    "value": 1,
+    "relation": "eq"
+  },
+  "max_score": 1,
+  "hits": [
+    {
+      "_index": "ingredient-groups",
+      "_type": "_doc",
+      "_id": "calcium",
+      "_score": 1,
+      "_source": {
+        "groupId": "calcium",
+        "groupName": "Calcium",
+        "category": ["mineral"],
+        "synonyms": ["Calcium carbonate", "Calcium citrate"],
+        "factsheets": [
+          {
+            "name": "Calcium",
+            "link": "https://ods.od.nih.gov/factsheets/Calcium-HealthProfessional/"
+          }
+        ],
+        "nutrientInfo": [
+          {
+            "nutrient": "Calcium",
+            "cas": "471-34-1",
+            "identity": "Calcium carbonate",
+            "iupacNomenclature": "calcium carbonate"
+          },
+          {
+            "nutrient": "Calcium citrate",
+            "cas": "813-94-5",
+            "identity": "Calcium citrate",
+            "iupacNomenclature": "calcium 2-hydroxypropane-1,2,3-tricarboxylate"
+          },
+          {
+            "nutrient": "Calcium citrate",
+            "cas": "   ",
+            "identity": "Calcium citrate"
+          }
+        ]
+      }
+    }
+  ]
+}

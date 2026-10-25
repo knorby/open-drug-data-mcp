@@ -1,0 +1,30 @@
+{
+  "_note": "HAND-AUTHORED 2026-10-22 from @knorby/nih-dsld-client v0.1.1 documented v9 types (no data.gov key available; not a live capture). Ingredient-group response shape: IngredientGroupResult; a single CAS fact for a vitamin D3 label row that already carries a UNII.",
+  "total": {
+    "value": 1,
+    "relation": "eq"
+  },
+  "max_score": 1,
+  "hits": [
+    {
+      "_index": "ingredient-groups",
+      "_type": "_doc",
+      "_id": "vitamin-d3",
+      "_score": 1,
+      "_source": {
+        "groupId": "vitamin-d3",
+        "groupName": "Vitamin D3",
+        "category": ["vitamin"],
+        "synonyms": ["Cholecalciferol", "Vitamin D"],
+        "nutrientInfo": [
+          {
+            "nutrient": "Vitamin D3",
+            "identity": "Cholecalciferol",
+            "cas": "67-97-0",
+            "iupacNomenclature": "(3β,5Z,7E)-9,10-secocholesta-5,7,10(19)-trien-3-ol"
+          }
+        ]
+      }
+    }
+  ]
+}
