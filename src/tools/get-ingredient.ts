@@ -79,6 +79,7 @@ const CAS = /^\d{2,7}-\d{2}-\d$/;
 const PREFIXED_IDENTIFIER = /^([A-Za-z][A-Za-z0-9_]{1,30}):(\S+)$/;
 
 const DESCRIPTION =
+  "Use this for an existing source+id, including an entity record or confirmed link; do not repeat a broad search. Fetch only needed records; selectively fetch supplied URLs with host web tools if more page content is needed. " +
   "Fetch one ingredient profile from openFDA, CosIng, DrugCentral, RxNorm, INKEEDecoder, or PubChem. The `id` is the database's own key: a UNII or dashed CAS number (openfda), a numeric substance id or exact INCI/glossary name (cosing), a numeric structure id, UNII, dashed CAS number, or a supported TYPE:value crosswalk identifier (drugcentral), a numeric RxCUI (nlm), an ingredient slug/URL (inkeedecoder), or a numeric PubChem CID (pubchem). The result carries the unified ingredient ref, the source's profile fields and identifier crosswalk, verbatim regulatory notices where the source publishes them, links, and suggested follow-up calls. `include_clinical` asks DrugCentral for indications, off-label uses, contraindications, and FAERS counts — extra requests, verbose, default false. `include_cosing_panel` asks INKEEDecoder to include its CosIng CAS/EC/IUPAC panel from the same page fetch — no extra request, default false. A malformed id is an error result naming the search tool that finds a valid one; an upstream miss is an error result, not an empty profile.";
 
 const inputSchema = z.object({
@@ -94,7 +95,7 @@ const inputSchema = z.object({
     .trim()
     .max(300)
     .describe(
-      "The database's own identifier: UNII or dashed CAS (openfda), substance id or INCI/glossary name (cosing), structure id, UNII, CAS, or TYPE:value crosswalk id (drugcentral), numeric RxCUI (nlm), or slug/URL (inkeedecoder).",
+      "The database's own identifier: UNII or dashed CAS (openfda), substance id or INCI/glossary name (cosing), structure id, UNII, CAS, or TYPE:value crosswalk id (drugcentral), numeric RxCUI (nlm), slug/URL (inkeedecoder), or numeric PubChem CID (pubchem).",
     ),
   include_clinical: z
     .boolean()

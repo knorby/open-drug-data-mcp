@@ -82,6 +82,7 @@ const OPENFDA_PRODUCT_NDC = /^\d{4,5}-\d{3,4}$/;
 const DSLD_ID = /^\d+$/;
 
 const DESCRIPTION =
+  "Use this for an existing source+id, including an entity record or confirmed link; do not repeat a broad search. Fetch only needed records; selectively fetch supplied URLs with host web tools if more page content is needed. " +
   "Fetch one product record from openFDA, DSLD, DailyMed, or INKEEDecoder. The `id` is the database's own key: a product NDC (openFDA), a numeric label id (DSLD), an SPL set id (DailyMed), or a product slug/URL (INKEEDecoder). The result carries the unified product ref, source-specific details, ingredient rows (UNIIs, roles, quantities), links, and suggested follow-up calls. `include_ingredients` is true by default; `include_label_sections` extracts DailyMed SPL usage sections — these are large and default false. `page` pages the ingredient and label-section collections one page at a time and re-fetches the record; it never walks pages automatically. A malformed id is an error result naming the search tool that finds a valid one; an upstream miss is an error result, not an empty product.";
 
 const inputSchema = z.object({

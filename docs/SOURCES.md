@@ -445,6 +445,13 @@ hydrates, mixtures), and compound identity is not a regulatory status.
 
 ## DrugCentral
 
+Identity caveat: DrugCentral's structure `cd_id` is internal metadata, not a
+PubChem CID. Only explicit positive integer `PUBCHEM_CID` crosswalk rows
+populate CID fields. CID-to-structure resolution requires exact identifier
+and type matches. Conflicting InChIKeys from DrugCentral and PubChem remain
+source-attributed conflicts, not silently replaced values. Search records do
+not acquire a CID from `cd_id`.
+
 | | |
 | --- | --- |
 | **Publisher** | University of New Mexico, Division of Translational Informatics, in collaboration with the Illuminating the Druggable Genome (IDG) project |

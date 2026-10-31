@@ -307,6 +307,16 @@ describe("server assembly", () => {
       "resolve",
       "get",
       "nextSteps",
+      "free text",
+      "brand",
+      "category",
+      "source+id",
+      "selectively fetch",
+      "PubChem",
+      "cid",
+      "partial",
+      "timeout",
+      "entities",
       "NDC",
       "UNII",
       "RxCUI",
@@ -356,6 +366,19 @@ describe("server assembly", () => {
     expect(text).toContain("drugdata_get_product");
     expect(text).toContain("links");
     expect(text).toContain("candidates");
+    for (const expected of [
+      "free text",
+      "brand",
+      "category",
+      "source+id",
+      "selectively fetch",
+      "PubChem",
+      "cid",
+      "partial",
+      "timeout",
+      "entities",
+    ])
+      expect(text).toContain(expected);
     expect(text).toContain(DISCLAIMER);
     expect(text).not.toMatch(/@knorby|-client/i);
 
@@ -369,6 +392,22 @@ describe("server assembly", () => {
     expect(plainText).not.toContain("User context:");
   });
 
+  it("documents source+id lookups and the PubChem CID key", async () => {
+    harness = await connect();
+    const { tools } = await harness.client.listTools();
+    for (const name of ["drugdata_get_product", "drugdata_get_ingredient"]) {
+      const tool = tools.find((tool) => tool.name === name);
+      expect(tool?.description).toContain("source+id");
+      expect(tool?.description).toContain("selectively fetch");
+    }
+    expect(
+      JSON.stringify(
+        tools.find((tool) => tool.name === "drugdata_get_ingredient")
+          ?.inputSchema.properties?.id,
+      ),
+    ).toContain("PubChem CID");
+  });
+
   it("serves server://info with the disclaimer and enabled sources", async () => {
     harness = await connect();
 
@@ -379,6 +418,7 @@ describe("server assembly", () => {
     expect(info.transport).toBe("stdio");
     expect(info.disclaimer).toBe(DISCLAIMER);
     expect(info.configError).toBeNull();
+    expect(info.searchTimeoutMs).toBe(45000);
     expect(info.sources).toEqual(
       SOURCE_IDS.map((id) => ({
         id,
@@ -570,6 +610,7 @@ describe("server assembly", () => {
 });
 
 interface InfoDocument {
+  searchTimeoutMs: number | null;
   name: string;
   version: string;
   transport: string;

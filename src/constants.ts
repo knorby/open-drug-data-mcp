@@ -28,6 +28,10 @@ export const SERVER_VERSION = readPackageVersion();
 export const DISCLAIMER =
   "Informational/research use only — not medical advice; see docs/SOURCES.md for source terms.";
 
+/** Shared tool-choice policy for initialization and the research prompt. */
+export const TOOL_CHOICE_GUIDE =
+  "For free text, start with type 'name'. Use product type 'brand' deliberately for a brand-only search; it reaches fewer sources than 'name'. Pass product category when known: medication, supplement, or cosmetic. Ingredient search has no category filter. Search returns entities with original records, confirmed links, candidates, conflicts, per-entity nextSteps, source statuses, and coverage; identical names alone never establish identity. For an existing source+id, use drugdata_get_product or drugdata_get_ingredient instead of searching again; pass the returned id unchanged. Open only records needed for the question, with costly flags off unless needed. If tools omit needed page or article content, selectively fetch the supplied URLs with the host's web tools; do not bulk crawl. PubChem CID is supported by ingredient search, get_ingredient(source: pubchem), and resolve_identifiers(cid). Read partial, coverage, and each source's error/timeout status before claiming completeness. Search has a shared 45-second default deadline, enriches at most five entities with concurrency three, and retains completed results when that deadline expires. Unresolved candidates and source-attributed conflicts stay explicit; do not choose or conceal them.";
+
 /**
  * Maximum characters a tool response may contain before it is bounded — the
  * text block by truncation, and `structuredContent` by `boundStructured`.

@@ -317,7 +317,7 @@ DrugCentral, NIH DSLD, INKEEDecoder, and PubChem:
 - `drugdata_get_ingredient` — openFDA, CosIng, DrugCentral, RxNorm,
   INKEEDecoder, or PubChem.
 - `drugdata_resolve_identifiers` — exactly one of `unii`, `ndc`, `rxcui`,
-  `cas`, `inci_name`, `substance_name`, `spl_setid`, `dsld_id`.
+  `cid`, `cas`, `inci_name`, `substance_name`, `spl_setid`, `dsld_id`.
 - `drugdata_search_references` — one NLM reference source per call
   (`prescribable`, `rxclass`, `mesh`, `pubmed`, `medlineplus`,
   `medlineplus_genetics`, `medlineplus_connect`, `umls`, `clinicaltrials`)
@@ -327,7 +327,10 @@ DrugCentral, NIH DSLD, INKEEDecoder, and PubChem:
 
 The loop is search → resolve → get, plus a reference step for literature and
 classification sources. Every search and resolution returns `nextSteps`.
-Results are source-grouped, bounded, and credited to the upstream database.
+Search results are entity-grouped, bounded, and credited to the upstream
+database. `sources` holds per-database status/paging metadata, not duplicate
+records. When modifying search, read ADR-0006 for clustering, deadline,
+enrichment, and response-bounding invariants.
 
 ### Hard sourcing policy
 
@@ -368,6 +371,7 @@ These are release-blocking rules, not style preferences:
 ```text
 src/sources/types.ts        SourceAdapter contract + capability declarations
 src/sources/registry.ts     search fan-out (allSettled) and lookup routing
+src/sources/search/         pure entity clustering + deadline/enrichment coordinator
 src/sources/<source>.ts     one adapter per upstream source module
 src/sources/nlm-references/ reference search handlers + cursor pagination
 src/tools/search-support.ts SEARCH_ADAPTERS, registry resolution, error groups
@@ -387,7 +391,9 @@ dispatches to one handler per source in `src/sources/nlm-references/` through
 than product/ingredient search. PubChem is an adapter
 (`src/sources/pubchem.ts`) that shares the NLM client and the `nlm`
 disable id; it serves ingredient searches (name, CID) and ingredient
-profiles (a `chemistry` block), not products or the identity chain.
+profiles (a `chemistry` block), not products. CID resolution uses PubChem
+verification and DrugCentral's exact PUBCHEM_CID crosswalk; DrugCentral
+`cd_id` is not a CID. RxCUI input is fetched before becoming a direct link.
 
 #### Adding a source
 

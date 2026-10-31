@@ -29,14 +29,12 @@ import {
  * `drugdata_search_ingredients` — one ingredient search across every capable
  * source.
  *
- * Like its product counterpart, the registry owns the fan-out; this module
- * validates the closed output, derives identifier-driven follow-ups, and
- * renders markdown or JSON. A UNII in the results is the strongest pivot, so
- * next steps lead with `drugdata_resolve_identifiers` when one is present.
+ * The coordinator owns fan-out and bounded enrichment; this module validates
+ * the closed entity contract and renders markdown or JSON.
  */
 
 const DESCRIPTION =
-  "Search ingredients across openFDA, CosIng, DrugCentral, RxNorm, PubChem, and INKEEDecoder. Choose the kind of value you have (name, INCI name, UNII, CAS number, EC number, RxCUI, or PubChem CID); results are grouped by upstream database with identifiers, a deep link, and suggested follow-up calls. One `page` value applies to every source in the fan-out and re-queries all of them; each group's `hasMore` reports whether that source has another page. A group with an `error` means that one database failed — retry, or proceed with the other groups. No matches is a normal empty result, not an error.";
+  "Search ingredients across openFDA, CosIng, DrugCentral, RxNorm, PubChem, and INKEEDecoder. Start free text with type 'name'; use inci, unii, cas, ec, rxcui, or cid when that is the value you have. There is no ingredient category filter. Returns evidence-grouped entities with original records, confirmed links, source-attributed conflicts, unconfirmed candidates, and per-entity nextSteps. For source+id use drugdata_get_ingredient instead. Search enriches at most five entities, concurrency three, within a shared 45-second default deadline. Read partial, coverage, and sources (status ok/error/timeout); completed results survive a timeout. One page applies to every source and re-queries all of them; each source's hasMore is independent. Selectively fetch supplied URLs only when more page content is needed. No matches is normal, not an error.";
 
 const inputSchema = z.object({
   type: z

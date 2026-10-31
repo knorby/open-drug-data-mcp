@@ -1,5 +1,10 @@
 import { McpServer } from "@modelcontextprotocol/server";
-import { DISCLAIMER, SERVER_NAME, SERVER_VERSION } from "./constants.js";
+import {
+  DISCLAIMER,
+  SERVER_NAME,
+  SERVER_VERSION,
+  TOOL_CHOICE_GUIDE,
+} from "./constants.js";
 import { registerResearchDrugPrompt } from "./prompts/research-drug.js";
 import { registerInfoResource } from "./resources/info.js";
 import type { IdentityResolver } from "./sources/identity/chain.js";
@@ -26,8 +31,10 @@ const INSTRUCTIONS = `Open Drug Data is one research interface over openFDA, Cos
 
 The loop is search → resolve → get. Every search and resolve result ends with nextSteps; follow them instead of inventing an identifier.
 
+${TOOL_CHOICE_GUIDE}
+
 1. Search by what you have. drugdata_search_products accepts a product name, brand, ingredient, barcode, or NDC. drugdata_search_ingredients accepts a name, INCI name, UNII, CAS number, EC number, RxCUI, or PubChem CID. Choose the type that matches the value in hand.
-2. Resolve cross-source identity. When a result carries a cross-source identifier, call drugdata_resolve_identifiers with exactly one of unii, ndc, rxcui, cas, inci_name, substance_name, spl_setid, or dsld_id. That runs the identity chain across sources and returns what it could link plus what remains ambiguous.
+2. Resolve cross-source identity when the search entity has not already supplied the needed links. Call drugdata_resolve_identifiers with exactly one of unii, ndc, rxcui, cid, cas, inci_name, substance_name, spl_setid, or dsld_id. That runs the identity chain across sources and returns what it could link plus what remains ambiguous.
 3. get the full record from the database that owns it. drugdata_get_product takes source openfda, dsld, dailymed, or inkeedecoder; drugdata_get_ingredient takes source openfda, cosing, drugcentral, nlm, inkeedecoder, or pubchem. Pass the database's own id from the result unchanged. Costly sections are opt-in; turn them on only when the question needs them.
 4. For everything written about a substance, drugdata_search_references searches one NLM reference source at a time — PubMed literature, ClinicalTrials.gov studies, MedlinePlus consumer pages, RxClass drug classes, MeSH descriptors, UMLS terminology, and the prescribable drug dataset. Results are link-first: titles, identifiers, and deep links, not article text. Continue with the returned cursor when hasMore is true.
 
@@ -35,7 +42,7 @@ Identifier vocabulary: NDC is a US drug product or package code; UNII is an FDA 
 
 Confidence: in resolve results, links are trusted matches — direct means the same identifier, derived means a documented crosswalk. candidates are possible matches that need judgment: never silently treat one as confirmed or choose one for the user. When identity matters, prefer a direct link or ask which record is meant.
 
-Pagination: a search takes one page number, applies it to every source in the fan-out, and re-queries all of them; read each group's hasMore rather than assuming a shared page count. Lookups page their own ingredient and label-section collections. Reference searches continue with an opaque cursor instead of a page number. Never walk every page by default — request the next page only when the answer needs it. Responses are character-bounded; when text or structured fields are shortened, the result says so.
+Pagination: a search takes one page number, applies it to every source in the fan-out, and re-queries all of them; read each source's hasMore rather than assuming a shared page count. Lookups page their own ingredient and label-section collections. Reference searches continue with an opaque cursor instead of a page number. Never walk every page by default — request the next page only when the answer needs it. Responses are character-bounded; when text or whole entities are omitted, the result says so. Coverage counts describe the pre-bound result.
 
 Sourcing etiquette: cite the upstream database and its deep link in your answer, and do not present this server as the source. Regulatory text — annex notices, label sections, indication wording — is verbatim: summarize or quote briefly with attribution rather than republishing it. Zero matches are a normal result, not an error; use drugdata_ping when a source looks unavailable.
 

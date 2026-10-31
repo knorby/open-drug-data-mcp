@@ -1,6 +1,11 @@
 import type { McpServer } from "@modelcontextprotocol/server";
 import { readConfig, SOURCE_IDS, SOURCE_LABELS } from "../config.js";
-import { DISCLAIMER, SERVER_NAME, SERVER_VERSION } from "../constants.js";
+import {
+  DISCLAIMER,
+  SERVER_NAME,
+  SERVER_VERSION,
+  TOOL_CHOICE_GUIDE,
+} from "../constants.js";
 
 /**
  * Static resource: what this server is, which sources it will use, and the
@@ -43,6 +48,10 @@ export function registerInfoResource(server: McpServer): void {
                 name: SERVER_NAME,
                 version: SERVER_VERSION,
                 transport: "stdio",
+                searchTimeoutMs: config.ok
+                  ? config.config.DRUGDATA_SEARCH_TIMEOUT_MS
+                  : null,
+                toolChoiceGuide: TOOL_CHOICE_GUIDE,
                 sources,
                 disclaimer: DISCLAIMER,
                 configError: config.ok ? null : config.error,

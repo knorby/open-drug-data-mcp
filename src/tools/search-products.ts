@@ -29,15 +29,12 @@ import {
 /**
  * `drugdata_search_products` — one product search across every capable source.
  *
- * The tool is deliberately thin: the registry decides which sources can answer
- * the requested search type and category, isolates failures, and returns
- * groups already labeled by upstream database. Here we validate the result
- * against a closed schema, derive follow-up calls, and render either markdown
- * or JSON.
+ * The coordinator selects capable sources, clusters identity evidence and
+ * enriches a bounded prefix; this tool validates and renders the result.
  */
 
 const DESCRIPTION =
-  "Search products across openFDA, DSLD, INKEEDecoder, RxNorm, and DailyMed. Choose the kind of value you have (name, brand, ingredient, barcode, or NDC); results are grouped by upstream database with identifiers, a deep link, and suggested follow-up calls. One `page` value applies to every source in the fan-out and re-queries all of them; each group's `hasMore` reports whether that source has another page. A group with an `error` means that one database failed — retry, or proceed with the other groups. No matches is a normal empty result, not an error.";
+  "Search products across openFDA, DSLD, INKEEDecoder, RxNorm, and DailyMed. Start free text with type 'name'; use 'brand' deliberately for brand-only search, which covers fewer sources. Use ingredient, barcode, or ndc when appropriate, and pass category medication/supplement/cosmetic when known. Returns evidence-grouped entities with original records, confirmed links, source-attributed conflicts, unconfirmed candidates, and per-entity nextSteps. A product RxCUI or shared name alone does not merge products. For source+id use drugdata_get_product instead. Search enriches at most five entities, concurrency three, within a shared 45-second default deadline. Read partial, coverage, and sources (status ok/error/timeout); completed results survive a timeout. One page applies to every source and re-queries all of them; each source's hasMore is independent. Selectively fetch supplied URLs only when more page content is needed. No matches is normal, not an error.";
 
 const inputSchema = z.object({
   type: z
