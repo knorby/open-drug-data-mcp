@@ -10,10 +10,13 @@ import { searchNextSteps } from "../src/lib/next-steps.js";
 import type {
   DatabaseId,
   IngredientRef,
+  IngredientSearchEntity,
   NextStep,
   ProductIdentifiers,
   ProductRef,
+  SourceSearchStatus,
 } from "../src/lib/schemas.js";
+import type { IdentityResolver } from "../src/sources/identity/chain.js";
 import { createRegistry } from "../src/sources/registry.js";
 import type {
   IngredientGroup,
@@ -59,7 +62,8 @@ interface ProductSearchOutput {
 interface IngredientSearchOutput {
   query: string;
   page: number;
-  groups: IngredientGroup[];
+  entities: IngredientSearchEntity[];
+  sources: SourceSearchStatus[];
   nextSteps: NextStep[];
 }
 
@@ -179,14 +183,23 @@ function fakeAdapter(input: FakeAdapterInput): SourceAdapter {
   };
 }
 
-async function start(registry?: Registry): Promise<TestHarness> {
+const noResolution: IdentityResolver = {
+  resolve: async () => ({
+    kind: "ingredient",
+    graph: { subject: {}, identifiers: {}, links: [], candidates: [] },
+  }),
+};
+async function start(
+  registry?: Registry,
+  resolver: IdentityResolver = noResolution,
+): Promise<TestHarness> {
   return createTestClient(() => {
     const server = new McpServer({
       name: SERVER_NAME,
       version: SERVER_VERSION,
     });
     registerSearchProductsTool(server, registry);
-    registerSearchIngredientsTool(server, registry);
+    registerSearchIngredientsTool(server, registry, resolver);
     return server;
   });
 }
@@ -696,13 +709,14 @@ describe("search tools", () => {
     expect(result.isError).toBeFalsy();
     const output = result.structuredContent as IngredientSearchOutput;
     expect(output.query).toBe("niacinamide");
-    expect(output.groups).toHaveLength(1);
-    expect(output.groups[0]?.items).toHaveLength(3);
-    expect(output.nextSteps[0]).toMatchObject({
-      tool: "drugdata_resolve_identifiers",
-      input: { unii: "25X51I8RD4" },
-    });
-    expect(output.nextSteps[0]?.why).toContain("name search");
+    expect(output.sources).toHaveLength(1);
+    expect(output.entities).toHaveLength(3);
+    expect(output.entities[0]?.nextSteps).toContainEqual(
+      expect.objectContaining({
+        tool: "drugdata_resolve_identifiers",
+        input: { unii: "25X51I8RD4" },
+      }),
+    );
 
     const text = textOf(result);
     expect(text).toContain("### openFDA — 3 results (page 1)");
@@ -833,7 +847,7 @@ describe("search tools", () => {
     expect(text).toContain("### CosIng — 1 result (page 1, more available)");
     expect(text).toContain("### RxNorm — 0 results (page 1)");
     expect(text).toContain("- No matches on this page.");
-    expect(text).toContain("Some fields were shortened");
+    expect(text).toContain("Response truncated");
     expect(text).toContain("call this tool again with page: 2");
   });
 

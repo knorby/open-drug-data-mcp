@@ -77,7 +77,7 @@ export function createServer({
   // Fixed order: see the module comment. Do not sort or regroup these.
   registerPingTool(server);
   registerSearchProductsTool(server, registry);
-  registerSearchIngredientsTool(server, registry);
+  registerSearchIngredientsTool(server, registry, resolver);
   registerGetProductTool(server, registry);
   registerGetIngredientTool(server, registry);
   registerResolveIdentifiersTool(server, resolver);

@@ -1,37 +1,28 @@
 import type { McpServer } from "@modelcontextprotocol/server";
 import * as z from "zod/v4";
+import { readConfig } from "../config.js";
+import { applyCharacterLimit, RESPONSE_FORMATS } from "../lib/format.js";
 import {
-  applyCharacterLimit,
-  boundStructured,
-  morePagesNote,
-  RESPONSE_FORMATS,
-  truncationNote,
-} from "../lib/format.js";
-import { searchNextSteps } from "../lib/next-steps.js";
-import {
-  databaseIdSchema,
   type IngredientIdentifiers,
   type IngredientRef,
-  ingredientRefSchema,
-  nextStepSchema,
-  paginatedFields,
+  ingredientEntitySearchResultSchema,
 } from "../lib/schemas.js";
+import type { IdentityResolver } from "../sources/identity/chain.js";
+import { createSearchCoordinator } from "../sources/search/coordinator.js";
+import { INGREDIENT_SEARCH_TYPES, type Registry } from "../sources/types.js";
 import {
-  INGREDIENT_SEARCH_TYPES,
-  type IngredientSearchType,
-  type Registry,
-} from "../sources/types.js";
+  boundEntitySearch,
+  entityJsonBlocks,
+  renderEntitySearch,
+} from "./entity-search-support.js";
+import { resolveResolver } from "./resolve-identifiers.js";
 import {
   type IdentifierField,
   identifierText,
-  itemCount,
-  jsonTextBlocks,
   messageError,
-  nextStepsText,
   resolveRegistry,
   toolError,
   type ZeroResultsContext,
-  zeroResultsNote,
 } from "./search-support.js";
 
 /**
@@ -74,28 +65,9 @@ const inputSchema = z.object({
     ),
 });
 
-const groupSchema = z.object({
-  source: databaseIdSchema,
-  items: z.array(ingredientRefSchema),
-  ...paginatedFields,
-  error: z
-    .string()
-    .optional()
-    .describe(
-      "Set when this database failed for the whole search; the other groups are still valid.",
-    ),
-});
-
-const outputSchema = z.object({
-  query: z.string(),
-  page: z.number().int().min(1),
-  groups: z.array(groupSchema),
-  nextSteps: z.array(nextStepSchema),
-});
+const outputSchema = ingredientEntitySearchResultSchema;
 
 type IngredientSearchInput = z.infer<typeof inputSchema>;
-type IngredientSearchOutput = z.infer<typeof outputSchema>;
-type IngredientGroupOutput = IngredientSearchOutput["groups"][number];
 
 /** Empty-result advice for a tool that has no category filter. */
 const ZERO_CONTEXT: ZeroResultsContext = {
@@ -120,6 +92,7 @@ const IDENTIFIER_FIELDS: ReadonlyArray<IdentifierField<IngredientIdentifiers>> =
 export function registerSearchIngredientsTool(
   server: McpServer,
   registry?: Registry,
+  resolver?: IdentityResolver,
 ): void {
   server.registerTool(
     "drugdata_search_ingredients",
@@ -143,26 +116,26 @@ export function registerSearchIngredientsTool(
         const resolved = resolveRegistry(registry);
         if (!resolved.ok) return messageError(resolved.error);
 
-        const groups = await resolved.registry.searchIngredients(
-          type,
-          query,
-          { page },
-          ctx.mcpReq.signal,
+        const identity = resolveResolver(resolver);
+        if (!identity.ok) return messageError(identity.error);
+        const config = readConfig();
+        if (!config.ok) return messageError(config.error);
+        const output = outputSchema.parse(
+          await createSearchCoordinator({
+            registry: resolved.registry,
+            resolver: identity.resolver,
+            timeoutMs: config.config.DRUGDATA_SEARCH_TIMEOUT_MS,
+          }).searchIngredients({ type, query, page }, ctx.mcpReq.signal),
         );
-        const output = outputSchema.parse({
-          query,
-          page,
-          groups,
-          nextSteps: searchNextSteps(type, groups),
-        });
-        const bounded = boundStructured(output);
-        // Paging advice must describe what the rendered groups actually show,
-        // so read `hasMore` after bounding rather than from the raw fan-out.
-        const anyHasMore = bounded.value.groups.some((group) => group.hasMore);
+        const bounded = boundEntitySearch(output);
 
         if (response_format === "json") {
           return {
-            content: jsonTextBlocks(bounded.value, ZERO_CONTEXT),
+            content: entityJsonBlocks(
+              bounded.value,
+              ZERO_CONTEXT,
+              bounded.truncated,
+            ),
             structuredContent: bounded.value,
           };
         }
@@ -172,11 +145,11 @@ export function registerSearchIngredientsTool(
             {
               type: "text" as const,
               text: applyCharacterLimit(
-                renderMarkdown(
-                  type,
+                renderEntitySearch(
                   bounded.value,
-                  anyHasMore,
+                  ZERO_CONTEXT,
                   bounded.truncated,
+                  ingredientLine,
                 ),
               ),
             },
@@ -188,48 +161,6 @@ export function registerSearchIngredientsTool(
       }
     },
   );
-}
-
-/** Renders the markdown text block for an ingredient search. */
-function renderMarkdown(
-  type: IngredientSearchType,
-  output: IngredientSearchOutput,
-  anyHasMore: boolean,
-  truncated: boolean,
-): string {
-  const sections = [
-    `Ingredient search for ${JSON.stringify(output.query)} (type: ${type}) — page ${output.page}.`,
-    ...output.groups.map(groupSection),
-  ];
-
-  if (itemCount(output.groups) === 0) {
-    sections.push(zeroResultsNote(output.groups, ZERO_CONTEXT));
-  }
-
-  const steps = nextStepsText(output.nextSteps);
-  if (steps !== undefined) sections.push(steps);
-
-  let text = sections.join("\n\n");
-  text += morePagesNote(anyHasMore, output.page + 1);
-  if (truncated) text += truncationNote();
-  return text;
-}
-
-/** Renders one source's section, including its failure as a warning. */
-function groupSection(group: IngredientGroupOutput): string {
-  if (group.error !== undefined) {
-    return `### ${group.source} — unavailable\n⚠ ${group.source}: ${group.error}`;
-  }
-
-  const count = group.items.length;
-  const results = `${count} ${count === 1 ? "result" : "results"}`;
-  const more = group.hasMore ? ", more available" : "";
-  const header = `### ${group.source} — ${results} (page ${group.page}${more})`;
-  const lines =
-    group.items.length === 0
-      ? ["- No matches on this page."]
-      : group.items.map(ingredientLine);
-  return [header, ...lines].join("\n");
 }
 
 /** Renders one ingredient as a compact list line. */

@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { resetClients } from "../src/clients.js";
 import { resetConfig } from "../src/config.js";
+import { ingredientEntitySearchResultSchema } from "../src/lib/schemas.js";
 import {
   createTestClient,
   jsonResponse,
@@ -266,13 +267,11 @@ describe("NLM coverage matrix", () => {
       name: "drugdata_search_ingredients",
       arguments: { type: "unii", query: "R16CO5Y76E" },
     });
-    const ingredientGroups = (
-      resolved.structuredContent as {
-        groups: { source: string; items: unknown[] }[];
-      }
-    ).groups;
+    const ingredientRecords = ingredientEntitySearchResultSchema
+      .parse(resolved.structuredContent)
+      .entities.flatMap((entity) => entity.records);
     expect(
-      ingredientGroups.find((group) => group.source === "RxNorm")?.items,
+      ingredientRecords.filter((record) => record.source.database === "RxNorm"),
     ).toHaveLength(1);
 
     // rxTerms: the RxNorm ingredient profile embeds the presentation.
@@ -332,26 +331,24 @@ describe("NLM coverage matrix", () => {
       name: "drugdata_search_ingredients",
       arguments: { type: "name", query: "aspirin" },
     });
-    const groups = (
-      searched.structuredContent as {
-        groups: { source: string; items: { name: string }[] }[];
-      }
-    ).groups;
-    const pubchem = groups.find((group) => group.source === "PubChem");
-    expect(pubchem?.items).toHaveLength(1);
-    expect(pubchem?.items[0]?.name).toBe("aspirin");
+    const records = ingredientEntitySearchResultSchema
+      .parse(searched.structuredContent)
+      .entities.flatMap((entity) => entity.records);
+    const pubchem = records.filter(
+      (record) => record.source.database === "PubChem",
+    );
+    expect(pubchem).toHaveLength(1);
+    expect(pubchem[0]?.name).toBe("aspirin");
 
     const byCid = await harness.client.callTool({
       name: "drugdata_search_ingredients",
       arguments: { type: "cid", query: "2244" },
     });
-    const cidGroups = (
-      byCid.structuredContent as {
-        groups: { source: string; items: unknown[] }[];
-      }
-    ).groups;
+    const cidRecords = ingredientEntitySearchResultSchema
+      .parse(byCid.structuredContent)
+      .entities.flatMap((entity) => entity.records);
     expect(
-      cidGroups.find((group) => group.source === "PubChem")?.items,
+      cidRecords.filter((record) => record.source.database === "PubChem"),
     ).toHaveLength(1);
 
     const looked = await harness.client.callTool({

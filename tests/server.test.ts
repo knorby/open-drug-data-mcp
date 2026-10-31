@@ -481,13 +481,13 @@ describe("server assembly", () => {
       groups: Group[];
     };
     const ingredientGroups = results[2]?.structuredContent as {
-      groups: Group[];
+      sources: Group[];
     };
     expect(
       productGroups.groups.some((group) => group.error?.includes("upstream")),
     ).toBe(true);
     expect(
-      ingredientGroups.groups.some((group) =>
+      ingredientGroups.sources.some((group) =>
         group.error?.includes("upstream"),
       ),
     ).toBe(true);
