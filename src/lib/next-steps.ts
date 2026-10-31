@@ -98,6 +98,32 @@ const PRODUCT_TARGETS: Partial<Record<DatabaseId, ProductTarget>> = {
   },
 };
 
+/** Direct by-source lookup for every original search record; never substitutes a resolver call. */
+export function recordNextStep(
+  ref: ProductRef | IngredientRef,
+  type: "product" | "ingredient",
+): NextStep | null {
+  const targets =
+    type === "product"
+      ? PRODUCT_TARGETS
+      : {
+          openFDA: { source: "openfda", tool: GET_INGREDIENT },
+          CosIng: { source: "cosing", tool: GET_INGREDIENT },
+          RxNorm: { source: "nlm", tool: GET_INGREDIENT },
+          DrugCentral: { source: "drugcentral", tool: GET_INGREDIENT },
+          INKEEDecoder: { source: "inkeedecoder", tool: GET_INGREDIENT },
+          PubChem: { source: "pubchem", tool: GET_INGREDIENT },
+        };
+  const target: { source: string; tool: string } | undefined =
+    targets[ref.source.database as keyof typeof targets];
+  if (target === undefined) return null;
+  return {
+    tool: target.tool,
+    input: { source: target.source, id: ref.source.id },
+    why: `Open the ${ref.source.database} record for ${ref.name}.`,
+  };
+}
+
 /** Ingredient lookup per database; a found UNII is handled before this table. */
 const INGREDIENT_TARGETS: Partial<Record<DatabaseId, IngredientTarget>> = {
   CosIng: {
