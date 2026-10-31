@@ -69,7 +69,7 @@ import type {
  * walks pages on its own.
  *
  * **Enrichment.** Every emitted ref costs two enrichment requests — the
- * structure row (primary CAS, InChIKey, PubChem CID, status, preferred name
+ * structure row (primary CAS, InChIKey, status, preferred name
  * when the hit came from the crosswalk) and its ATC assignments (the
  * `ATC: …` summary). The pair is bounded to one page of hits and never walks
  * pages. The full identity view (complete crosswalk, synonyms, Orange Book
@@ -177,12 +177,10 @@ function structureIdentifiers(
 ): IngredientIdentifiers {
   const cas = nonEmpty(structure?.cas_reg_no);
   const inchikey = nonEmpty(structure?.inchikey);
-  const cid = typeof structure?.cd_id === "number" ? [structure.cd_id] : [];
 
   return {
     ...(cas === undefined ? {} : { cas: [cas] }),
     ...(inchikey === undefined ? {} : { inchiKey: inchikey }),
-    ...(cid.length === 0 ? {} : { cid }),
   };
 }
 
@@ -489,6 +487,16 @@ function crosswalkValues(
     .filter((value): value is string => value !== undefined);
 }
 
+/** PubChem identity comes from the crosswalk, never DrugCentral's cd_id. */
+function pubChemCids(rows: readonly IdentifierRecord[]): number[] {
+  return unique(
+    crosswalkValues(rows, "PUBCHEM_CID")
+      .filter((value) => /^\d+$/.test(value))
+      .map(Number)
+      .filter((value) => Number.isSafeInteger(value) && value > 0),
+  );
+}
+
 /**
  * One vocabulary's own identifier, preferring a row that is not a parent or
  * salt link. DrugCentral marks parent/salt rows through `parent_match`; a
@@ -539,7 +547,7 @@ function profileIdentifiers(
     ].filter((value): value is string => value !== undefined),
   );
   const inchiKey = nonEmpty(structure.inchikey);
-  const cid = typeof structure.cd_id === "number" ? structure.cd_id : undefined;
+  const cid = pubChemCids(rows);
 
   return {
     structId,
@@ -547,7 +555,7 @@ function profileIdentifiers(
     ...(rxcui.length === 0 ? {} : { rxcui }),
     ...(cas.length === 0 ? {} : { cas }),
     ...(inchiKey === undefined ? {} : { inchiKey }),
-    ...(cid === undefined ? {} : { cid: [cid] }),
+    ...(cid.length === 0 ? {} : { cid }),
   };
 }
 
@@ -671,6 +679,7 @@ function structureProfileOf(
       : undefined;
   const smiles = nonEmpty(structure.smiles);
   const inchi = nonEmpty(structure.inchi);
+  const cid = pubChemCids(profile.identifiers)[0];
 
   return {
     structId: structure.id,
@@ -683,7 +692,7 @@ function structureProfileOf(
     ...(nonEmpty(structure.inchikey) === undefined
       ? {}
       : { inchiKey: nonEmpty(structure.inchikey) }),
-    ...(typeof structure.cd_id === "number" ? { cid: structure.cd_id } : {}),
+    ...(cid === undefined ? {} : { cid }),
     ...(formula === undefined ? {} : { formula }),
     ...(molecularWeight === undefined ? {} : { molecularWeight }),
     ...(smiles === undefined ? {} : { smiles }),
