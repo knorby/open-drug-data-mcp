@@ -202,6 +202,7 @@ function baseDeps(): IdentityDeps {
       byCas: async () => [],
     },
     nlm: {
+      conceptByRxcui: async () => null,
       rxcuisForUnii: async () => [],
       rxcuisForNdc: async () => [],
       splsForNdc: async () => [],
@@ -252,6 +253,40 @@ async function resolveIngredient(
   if (result.kind !== "ingredient") throw new Error("expected an ingredient");
   return result.graph;
 }
+
+describe("validated direct RxCUI", () => {
+  it("does not fabricate a link for an unknown concept", async () => {
+    const graph = await resolveIngredient({ rxcui: "999999999" });
+    expect(graph.links).toEqual([]);
+    expect(graph.identifiers.rxcui).toEqual(["999999999"]);
+  });
+
+  it("uses the actual fetched concept name", async () => {
+    const graph = await resolveIngredient(
+      { rxcui: "202433" },
+      {
+        nlm: {
+          conceptByRxcui: async () =>
+            ingredient("Tylenol", {
+              identifiers: { rxcui: ["202433"] },
+              source: {
+                database: "RxNorm",
+                id: "202433",
+                url: "https://mor.nlm.nih.gov/RxNav/search?searchBy=RXCUI&searchTerm=202433",
+                retrievedAt: ISO,
+              },
+            }),
+        },
+      },
+    );
+    expect(graph.subject.name).toBe("Tylenol");
+    expect(graph.links[0]).toMatchObject({
+      database: "RxNorm",
+      id: "202433",
+      confidence: "direct",
+    });
+  });
+});
 
 /** The loaded ingredient-group fixture, exposed as refs by the bridge. */
 const DSLD_GROUPS: IngredientRef[] = [
@@ -376,6 +411,18 @@ describe("identity chain (a): confident cross-source links", () => {
     const graph = await resolveIngredient(
       { rxcui: "1191" },
       {
+        nlm: {
+          conceptByRxcui: async () =>
+            ingredient("aspirin", {
+              identifiers: { rxcui: ["1191"] },
+              source: {
+                database: "RxNorm",
+                id: "1191",
+                url: "https://example.test/rxnorm/1191",
+                retrievedAt: ISO,
+              },
+            }),
+        },
         drugcentral: {
           structIdsForRxcui: async () => [74],
           getProfile: async () => profile([idRow("RXNORM", "1191")]),
@@ -397,7 +444,7 @@ describe("identity chain (a): confident cross-source links", () => {
   it("does not adopt an RxCUI as the subject name", async () => {
     const graph = await resolveIngredient({ rxcui: "1191" });
     expect(graph.subject).toEqual({});
-    expect(graph.links[0]?.database).toBe("RxNorm");
+    expect(graph.links).toEqual([]);
   });
 });
 

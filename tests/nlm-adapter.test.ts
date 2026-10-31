@@ -67,6 +67,22 @@ const ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
 const CONCEPT_83367 = "rxnorm-concept-83367.json";
 
 describe("NLM adapter capabilities", () => {
+  it("validates direct concepts with RxNorm and preserves missing/error distinctions", async () => {
+    const found = createNlmBridges(
+      clientFor(() => fixtureResponse(CONCEPT_83367)).client,
+    );
+    expect(await found.conceptByRxcui("83367")).toMatchObject({
+      name: "atorvastatin",
+      identifiers: { rxcui: ["83367"] },
+    });
+    expect(await found.conceptByRxcui("bad")).toBeNull();
+    const missing = createNlmBridges(clientFor(() => jsonResponse({})).client);
+    expect(await missing.conceptByRxcui("999999999")).toBeNull();
+    const broken = createNlmBridges(
+      clientFor(() => new Response(null, { status: 503 })).client,
+    );
+    await expect(broken.conceptByRxcui("83367")).rejects.toThrow(/RxNorm/);
+  });
   it("declares the briefed id, databases, search types, and category", () => {
     expect(nlmAdapter.id).toBe("nlm");
     expect(nlmAdapter.databases).toEqual(["RxNorm", "DailyMed"]);

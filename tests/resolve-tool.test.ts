@@ -218,6 +218,7 @@ function baseDeps(): IdentityDeps {
       byCas: async () => [],
     },
     nlm: {
+      conceptByRxcui: async () => null,
       rxcuisForUnii: async () => [],
       rxcuisForNdc: async () => [],
       splsForNdc: async () => [],

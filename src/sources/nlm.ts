@@ -1084,6 +1084,11 @@ export function createNlmAdapter(client?: NlmDrugsClient): SourceAdapter {
 
 /** The identifier bridges the identity chain consumes. */
 export interface NlmBridges {
+  /** A verified RxNorm concept, or null when absent or malformed. */
+  conceptByRxcui(
+    rxcui: string,
+    signal?: AbortSignal,
+  ): Promise<IngredientRef | null>;
   /** RxCUIs that RxNorm maps a UNII to. */
   rxcuisForUnii(unii: string, signal?: AbortSignal): Promise<string[]>;
   /** RxCUIs that RxNorm maps a canonical or dashed NDC to. */
@@ -1109,6 +1114,22 @@ export function createNlmBridges(client?: NlmDrugsClient): NlmBridges {
   const clients = () => client ?? getClients().nlm;
 
   return {
+    async conceptByRxcui(rxcui, signal) {
+      const id = rxcui.trim();
+      if (!RXCUI.test(id)) return null;
+      try {
+        const concept = await clients().rxNorm.getConcept(id, { signal });
+        return concept === undefined
+          ? null
+          : ingredientRefOf(
+              concept.rxcui,
+              concept.name,
+              new Date().toISOString(),
+            );
+      } catch (error) {
+        throw nlmFailure("The RxNorm concept lookup", "RxNorm", error);
+      }
+    },
     async rxcuisForUnii(unii, signal) {
       const trimmed = unii.trim().toUpperCase();
       if (!isUnii(trimmed)) return [];

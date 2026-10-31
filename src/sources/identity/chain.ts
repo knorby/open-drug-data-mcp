@@ -147,7 +147,11 @@ export interface IdentityDeps {
   cosing: CosingBridges;
   nlm: Pick<
     NlmBridges,
-    "rxcuisForUnii" | "rxcuisForNdc" | "splsForNdc" | "getSplXml"
+    | "conceptByRxcui"
+    | "rxcuisForUnii"
+    | "rxcuisForNdc"
+    | "splsForNdc"
+    | "getSplXml"
   >;
   drugcentral: Pick<
     DrugCentralBridges,
@@ -651,16 +655,15 @@ async function cosingStep(state: ChainState): Promise<StepOutcome> {
 async function nlmStep(state: ChainState): Promise<StepOutcome> {
   const direct = nonEmpty(state.input.rxcui);
   if (direct !== undefined) {
+    const ref = await state.deps.nlm.conceptByRxcui(direct, state.signal);
+    if (ref === null) return { status: "none" };
     return {
       status: "linked",
-      ref: rxnormRef(
-        state.subject.name ?? state.subject.inciName ?? direct,
-        direct,
-        state.retrievedAt,
-      ),
+      ref,
       matchedVia: "rxcui",
       confidence: "direct",
-      identifiers: { rxcui: [direct] },
+      identifiers: ref.identifiers,
+      name: ref.name,
     };
   }
 
