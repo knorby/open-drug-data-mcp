@@ -7,7 +7,6 @@
       "_id": "82118",
       "_score": 9.5,
       "_source": {
-        "id": 82118,
         "fullName": "Vitamin D3 1000 IU Softgels",
         "brandName": "Nature's Best",
         "upcSku": "0 33674 13941 7",
@@ -69,7 +68,6 @@
       "_id": "90001",
       "_score": 4.25,
       "_source": {
-        "id": 90001,
         "fullName": "Vitamin C 500 mg Tablets",
         "brandName": "Example Labs",
         "allIngredients": [
