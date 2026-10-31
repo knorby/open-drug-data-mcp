@@ -209,6 +209,7 @@ function baseDeps(): IdentityDeps {
       getSplXml: async () => "",
     },
     drugcentral: {
+      structIdsForCid: async () => [],
       structIdsForUnii: async () => [],
       structIdsForRxcui: async () => [],
       getProfile: async () => profile([]),
@@ -220,6 +221,7 @@ function baseDeps(): IdentityDeps {
     inkeedecoder: {
       getIngredient: async () => null,
     },
+    pubchem: { compoundByCid: async () => null },
   };
 }
 
@@ -237,6 +239,7 @@ function deps(overrides: DepOverrides = {}): IdentityDeps {
     drugcentral: { ...base.drugcentral, ...overrides.drugcentral },
     dsld: { ...base.dsld, ...overrides.dsld },
     inkeedecoder: { ...base.inkeedecoder, ...overrides.inkeedecoder },
+    pubchem: { ...base.pubchem, ...overrides.pubchem },
   };
 }
 
@@ -255,6 +258,109 @@ async function resolveIngredient(
 }
 
 describe("validated direct RxCUI", () => {
+  it("derives PubChem links from UNII crosswalks without conflating multiple CIDs", async () => {
+    const single = await resolveIngredient(
+      { unii: "53AXN4NNHX" },
+      {
+        drugcentral: {
+          structIdsForUnii: async () => [5267],
+          getProfile: async () =>
+            profile([idRow("PUBCHEM_CID", "56843331", 5267)]),
+        },
+        pubchem: {
+          compoundByCid: async () =>
+            ingredient("semaglutide", {
+              identifiers: { cid: [56843331] },
+              source: {
+                database: "PubChem",
+                id: "56843331",
+                url: "https://pubchem.ncbi.nlm.nih.gov/compound/56843331",
+                retrievedAt: ISO,
+              },
+            }),
+        },
+      },
+    );
+    expect(single.links).toContainEqual(
+      expect.objectContaining({ database: "PubChem", confidence: "derived" }),
+    );
+    const multiple = await resolveIngredient(
+      { unii: "53AXN4NNHX" },
+      {
+        drugcentral: {
+          structIdsForUnii: async () => [5267],
+          getProfile: async () =>
+            profile([
+              idRow("PUBCHEM_CID", "56843331", 5267),
+              idRow("PUBCHEM_CID", "2244", 5267),
+            ]),
+        },
+      },
+    );
+    expect(multiple.candidates).toContainEqual(
+      expect.objectContaining({
+        database: "PubChem",
+        reason: "multiple-cid-matches",
+      }),
+    );
+    expect(multiple.links.some((link) => link.database === "PubChem")).toBe(
+      false,
+    );
+  });
+  it("traverses a CID crosswalk through DrugCentral and PubChem", async () => {
+    const graph = await resolveIngredient(
+      { cid: "56843331" },
+      {
+        drugcentral: {
+          structIdsForCid: async () => [5267],
+          getProfile: async () =>
+            profile(
+              [
+                idRow("UNII", "53AXN4NNHX", 5267),
+                idRow("PUBCHEM_CID", "56843331", 5267),
+              ],
+              "semaglutide",
+            ),
+        },
+        nlm: { rxcuisForUnii: async () => ["1991302"] },
+        pubchem: {
+          compoundByCid: async () =>
+            ingredient("semaglutide", {
+              identifiers: {
+                cid: [56843331],
+                inchiKey: "DLSWIYLPEUIQAV-CCUURXOWSA-N",
+              },
+              source: {
+                database: "PubChem",
+                id: "56843331",
+                url: "https://pubchem.ncbi.nlm.nih.gov/compound/56843331",
+                retrievedAt: ISO,
+              },
+            }),
+        },
+      },
+    );
+    expect(graph.identifiers.cid).toEqual([56843331]);
+    expect(graph.identifiers.inchiKey).toBe("DLSWIYLPEUIQAV-CCUURXOWSA-N");
+    expect(graph.links).toContainEqual(
+      expect.objectContaining({
+        database: "DrugCentral",
+        id: "5267",
+        matchedVia: "cid",
+      }),
+    );
+    expect(graph.links).toContainEqual(
+      expect.objectContaining({
+        database: "PubChem",
+        id: "56843331",
+        confidence: "direct",
+      }),
+    );
+    expect(graph.links).toContainEqual(
+      expect.objectContaining({ database: "RxNorm", id: "1991302" }),
+    );
+  });
+
   it("does not fabricate a link for an unknown concept", async () => {
     const graph = await resolveIngredient({ rxcui: "999999999" });
     expect(graph.links).toEqual([]);

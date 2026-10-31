@@ -258,3 +258,39 @@ export function createPubChemAdapter(client?: NlmDrugsClient): SourceAdapter {
 
 /** The singleton PubChem adapter used by the search tools. */
 export const pubchemAdapter = createPubChemAdapter();
+
+/** Validated PubChem identity bridge used by the shared resolver. */
+export interface PubChemBridges {
+  compoundByCid(
+    cid: string,
+    signal?: AbortSignal,
+  ): Promise<IngredientRef | null>;
+}
+
+export function createPubChemBridges(client?: NlmDrugsClient): PubChemBridges {
+  return {
+    async compoundByCid(value, signal) {
+      if (!isCid(value)) return null;
+      const cid = Number(value.trim());
+      try {
+        const record = await compoundRecord(
+          client ?? getClients().nlm,
+          cid,
+          signal,
+        );
+        return cidRef(
+          cid,
+          record.name,
+          new Date().toISOString(),
+          undefined,
+          record.identifiers.inchiKey,
+        );
+      } catch (error) {
+        if (statusOf(error) === 404) return null;
+        throw pubchemFailure("The PubChem identity lookup", error);
+      }
+    },
+  };
+}
+
+export const pubChemBridges = createPubChemBridges();

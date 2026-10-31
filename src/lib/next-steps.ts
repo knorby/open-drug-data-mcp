@@ -261,6 +261,14 @@ export function ingredientDetailNextSteps(
   }
 
   const structId = identifiers.structId;
+  const cid = identifiers.cid?.[0];
+  if (cid !== undefined) {
+    add({
+      tool: RESOLVE_IDENTIFIERS,
+      input: { cid: String(cid) },
+      why: `Resolve PubChem CID ${cid} across the other databases.`,
+    });
+  }
   if (structId !== undefined && source.database !== "DrugCentral") {
     add({
       tool: GET_INGREDIENT,

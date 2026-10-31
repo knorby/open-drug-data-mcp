@@ -638,6 +638,18 @@ describe("DrugCentral bridges", () => {
     await expect(bridges.structIdsForRxcui("12a")).resolves.toEqual([]);
   });
 
+  it("resolves only exact PUBCHEM_CID crosswalk rows", async () => {
+    const rows = [
+      { id_type: "PUBCHEM_CID", identifier: "2244", struct_id: 74 },
+      { id_type: "PUBCHEM_CID", identifier: "22440", struct_id: 75 },
+      { id_type: "CAS", identifier: "2244", struct_id: 76 },
+    ].map((row, id) => ({ ...row, id, parent_match: null }));
+    const { client } = clientFor({ "/identifier/identifier/2244": rows });
+    const bridge = createDrugCentralBridges(client);
+    expect(await bridge.structIdsForCid("2244")).toEqual([74]);
+    expect(await bridge.structIdsForCid("-1")).toEqual([]);
+  });
+
   it("assembles a structure profile", async () => {
     const { client } = clientFor({
       "/structures/id/74": "structures-id-74.json",

@@ -225,6 +225,7 @@ function baseDeps(): IdentityDeps {
       getSplXml: async () => "",
     },
     drugcentral: {
+      structIdsForCid: async () => [],
       structIdsForUnii: async () => [],
       structIdsForRxcui: async () => [],
       getProfile: async () => profile([]),
@@ -236,6 +237,7 @@ function baseDeps(): IdentityDeps {
     inkeedecoder: {
       getIngredient: async () => null,
     },
+    pubchem: { compoundByCid: async () => null },
   };
 }
 
@@ -253,6 +255,7 @@ function deps(overrides: DepOverrides = {}): IdentityDeps {
     drugcentral: { ...base.drugcentral, ...overrides.drugcentral },
     dsld: { ...base.dsld, ...overrides.dsld },
     inkeedecoder: { ...base.inkeedecoder, ...overrides.inkeedecoder },
+    pubchem: { ...base.pubchem, ...overrides.pubchem },
   };
 }
 
@@ -394,6 +397,10 @@ describe("resolve_identifiers input validation", () => {
   });
 
   it.each([
+    ["cid", { cid: "0" }, "positive safe integer PubChem CID"],
+    ["cid", { cid: "1.2" }, "positive safe integer PubChem CID"],
+    ["cid", { cid: "1e3" }, "positive safe integer PubChem CID"],
+    ["cid", { cid: "9007199254740992" }, "positive safe integer PubChem CID"],
     ["unii", { unii: "too-short" }, "10 letters or digits"],
     ["ndc", { ndc: "not-an-ndc" }, "10- or 11-digit NDC"],
     ["ndc", { ndc: "1234-567" }, "10- or 11-digit NDC"],

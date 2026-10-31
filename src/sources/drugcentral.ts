@@ -920,6 +920,8 @@ export function createDrugCentralAdapter(
 
 /** The identifier and profile bridges the identity chain consumes. */
 export interface DrugCentralBridges {
+  /** Structures with an exact PUBCHEM_CID crosswalk row. */
+  structIdsForCid(cid: string): Promise<number[]>;
   /** Structures DrugCentral maps a UNII to. */
   structIdsForUnii(unii: string): Promise<number[]>;
   /** Structures DrugCentral maps an RxCUI to. */
@@ -973,6 +975,33 @@ export function createDrugCentralBridges(
   const clients = () => client ?? getClients().drugcentral;
 
   return {
+    async structIdsForCid(cid) {
+      const value = cid.trim();
+      if (!/^[1-9]\d*$/.test(value) || !Number.isSafeInteger(Number(value)))
+        return [];
+      const result = await guarded(
+        "The DrugCentral identifier lookup",
+        async () => {
+          try {
+            return await clients().identifiers.byIdentifier(value);
+          } catch (error) {
+            if (error instanceof DrugCentralNotFoundError) return [];
+            throw error;
+          }
+        },
+      );
+      return [
+        ...new Set(
+          result
+            .filter(
+              (row) =>
+                row.id_type === "PUBCHEM_CID" &&
+                row.identifier.trim() === value,
+            )
+            .map((row) => row.struct_id),
+        ),
+      ];
+    },
     async structIdsForUnii(unii) {
       const normalized = unii.trim().toUpperCase();
       if (!isUnii(normalized)) return [];

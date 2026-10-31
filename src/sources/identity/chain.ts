@@ -1,3 +1,4 @@
+import type { IdentifierRecord } from "@knorby/drugcentral-client";
 import type { Ingredient as ClientIngredient } from "@knorby/inkeedecoder-client";
 import { throwIfAborted } from "../../lib/abort.js";
 import { SourceInputError, toUserMessage } from "../../lib/errors.js";
@@ -24,6 +25,7 @@ import {
   openfdaBridges,
   splIngredientRefs,
 } from "../openfda.js";
+import { type PubChemBridges, pubChemBridges } from "../pubchem.js";
 import { dailyMedLabelUrl, parseSplIngredients } from "./spl-ingredients.js";
 import { effectiveUnii } from "./unii.js";
 
@@ -50,6 +52,7 @@ import { effectiveUnii } from "./unii.js";
 
 /** Exactly one identifier family should be present; the tool enforces that. */
 export interface ResolveInput {
+  cid?: string;
   unii?: string;
   ndc?: string;
   rxcui?: string;
@@ -143,6 +146,7 @@ export interface ProductRecord {
 
 /** The identifier and search bridges the chain consumes. */
 export interface IdentityDeps {
+  pubchem: PubChemBridges;
   openfda: OpenFdaBridges;
   cosing: CosingBridges;
   nlm: Pick<
@@ -155,7 +159,7 @@ export interface IdentityDeps {
   >;
   drugcentral: Pick<
     DrugCentralBridges,
-    "structIdsForUnii" | "structIdsForRxcui" | "getProfile"
+    "structIdsForCid" | "structIdsForUnii" | "structIdsForRxcui" | "getProfile"
   >;
   dsld: DsldBridges;
   inkeedecoder: {
@@ -168,7 +172,12 @@ export interface IdentityDeps {
 }
 
 /** The two-pass chain's source steps. */
-export type ChainStepId = "openfda" | "cosing" | "nlm" | "drugcentral";
+export type ChainStepId =
+  | "openfda"
+  | "cosing"
+  | "nlm"
+  | "drugcentral"
+  | "pubchem";
 
 /** Candidate options kept per call unless the caller asks for fewer. */
 const DEFAULT_MAX_CANDIDATES = 10;
@@ -234,7 +243,7 @@ function chainUnii(state: ChainState): string | undefined {
   return effectiveUnii({
     openfda:
       state.openfdaUnii !== undefined ? { unii: state.openfdaUnii } : undefined,
-    unii: state.inputUnii,
+    unii: state.inputUnii ?? firstUnii(state.identifiers),
   });
 }
 
@@ -737,6 +746,19 @@ function profileIdentifiers(
   }
   return {
     structId,
+    ...(profile.structure?.inchikey
+      ? { inchiKey: profile.structure.inchikey }
+      : {}),
+    cid: sortedNumbers(
+      (profile.identifiers as IdentifierRecord[])
+        .filter(
+          (row) =>
+            row.id_type === "PUBCHEM_CID" &&
+            /^\d+$/.test(row.identifier.trim()),
+        )
+        .map((row) => Number(row.identifier))
+        .filter((cid) => Number.isSafeInteger(cid) && cid > 0),
+    ),
     ...(unii !== undefined ? { unii } : {}),
     ...(rxcui.length > 0 ? { rxcui } : {}),
     ...(cas.length > 0 ? { cas } : {}),
@@ -747,12 +769,13 @@ function profileIdentifiers(
 async function drugcentralStep(state: ChainState): Promise<StepOutcome> {
   const unii = chainUnii(state);
   const rxcui = nonEmpty(state.input.rxcui) ?? state.nlmRxcui;
-  if (unii === undefined && rxcui === undefined) {
+  const cid = nonEmpty(state.input.cid);
+  if (unii === undefined && rxcui === undefined && cid === undefined) {
     return { status: "deferred" };
   }
 
   let structIds: number[] = [];
-  let matchedVia: "unii" | "rxcui" = "unii";
+  let matchedVia: "unii" | "rxcui" | "cid" = "unii";
   if (unii !== undefined) {
     throwIfAborted(state.signal);
     structIds = await state.deps.drugcentral.structIdsForUnii(unii);
@@ -761,6 +784,11 @@ async function drugcentralStep(state: ChainState): Promise<StepOutcome> {
     throwIfAborted(state.signal);
     matchedVia = "rxcui";
     structIds = await state.deps.drugcentral.structIdsForRxcui(rxcui);
+  }
+  if (structIds.length === 0 && cid !== undefined) {
+    throwIfAborted(state.signal);
+    matchedVia = "cid";
+    structIds = await state.deps.drugcentral.structIdsForCid(cid);
   }
   structIds = sortedNumbers(structIds);
   if (structIds.length === 0) return { status: "none" };
@@ -810,11 +838,46 @@ async function drugcentralStep(state: ChainState): Promise<StepOutcome> {
       (matchedVia === "unii" &&
         state.inputUnii !== undefined &&
         state.inputUnii === unii) ||
-      (matchedVia === "rxcui" && nonEmpty(state.input.rxcui) !== undefined)
+      (matchedVia === "rxcui" && nonEmpty(state.input.rxcui) !== undefined) ||
+      matchedVia === "cid"
         ? "direct"
         : "derived",
     identifiers,
     ...(name !== undefined ? { name } : {}),
+  };
+}
+
+async function pubchemStep(state: ChainState): Promise<StepOutcome> {
+  const cids = sortedNumbers(
+    state.identifiers.flatMap((patch) => patch.cid ?? []),
+  );
+  if (cids.length === 0) return { status: "deferred" };
+  if (cids.length > 1)
+    return {
+      status: "candidates",
+      database: "PubChem",
+      matchedVia: "cid",
+      reason: "multiple-cid-matches",
+      options: cids.map((cid) => ({
+        name: `PubChem CID ${cid}`,
+        identifiers: { cid: [cid] },
+        source: {
+          database: "PubChem",
+          id: String(cid),
+          url: `https://pubchem.ncbi.nlm.nih.gov/compound/${cid}`,
+          retrievedAt: state.retrievedAt,
+        },
+      })),
+    };
+  const cid = cids[0];
+  const ref = await state.deps.pubchem.compoundByCid(String(cid), state.signal);
+  if (ref === null) return { status: "none" };
+  return {
+    status: "linked",
+    ref,
+    matchedVia: "cid",
+    confidence: state.input.cid !== undefined ? "direct" : "derived",
+    identifiers: ref.identifiers,
   };
 }
 
@@ -853,7 +916,14 @@ const STEPS: readonly Step[] = [
     inputs: (state) =>
       `dc:${chainUnii(state) ?? ""}:${
         nonEmpty(state.input.rxcui) ?? state.nlmRxcui ?? ""
-      }`,
+      }:${state.input.cid ?? ""}`,
+  },
+  {
+    id: "pubchem",
+    database: "PubChem",
+    run: pubchemStep,
+    inputs: (state) =>
+      JSON.stringify(state.identifiers.flatMap((patch) => patch.cid ?? [])),
   },
 ];
 
@@ -886,7 +956,7 @@ async function runChain(state: ChainState, cap: number): Promise<void> {
 
   for (let pass = 1; pass <= 2; pass += 1) {
     for (const step of STEPS) {
-      if (!enabled(state, step.id)) continue;
+      if (!enabled(state, step.id === "pubchem" ? "nlm" : step.id)) continue;
       throwIfAborted(state.signal);
       if (pass === 1) {
         await attempt(step);
@@ -913,11 +983,15 @@ function combineIdentifiers(
   uniiOverride: string | undefined,
 ): IngredientIdentifiers {
   let structId: number | undefined;
+  let inchiKey: string | undefined;
+  const cid: number[] = [];
   const cas: string[] = [];
   const ec: string[] = [];
   const rxcui: string[] = [];
 
   for (const patch of patches) {
+    inchiKey ??= patch.inchiKey;
+    cid.push(...(patch.cid ?? []));
     if (structId === undefined && patch.structId !== undefined) {
       structId = patch.structId;
     }
@@ -936,6 +1010,8 @@ function combineIdentifiers(
     ...(uniqueEc.length > 0 ? { ec: uniqueEc } : {}),
     ...(uniqueRxcui.length > 0 ? { rxcui: uniqueRxcui } : {}),
     ...(structId !== undefined ? { structId } : {}),
+    ...(inchiKey === undefined ? {} : { inchiKey }),
+    ...(cid.length === 0 ? {} : { cid: sortedNumbers(cid) }),
   };
 }
 
@@ -1108,6 +1184,7 @@ async function resolveIngredientGraph(
   };
 
   const inputIdentifiers: IngredientIdentifiers = {
+    ...(input.cid === undefined ? {} : { cid: [Number(input.cid)] }),
     ...(inputUnii !== undefined ? { unii: inputUnii } : {}),
     ...(nonEmpty(input.rxcui) !== undefined
       ? { rxcui: [nonEmpty(input.rxcui) as string] }
@@ -1581,6 +1658,7 @@ export function createInkeedecoderIngredientDep(
 
 /** The process-wide default bridges, shared by both entry points. */
 export const defaultIdentityDeps: IdentityDeps = {
+  pubchem: pubChemBridges,
   openfda: openfdaBridges,
   cosing: cosingBridges,
   nlm: nlmBridges,
