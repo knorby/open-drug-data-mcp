@@ -266,12 +266,11 @@ async function fanOut<TAdapter extends SourceAdapter, TGroup extends AnyGroup>(
   throwIfAborted(signal);
   const settled = await Promise.allSettled(
     adapters.map(async (adapter) => {
+      let groups: TGroup[];
       try {
-        const groups = await request(adapter);
-        onGroups?.(groups);
-        return groups;
+        groups = await request(adapter);
       } catch (error) {
-        const groups = adapter.databases.map((source) => {
+        groups = adapter.databases.map((source) => {
           const group: AnyGroup = {
             source,
             items: [],
@@ -281,9 +280,9 @@ async function fanOut<TAdapter extends SourceAdapter, TGroup extends AnyGroup>(
           };
           return group as TGroup;
         });
-        onGroups?.(groups);
-        return groups;
       }
+      onGroups?.(groups);
+      return groups;
     }),
   );
   // A cancelled request is not an upstream failure: surface it as a
@@ -291,26 +290,9 @@ async function fanOut<TAdapter extends SourceAdapter, TGroup extends AnyGroup>(
   throwIfAborted(signal);
 
   const groups: TGroup[] = [];
-  settled.forEach((outcome, index) => {
-    // allSettled preserves input order, so the index identifies the adapter.
-    const adapter = adapters[index] as TAdapter;
-    if (outcome.status === "fulfilled") {
-      groups.push(...outcome.value);
-      return;
-    }
-
-    for (const source of adapter.databases) {
-      // A failure group is valid for either search family: its item list is
-      // empty, so only the shared group fields are present.
-      const group: AnyGroup = {
-        source,
-        items: [],
-        page,
-        hasMore: false,
-        error: describeError(outcome.reason, source),
-      };
-      groups.push(group as TGroup);
-    }
+  settled.forEach((outcome) => {
+    if (outcome.status === "rejected") throw outcome.reason;
+    groups.push(...outcome.value);
   });
   return groups;
 }

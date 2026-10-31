@@ -176,7 +176,7 @@ function cluster<R extends Ref>(
   const parents = refs.map((_, i) => i);
   const root = (i: number): number => {
     while (parents[i] !== i) {
-      i = parents[i] ?? i;
+      i = parents[i] as number;
     }
     return i;
   };

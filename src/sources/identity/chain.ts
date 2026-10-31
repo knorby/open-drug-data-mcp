@@ -829,14 +829,17 @@ async function drugcentralStep(state: ChainState): Promise<StepOutcome> {
 
   return {
     status: "linked",
-    ref: drugCentralRef(
-      structId,
-      name ??
-        state.subject.name ??
-        state.subject.inciName ??
-        `DrugCentral ${structId}`,
-      state.retrievedAt,
-    ),
+    ref: {
+      ...drugCentralRef(
+        structId,
+        name ??
+          state.subject.name ??
+          state.subject.inciName ??
+          `DrugCentral ${structId}`,
+        state.retrievedAt,
+      ),
+      identifiers,
+    },
     matchedVia,
     confidence:
       (matchedVia === "unii" &&

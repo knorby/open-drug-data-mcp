@@ -258,6 +258,27 @@ async function resolveIngredient(
 }
 
 describe("validated direct RxCUI", () => {
+  it("retains the DrugCentral InChIKey when PubChem has no compound", async () => {
+    const result = profile([idRow("PUBCHEM_CID", "2244")]);
+    if (result.data.structure)
+      result.data.structure.inchikey = "BSYNRYMUTXBXSQ-UHFFFAOYSA-N";
+    const graph = await resolveIngredient(
+      { unii: "R16CO5Y76E" },
+      {
+        drugcentral: {
+          structIdsForUnii: async () => [74],
+          getProfile: async () => result,
+        },
+        pubchem: { compoundByCid: async () => null },
+      },
+    );
+    expect(graph.identifiers.inchiKey).toBe("BSYNRYMUTXBXSQ-UHFFFAOYSA-N");
+    expect(
+      graph.records?.find((record) => record.source.database === "DrugCentral")
+        ?.identifiers.inchiKey,
+    ).toBe("BSYNRYMUTXBXSQ-UHFFFAOYSA-N");
+    expect(graph.links.some((link) => link.database === "PubChem")).toBe(false);
+  });
   it("derives PubChem links from UNII crosswalks without conflating multiple CIDs", async () => {
     const single = await resolveIngredient(
       { unii: "53AXN4NNHX" },

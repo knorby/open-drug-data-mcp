@@ -650,6 +650,15 @@ describe("DrugCentral bridges", () => {
     expect(await bridge.structIdsForCid("-1")).toEqual([]);
   });
 
+  it("treats a missing CID crosswalk as an ordinary miss", async () => {
+    const { client } = clientFor({
+      "/identifier/identifier/999999999": notFound,
+    });
+    expect(
+      await createDrugCentralBridges(client).structIdsForCid("999999999"),
+    ).toEqual([]);
+  });
+
   it("assembles a structure profile", async () => {
     const { client } = clientFor({
       "/structures/id/74": "structures-id-74.json",

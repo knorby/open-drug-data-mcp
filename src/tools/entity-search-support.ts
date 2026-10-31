@@ -89,6 +89,9 @@ export function renderEntitySearch<R extends IngredientRef | ProductRef>(
         ...entity.candidates.map(
           (candidate) => `Unconfirmed candidates: ${JSON.stringify(candidate)}`,
         ),
+        ...(entity.errors ?? []).map(
+          (error) => `⚠ ${error.database}: ${error.message}`,
+        ),
         nextStepsText(entity.nextSteps),
       ]
         .filter((value) => value !== undefined)

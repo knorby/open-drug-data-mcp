@@ -256,6 +256,17 @@ export const resolutionStateSchema = z.enum([
   "unavailable",
 ]);
 export type ResolutionState = z.infer<typeof resolutionStateSchema>;
+/** One non-fatal source failure recorded during identity resolution. */
+export const resolutionErrorSchema = z.object({
+  database: z
+    .union([databaseIdSchema, z.literal("config")])
+    .describe(
+      "Upstream database that failed, or 'config' when the server environment is the problem.",
+    ),
+  message: z
+    .string()
+    .describe("Actionable, database-only explanation of the failure."),
+});
 const entityFields = {
   name: z.string(),
   links: z.array(sourceLinkSchema),
@@ -268,6 +279,7 @@ const entityFields = {
   ),
   conflicts: z.array(identifierConflictSchema),
   candidates: z.array(candidateSetSchema),
+  errors: z.array(resolutionErrorSchema).optional(),
   resolution: resolutionStateSchema,
   nextSteps: z.array(nextStepSchema),
 };
@@ -319,18 +331,6 @@ export const productEntitySearchResultSchema = z.object({
   ...searchResultFields,
   category: productCategorySchema.optional(),
   entities: z.array(productSearchEntitySchema),
-});
-
-/** One non-fatal source failure recorded during identity resolution. */
-export const resolutionErrorSchema = z.object({
-  database: z
-    .union([databaseIdSchema, z.literal("config")])
-    .describe(
-      "Upstream database that failed, or 'config' when the server environment is the problem.",
-    ),
-  message: z
-    .string()
-    .describe("Actionable, database-only explanation of the failure."),
 });
 
 /** One non-fatal source failure recorded during identity resolution. */

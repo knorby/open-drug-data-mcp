@@ -44,6 +44,119 @@ function registry(count = 6) {
 }
 afterEach(() => vi.useRealTimers());
 describe("search coordinator", () => {
+  it("keeps database order when enrichment combines earlier clusters", async () => {
+    const dc = {
+      ...ref("74"),
+      source: { ...ref("74").source, database: "DrugCentral" as const },
+    };
+    const fda = ref("0");
+    const pc = {
+      ...ref("2244"),
+      identifiers: fda.identifiers,
+      source: { ...ref("2244").source, database: "PubChem" as const },
+    };
+    const reg = createRegistry(
+      [
+        {
+          id: "openfda",
+          databases: ["openFDA", "DrugCentral", "PubChem"],
+          ingredientSearchTypes: ["name"],
+          productSearchTypes: [],
+          productCategories: [],
+          searchIngredients: async () =>
+            [fda, dc, pc].map((record) => ({
+              source: record.source.database,
+              items: [record],
+              page: 1,
+              hasMore: false,
+            })),
+        },
+      ],
+      [],
+    );
+    const result = await createSearchCoordinator({
+      registry: reg,
+      timeoutMs: 45000,
+      resolver: {
+        resolve: async () => ({
+          kind: "ingredient",
+          graph: {
+            subject: {},
+            identifiers: {},
+            candidates: [],
+            links: [
+              { ...dc.source, matchedVia: "unii", confidence: "derived" },
+            ],
+          },
+        }),
+      },
+    }).searchIngredients({ type: "name", query: "test", page: 1 });
+    expect(
+      result.entities[0]?.records.map((record) => record.source.database),
+    ).toEqual(["openFDA", "DrugCentral", "PubChem"]);
+  });
+  it("retains enrichment evidence and source failures on the entity", async () => {
+    const result = await createSearchCoordinator({
+      registry: registry(1),
+      timeoutMs: 45000,
+      resolver: {
+        resolve: async () => ({
+          kind: "ingredient",
+          graph: {
+            subject: {},
+            identifiers: { cid: [2244] },
+            candidates: [],
+            links: [
+              {
+                database: "PubChem",
+                id: "2244",
+                url: "https://pubchem.ncbi.nlm.nih.gov/compound/2244",
+                retrievedAt: "2026-10-31T00:00:00.000Z",
+                matchedVia: "cid",
+                confidence: "derived",
+              },
+            ],
+            errors: [
+              {
+                database: "CosIng",
+                message: "CosIng is temporarily unavailable.",
+              },
+            ],
+          },
+        }),
+      },
+    }).searchIngredients({ type: "name", query: "test", page: 1 });
+    expect(result.entities[0]).toHaveProperty("errors", [
+      { database: "CosIng", message: "CosIng is temporarily unavailable." },
+    ]);
+    expect(result.entities[0]?.evidence).toContainEqual({
+      kind: "PubChem:id",
+      value: "2244",
+      confidence: "derived",
+    });
+    expect(result.partial).toBe(true);
+  });
+  it("reports the resolution cap even when enrichment merges every initial entity", async () => {
+    const target = ref("5").source;
+    const result = await createSearchCoordinator({
+      registry: registry(),
+      timeoutMs: 45000,
+      resolver: {
+        resolve: async () => ({
+          kind: "ingredient",
+          graph: {
+            subject: {},
+            identifiers: {},
+            candidates: [],
+            links: [{ ...target, matchedVia: "unii", confidence: "derived" }],
+          },
+        }),
+      },
+    }).searchIngredients({ type: "name", query: "test", page: 1 });
+    expect(result.entities).toHaveLength(1);
+    expect(result.coverage.resolutionCapped).toBe(true);
+    expect(result.partial).toBe(true);
+  });
   it("recomputes the preferred action from enriched identifiers", async () => {
     const reg = createRegistry(
       [

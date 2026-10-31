@@ -67,6 +67,15 @@ const ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
 const CONCEPT_83367 = "rxnorm-concept-83367.json";
 
 describe("NLM adapter capabilities", () => {
+  it("surfaces an internal subgroup observer failure", async () => {
+    const adapter = createNlmAdapter(clientFor(() => jsonResponse({})).client);
+    const error = new Error("observer failed");
+    await expect(
+      adapter.searchProducts?.("name", "aspirin", 1, undefined, () => {
+        throw error;
+      }),
+    ).rejects.toBe(error);
+  });
   it("validates direct concepts with RxNorm and preserves missing/error distinctions", async () => {
     const found = createNlmBridges(
       clientFor(() => fixtureResponse(CONCEPT_83367)).client,

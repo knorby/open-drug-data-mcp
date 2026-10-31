@@ -11,6 +11,7 @@ import type {
   IdentityGraph,
   IdentityResolver,
   ProductResolution,
+  ResolveInput,
 } from "../identity/chain.js";
 import type {
   IngredientGroup,
@@ -61,7 +62,7 @@ export function createSearchCoordinator(deps: {
       : abort.signal;
     let active = true,
       expired = false;
-    let expire: () => void = () => {};
+    let expire!: () => void;
     const deadline = new Promise<"timeout">((resolve) => {
       expire = () => {
         expired = true;
@@ -126,13 +127,15 @@ export function createSearchCoordinator(deps: {
               ? ingredientResolveInput(entity as IngredientSearchEntity)
               : productResolveInput(entity as ProductSearchEntity),
         }))
-        .filter((item) => item.input !== undefined);
+        .filter(
+          (item): item is { index: number; input: ResolveInput } =>
+            item.input !== undefined,
+        );
       const eligible = available.slice(0, MAX_SEARCH_RESOLUTIONS);
       let cursor = 0;
       const worker = async () => {
         while (active && cursor < eligible.length) {
-          const item = eligible[cursor++];
-          if (!item?.input) continue;
+          const item = eligible[cursor++] as (typeof eligible)[number];
           attempted.add(item.index);
           try {
             const result = await deps.resolver.resolve(
@@ -171,7 +174,7 @@ export function createSearchCoordinator(deps: {
       active = false;
       const parents = initial.map((_, index) => index);
       const root = (index: number): number => {
-        while (parents[index] !== index) index = parents[index] ?? index;
+        while (parents[index] !== index) index = parents[index] as number;
         return index;
       };
       for (const [index, outcome] of outcomes) {
@@ -206,12 +209,16 @@ export function createSearchCoordinator(deps: {
         buckets.set(r, [...(buckets.get(r) ?? []), index]);
       });
       for (const [first, indices] of buckets) {
-        const entity = initial[first];
-        if (!entity) continue;
-        const members = indices.flatMap((i) =>
-          initial[i] ? [initial[i]] : [],
-        );
-        const records = members.flatMap((member) => member.records);
+        const entity = initial[first] as SearchEntity<R>;
+        const members = indices.map((i) => initial[i] as SearchEntity<R>);
+        const records = members
+          .flatMap((member) => member.records)
+          .sort(
+            (a, b) =>
+              order.indexOf(a.source.database) -
+                order.indexOf(b.source.database) ||
+              a.source.id.localeCompare(b.source.id),
+          );
         const resolved = indices.flatMap((i) =>
           outcomes.has(i)
             ? [outcomes.get(i) as IdentityGraph | ProductResolution]
@@ -228,6 +235,7 @@ export function createSearchCoordinator(deps: {
           "kind" in value ? [] : (value.records ?? []),
         );
         const identifiers = mergedIdentifiers([...records, ...enriched]);
+        const errors = resolved.flatMap((value) => value.errors ?? []);
         if (kind === "ingredient") {
           const patches = resolved.flatMap((value) =>
             "kind" in value ? [] : [{ identifiers: value.identifiers }],
@@ -259,7 +267,19 @@ export function createSearchCoordinator(deps: {
           identifiers,
           links,
           candidates: resolved.flatMap((value) => value.candidates),
-          evidence: members.flatMap((member) => member.evidence),
+          ...(errors.length ? { errors } : {}),
+          evidence: [
+            ...new Map(
+              [
+                ...members.flatMap((member) => member.evidence),
+                ...links.map((link) => ({
+                  kind: `${link.database}:id`,
+                  value: link.id,
+                  confidence: link.confidence,
+                })),
+              ].map((value) => [JSON.stringify(value), value]),
+            ).values(),
+          ],
           conflicts: conflictsOf([
             ...records,
             ...enriched,
@@ -323,6 +343,7 @@ export function createSearchCoordinator(deps: {
           resolutionCapped: available.length > MAX_SEARCH_RESOLUTIONS,
         },
         partial:
+          available.length > MAX_SEARCH_RESOLUTIONS ||
           statuses.some((source) => source.status !== "ok") ||
           entities.some(
             (entity) =>

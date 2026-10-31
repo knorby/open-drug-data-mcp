@@ -154,7 +154,8 @@ too.
 - Read `entities`, not the old `groups` field. Each entity contains original
   `records`, combined `identifiers`, resolver-confirmed `links`, grouping
   `evidence`, source-attributed `conflicts`, unconfirmed `candidates`,
-  `resolution`, and executable `nextSteps` for every source record. Names
+  optional source-attributed resolution `errors`, `resolution`, and executable
+  `nextSteps` for every source record. Names
   alone never merge records. Ingredients can join by UNII, RxCUI, dashed CAS,
   CID, or InChIKey; products by full package NDC, SPL set id, or UPC — not
   their ingredient RxCUI or application number.
@@ -165,7 +166,7 @@ too.
   the cap applied. `partial` signals failed/timed-out sources or incomplete
   enrichment. Zero matches with `hasMore: true` is still a successful page.
 - For an existing source+id, call `drugdata_get_product` or
-  `drugdata_get_ingredient` directly. Search does not fetch full profiles;
+  `drugdata_get_ingredient` directly. Search does not return full profiles;
   open only those needed for the question, with costly flags off by default.
   PubChem uses `get_ingredient(source: "pubchem", id: "56843331")`; resolve a
   CID with `resolve_identifiers(cid: "56843331")`.

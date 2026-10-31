@@ -886,32 +886,26 @@ async function settleProductGroups(
 ): Promise<ProductGroup[]> {
   const settled = await Promise.allSettled(
     [rxnorm, dailymed].map(async (promise, index) => {
+      let group: ProductGroup;
       try {
-        const group = await promise;
-        onGroups?.([group]);
-        return group;
+        group = await promise;
       } catch (error) {
-        const group = failedProductGroup(
+        group = failedProductGroup(
           index === 0 ? "RxNorm" : "DailyMed",
           page,
           error,
         );
-        onGroups?.([group]);
-        return group;
       }
+      onGroups?.([group]);
+      return group;
     }),
   );
   throwIfAborted(signal);
 
-  return settled.map((outcome, index) =>
-    outcome.status === "fulfilled"
-      ? outcome.value
-      : failedProductGroup(
-          index === 0 ? "RxNorm" : "DailyMed",
-          page,
-          outcome.reason,
-        ),
-  );
+  return settled.map((outcome) => {
+    if (outcome.status === "rejected") throw outcome.reason;
+    return outcome.value;
+  });
 }
 
 /** A product group that carries one database's failure. @internal Exported for tests. */
