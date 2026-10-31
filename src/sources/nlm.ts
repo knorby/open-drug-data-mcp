@@ -882,19 +882,36 @@ async function settleProductGroups(
   dailymed: Promise<ProductGroup>,
   page: number,
   signal: AbortSignal | undefined,
+  onGroups?: (groups: readonly ProductGroup[]) => void,
 ): Promise<ProductGroup[]> {
-  const settled = await Promise.allSettled([rxnorm, dailymed]);
+  const settled = await Promise.allSettled(
+    [rxnorm, dailymed].map(async (promise, index) => {
+      try {
+        const group = await promise;
+        onGroups?.([group]);
+        return group;
+      } catch (error) {
+        const group = failedProductGroup(
+          index === 0 ? "RxNorm" : "DailyMed",
+          page,
+          error,
+        );
+        onGroups?.([group]);
+        return group;
+      }
+    }),
+  );
   throwIfAborted(signal);
 
-  const [rx, dm] = settled;
-  return [
-    rx.status === "fulfilled"
-      ? rx.value
-      : failedProductGroup("RxNorm", page, rx.reason),
-    dm.status === "fulfilled"
-      ? dm.value
-      : failedProductGroup("DailyMed", page, dm.reason),
-  ];
+  return settled.map((outcome, index) =>
+    outcome.status === "fulfilled"
+      ? outcome.value
+      : failedProductGroup(
+          index === 0 ? "RxNorm" : "DailyMed",
+          page,
+          outcome.reason,
+        ),
+  );
 }
 
 /** A product group that carries one database's failure. @internal Exported for tests. */
@@ -931,6 +948,7 @@ export function createNlmAdapter(client?: NlmDrugsClient): SourceAdapter {
   return {
     id: "nlm",
     databases: ["RxNorm", "DailyMed"],
+    ingredientDatabases: ["RxNorm"],
     productSearchTypes,
     ingredientSearchTypes,
     productCategories: ["medication"],
@@ -940,6 +958,7 @@ export function createNlmAdapter(client?: NlmDrugsClient): SourceAdapter {
       query: string,
       page: number,
       signal?: AbortSignal,
+      onGroups?: (groups: readonly ProductGroup[]) => void,
     ): Promise<ProductGroup[]> {
       const trimmed = query.trim();
       const retrievedAt = new Date().toISOString();
@@ -967,6 +986,7 @@ export function createNlmAdapter(client?: NlmDrugsClient): SourceAdapter {
           dailyMedProductsByNdcSafely(nlm, ndc, page, retrievedAt, signal),
           page,
           signal,
+          onGroups,
         );
       }
 
@@ -982,6 +1002,7 @@ export function createNlmAdapter(client?: NlmDrugsClient): SourceAdapter {
           ),
           page,
           signal,
+          onGroups,
         );
       }
 

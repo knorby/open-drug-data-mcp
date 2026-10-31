@@ -56,7 +56,10 @@ function normalized(field: string, value: string | number): string {
   if (field === "cas") return /^\d{2,7}-\d{2}-\d$/.test(text) ? text : "";
   return text.toUpperCase();
 }
-function keys(ref: Ref, type: "product" | "ingredient"): string[] {
+export function recordIdentityKeys(
+  ref: Ref,
+  type: "product" | "ingredient",
+): string[] {
   const allowed =
     type === "ingredient"
       ? ["unii", "rxcui", "cas", "cid", "inchiKey"]
@@ -71,7 +74,9 @@ function keys(ref: Ref, type: "product" | "ingredient"): string[] {
   );
 }
 /** Keeps the first scalar and unions arrays; conflicts retain every competing scalar. */
-function mergedIdentifiers(refs: readonly Ref[]): Ref["identifiers"] {
+export function mergedIdentifiers(
+  refs: readonly { identifiers: Ref["identifiers"] }[],
+): Ref["identifiers"] {
   const output: Record<string, IdValue> = {};
   for (const ref of refs)
     for (const [field, value] of Object.entries(ref.identifiers)) {
@@ -87,13 +92,21 @@ function mergedIdentifiers(refs: readonly Ref[]): Ref["identifiers"] {
     }
   return output;
 }
-function conflictsOf(refs: readonly Ref[]): IdentifierConflict[] {
+export function conflictsOf(refs: readonly Ref[]): IdentifierConflict[] {
   const fields = new Map<string, IdentifierConflict["values"]>();
   for (const ref of refs)
     for (const [field, value] of Object.entries(ref.identifiers)) {
       if (Array.isArray(value)) continue;
       const values = fields.get(field) ?? [];
-      values.push({ record: ref.source, value });
+      if (
+        !values.some(
+          (existing) =>
+            existing.record.database === ref.source.database &&
+            existing.record.id === ref.source.id &&
+            existing.value === value,
+        )
+      )
+        values.push({ record: ref.source, value });
       fields.set(field, values);
     }
   return [...fields]
@@ -123,6 +136,37 @@ export function productResolveInput(
   if (ids.dsldId) return { dsldId: ids.dsldId };
   return undefined;
 }
+export function entityNextSteps(
+  entity: SearchEntity<Ref>,
+  type: "product" | "ingredient",
+) {
+  const steps = entity.records.flatMap((ref) => {
+    const step = recordNextStep(ref, type);
+    return step ? [step] : [];
+  });
+  const input =
+    type === "ingredient"
+      ? ingredientResolveInput(entity)
+      : productResolveInput(entity);
+  if (input)
+    steps.push({
+      tool: "drugdata_resolve_identifiers",
+      input: Object.fromEntries(
+        Object.entries(input).map(([key, value]) => [
+          key === "substanceName"
+            ? "substance_name"
+            : key === "splSetId"
+              ? "spl_setid"
+              : key === "dsldId"
+                ? "dsld_id"
+                : key,
+          value,
+        ]),
+      ),
+      why: "Resolve this entity across the other databases.",
+    });
+  return steps;
+}
 /** Stable union-find clustering; names and candidates never establish equality. */
 function cluster<R extends Ref>(
   groups: readonly { items: R[] }[],
@@ -140,7 +184,7 @@ function cluster<R extends Ref>(
   refs.forEach((ref, i) => {
     for (const key of [
       `source:${ref.source.database}:${ref.source.id}`,
-      ...keys(ref, type),
+      ...recordIdentityKeys(ref, type),
     ]) {
       const prior = seen.get(key);
       if (prior === undefined) seen.set(key, i);
@@ -177,16 +221,16 @@ function cluster<R extends Ref>(
       records,
       links: [],
       candidates: [],
-      evidence: [...new Set(originals.flatMap((ref) => keys(ref, type)))].map(
-        (key) => {
-          const colon = key.indexOf(":");
-          return {
-            kind: key.slice(0, colon),
-            value: key.slice(colon + 1),
-            confidence: "direct",
-          };
-        },
-      ),
+      evidence: [
+        ...new Set(originals.flatMap((ref) => recordIdentityKeys(ref, type))),
+      ].map((key) => {
+        const colon = key.indexOf(":");
+        return {
+          kind: key.slice(0, colon),
+          value: key.slice(colon + 1),
+          confidence: "direct",
+        };
+      }),
       conflicts: conflictsOf(originals),
       resolution: "skipped",
       nextSteps: [],
@@ -196,29 +240,7 @@ function cluster<R extends Ref>(
         ? ingredientResolveInput(entity)
         : productResolveInput(entity);
     entity.resolution = input ? "skipped" : "unavailable";
-    entity.nextSteps = records.flatMap((ref) => {
-      const step = recordNextStep(ref, type);
-      return step ? [step] : [];
-    });
-    if (input) {
-      const external = Object.fromEntries(
-        Object.entries(input).map(([key, value]) => [
-          key === "substanceName"
-            ? "substance_name"
-            : key === "splSetId"
-              ? "spl_setid"
-              : key === "dsldId"
-                ? "dsld_id"
-                : key,
-          value,
-        ]),
-      );
-      entity.nextSteps.push({
-        tool: "drugdata_resolve_identifiers",
-        input: external,
-        why: "Resolve this entity across the other databases.",
-      });
-    }
+    entity.nextSteps = entityNextSteps(entity, type);
     return entity;
   });
 }

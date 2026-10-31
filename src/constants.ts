@@ -36,6 +36,7 @@ export const CHARACTER_LIMIT = 25_000;
 
 /** Default timeout for outgoing API calls, in milliseconds. */
 export const DEFAULT_TIMEOUT_MS = 30_000;
+export const DEFAULT_SEARCH_TIMEOUT_MS = 45_000;
 
 /**
  * Reads the `version` field from a package manifest.

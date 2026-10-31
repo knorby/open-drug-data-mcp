@@ -7,6 +7,7 @@ import {
 import type { DatabaseId } from "../lib/schemas.js";
 import {
   CATEGORY_ADAPTERS,
+  type GroupListener,
   type IngredientGroup,
   type IngredientSearchOptions,
   type IngredientSearchType,
@@ -140,11 +141,33 @@ export function createRegistry(
   }
 
   return {
+    searchSources(kind, type, category) {
+      const selected = adapters.filter(
+        (adapter) =>
+          !disabledIds.has(adapter.id) &&
+          (kind === "product"
+            ? adapter.productSearchTypes.some((value) => value === type) &&
+              adapter.searchProducts !== undefined &&
+              (category === undefined || servesCategory(adapter, category))
+            : adapter.ingredientSearchTypes.some((value) => value === type) &&
+              adapter.searchIngredients !== undefined),
+      );
+      return [
+        ...new Set(
+          selected.flatMap((adapter) =>
+            kind === "ingredient"
+              ? (adapter.ingredientDatabases ?? adapter.databases)
+              : adapter.databases,
+          ),
+        ),
+      ];
+    },
     async searchProducts(
       type: ProductSearchType,
       query: string,
       options: ProductSearchOptions,
       signal?: AbortSignal,
+      onGroups?: GroupListener<ProductGroup>,
     ): Promise<ProductGroup[]> {
       const { category, page } = options;
       const capable = adapters.filter(
@@ -158,9 +181,13 @@ export function createRegistry(
 
       return fanOut(
         selected,
-        (adapter) => adapter.searchProducts(type, query, page, signal),
+        (adapter) =>
+          onGroups
+            ? adapter.searchProducts(type, query, page, signal, onGroups)
+            : adapter.searchProducts(type, query, page, signal),
         page,
         signal,
+        onGroups,
       );
     },
 
@@ -169,6 +196,7 @@ export function createRegistry(
       query: string,
       options: IngredientSearchOptions,
       signal?: AbortSignal,
+      onGroups?: GroupListener<IngredientGroup>,
     ): Promise<IngredientGroup[]> {
       const capable = adapters.filter(
         (adapter): adapter is IngredientSearchAdapter =>
@@ -182,6 +210,7 @@ export function createRegistry(
           adapter.searchIngredients(type, query, options.page, signal),
         options.page,
         signal,
+        onGroups,
       );
     },
 
@@ -232,10 +261,30 @@ async function fanOut<TAdapter extends SourceAdapter, TGroup extends AnyGroup>(
   request: (adapter: TAdapter) => Promise<TGroup[]>,
   page: number,
   signal: AbortSignal | undefined,
+  onGroups?: GroupListener<TGroup>,
 ): Promise<TGroup[]> {
   throwIfAborted(signal);
   const settled = await Promise.allSettled(
-    adapters.map(async (adapter) => request(adapter)),
+    adapters.map(async (adapter) => {
+      try {
+        const groups = await request(adapter);
+        onGroups?.(groups);
+        return groups;
+      } catch (error) {
+        const groups = adapter.databases.map((source) => {
+          const group: AnyGroup = {
+            source,
+            items: [],
+            page,
+            hasMore: false,
+            error: describeError(error, source),
+          };
+          return group as TGroup;
+        });
+        onGroups?.(groups);
+        return groups;
+      }
+    }),
   );
   // A cancelled request is not an upstream failure: surface it as a
   // cancellation rather than synthesizing error groups.

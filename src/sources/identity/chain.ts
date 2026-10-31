@@ -108,6 +108,8 @@ export interface ResolutionError {
 
 /** The resolved identity graph for one ingredient. */
 export interface IdentityGraph {
+  /** Internal attributed evidence for entity aggregation; public graph schemas strip it. */
+  records?: IngredientRef[];
   subject: { name?: string; inciName?: string };
   identifiers: IngredientIdentifiers;
   links: SourceLink[];
@@ -325,6 +327,7 @@ function slugGuess(name: string): string {
 
 /** The state one chain run accumulates. */
 interface ChainState {
+  records: IngredientRef[];
   input: ResolveInput;
   deps: IdentityDeps;
   signal: AbortSignal | undefined;
@@ -419,6 +422,7 @@ function applyLinked(
   outcome: Extract<StepOutcome, { status: "linked" }>,
 ): void {
   state.links.push(linkOf(outcome.ref, outcome.matchedVia, outcome.confidence));
+  state.records.push(outcome.ref);
   state.identifiers.push(outcome.ref.identifiers);
   if (outcome.identifiers !== undefined)
     state.identifiers.push(outcome.identifiers);
@@ -1043,6 +1047,7 @@ function sortedCandidates(candidates: readonly CandidateSet[]): CandidateSet[] {
 function graphOf(state: ChainState): IdentityGraph {
   const unii = chainUnii(state) ?? firstUnii(state.identifiers);
   return {
+    records: state.records,
     subject: {
       ...(state.subject.name !== undefined ? { name: state.subject.name } : {}),
       ...(state.subject.inciName !== undefined
@@ -1164,6 +1169,7 @@ async function resolveIngredientGraph(
   const cap = maxCandidates(opts);
   const inputUnii = nonEmpty(input.unii)?.toUpperCase();
   const state: ChainState = {
+    records: [],
     input,
     deps,
     signal,

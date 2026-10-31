@@ -110,6 +110,7 @@ export interface IngredientLookupRecord {
  * CosIng has no product records, and only some sources implement full lookups.
  */
 export interface SourceAdapter {
+  readonly ingredientDatabases?: DatabaseId[];
   /** Internal adapter id, matching `DRUGDATA_DISABLED_SOURCES`. */
   readonly id: string;
   /** Every database this adapter can report results under. */
@@ -130,6 +131,7 @@ export interface SourceAdapter {
     query: string,
     page: number,
     signal?: AbortSignal,
+    onGroups?: GroupListener<ProductGroup>,
   ): Promise<ProductGroup[]>;
 
   /** Searches ingredients; same grouping and zero-match rules as products. */
@@ -168,6 +170,11 @@ export interface IngredientSearchOptions {
 
 /** The fan-out and lookup surface the tools consume. */
 export interface Registry {
+  searchSources?(
+    kind: "product" | "ingredient",
+    type: ProductSearchType | IngredientSearchType,
+    category?: ProductCategory,
+  ): DatabaseId[];
   /**
    * Searches every enabled adapter that declares `type` and, when a category
    * is given, serves that category. A failed adapter contributes error groups
@@ -178,6 +185,7 @@ export interface Registry {
     query: string,
     options: ProductSearchOptions,
     signal?: AbortSignal,
+    onGroups?: GroupListener<ProductGroup>,
   ): Promise<ProductGroup[]>;
 
   /** Ingredient counterpart of {@link Registry.searchProducts}. */
@@ -186,6 +194,7 @@ export interface Registry {
     query: string,
     options: IngredientSearchOptions,
     signal?: AbortSignal,
+    onGroups?: GroupListener<IngredientGroup>,
   ): Promise<IngredientGroup[]>;
 
   /**
@@ -209,3 +218,4 @@ export interface Registry {
     signal?: AbortSignal,
   ): Promise<unknown>;
 }
+export type GroupListener<G> = (groups: readonly G[]) => void;
