@@ -1,7 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { resetClients } from "../src/clients.js";
 import { resetConfig } from "../src/config.js";
-import { ingredientEntitySearchResultSchema } from "../src/lib/schemas.js";
+import {
+  ingredientEntitySearchResultSchema,
+  productEntitySearchResultSchema,
+} from "../src/lib/schemas.js";
 import {
   createTestClient,
   jsonResponse,
@@ -253,11 +256,9 @@ describe("NLM coverage matrix", () => {
       name: "drugdata_search_products",
       arguments: { type: "name", query: "aspirin" },
     });
-    const productGroups = (
-      products.structuredContent as {
-        groups: { source: string; items: unknown[] }[];
-      }
-    ).groups;
+    const productGroups = productEntitySearchResultSchema.parse(
+      products.structuredContent,
+    ).sources;
     const sources = productGroups.map((group) => group.source);
     expect(sources).toContain("RxNorm");
     expect(sources).toContain("DailyMed");
