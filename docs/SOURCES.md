@@ -88,6 +88,11 @@ redistributing data.
 
 ## openFDA
 
+Product UPC/RxCUI arrays are source-published label-level crosswalk data, not
+package-specific resolution evidence. They remain on source records unchanged;
+NDC resolution uses only NLM's package crosswalk for RxNorm links. Directory
+ingredient rows can lack UNIIs; SPL label ingredients are an explicit opt-in.
+
 | | |
 | --- | --- |
 | **Publisher** | U.S. Food and Drug Administration (FDA) |

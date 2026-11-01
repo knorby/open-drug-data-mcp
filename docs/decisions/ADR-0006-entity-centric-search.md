@@ -41,8 +41,13 @@ RxNorm concept before publishing an input RxCUI as a direct link. PubChem
 CID resolution verifies the compound and follows exact DrugCentral crosswalks;
 multiple compounds stay candidates.
 
-For response limits, omit whole entities rather than mutate retained ids,
-provenance URLs, or executable actions. Report truncation separately;
+For response limits, slim summaries and derived collections before removing
+trailing entities (retain at least one), records, and large identifier arrays.
+Rebuild actions after record/identifier loss; never rewrite retained values or
+provenance URLs. A minimal entity shell is the last resort; if that cannot fit,
+return an explicit error rather than an empty successful page. `truncated`,
+`entitiesOmitted`, and per-entity `omitted` counts report output loss and set
+`partial: true` without changing the entity's resolution state;
 coverage continues to describe the full pre-bound search.
 
 Alternatives: retaining source groups leaves identity work to the model;

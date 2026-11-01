@@ -406,6 +406,10 @@ describe("server assembly", () => {
           ?.inputSchema.properties?.id,
       ),
     ).toContain("PubChem CID");
+    const product = tools.find((tool) => tool.name === "drugdata_get_product");
+    expect(product?.description).toContain("when supplied by the source");
+    expect(product?.description).toContain("include_label_ingredients: true");
+    expect(product?.description).toContain("drugdata_resolve_identifiers");
   });
 
   it("serves server://info with the disclaimer and enabled sources", async () => {

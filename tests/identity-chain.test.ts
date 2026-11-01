@@ -651,7 +651,12 @@ describe("identity chain (b): ambiguity stays a candidate set", () => {
 });
 
 describe("identity chain (c): product resolution", () => {
-  for (const mode of ["success", "failure", "disabled"] as const) {
+  for (const mode of [
+    "success",
+    "product-level",
+    "failure",
+    "disabled",
+  ] as const) {
     it(`uses package RxNorm evidence without label-wide fallback (${mode})`, async () => {
       const rxcuis = Array.from({ length: 48 }, (_, i) => String(2600000 + i));
       const record = productRecord(
@@ -678,20 +683,25 @@ describe("identity chain (c): product resolution", () => {
           nlm: { rxcuisForNdc: lookup },
         }),
         mode === "disabled" ? ["nlm"] : [],
-      ).resolve({ ndc: "0002-0152-01" }, {});
+      ).resolve(
+        { ndc: mode === "product-level" ? "0002-0152" : "0002-0152-01" },
+        {},
+      );
       expect(result.kind).toBe("product");
       if (result.kind !== "product") return;
       expect(
         result.links
           .filter((link) => link.database === "RxNorm")
           .map((link) => link.id),
-      ).toEqual(mode === "success" ? ["2679323"] : []);
+      ).toEqual(
+        mode === "success" || mode === "product-level" ? ["2679323"] : [],
+      );
       expect(record.product.identifiers.rxcui).toEqual(rxcuis);
       if (mode === "failure")
         expect(result.errors).toContainEqual(
           expect.objectContaining({ database: "RxNorm" }),
         );
-      if (mode === "success") {
+      if (mode === "success" || mode === "product-level") {
         expect(lookup).toHaveBeenCalledWith("0002-0152-01", undefined);
         expect(lookup).toHaveBeenCalledWith("0002-0152-04", undefined);
       }

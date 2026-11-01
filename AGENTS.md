@@ -332,6 +332,11 @@ database. `sources` holds per-database status/paging metadata, not duplicate
 records. When modifying search, read ADR-0006 for clustering, deadline,
 enrichment, and response-bounding invariants.
 
+Bounding preserves at least one entity or returns an explicit error. Any
+output loss sets `partial` and `truncated`; `entitiesOmitted` and per-entity
+`omitted` count loss while coverage stays pre-bound. NDC-derived RxNorm links
+use NLM package evidence, never openFDA label-wide RxCUI arrays.
+
 ### Hard sourcing policy
 
 These are release-blocking rules, not style preferences:

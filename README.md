@@ -164,7 +164,8 @@ too.
   `ok`, `error`, or `timeout`, page, `hasMore`, and `resultCount`. `coverage`
   reports entity/record counts, attempted/completed resolutions, and whether
   the cap applied. `partial` signals failed/timed-out sources or incomplete
-  enrichment. Zero matches with `hasMore: true` is still a successful page.
+   enrichment, or response-budget omissions. Zero matches with `hasMore: true`
+   is still a successful page.
 - For an existing source+id, call `drugdata_get_product` or
   `drugdata_get_ingredient` directly. Search does not return full profiles;
   open only those needed for the question, with costly flags off by default.
@@ -174,10 +175,21 @@ too.
   output, selectively fetch that supplied URL with the host's web tools.
   Do not crawl or walk all pages.
 
-Responses are bounded to 25,000 characters. Search bounding omits whole
-entities rather than corrupting retained ids, URLs, or lookup actions;
-truncation is explicit, and coverage counts describe the pre-bound result.
-Source-specific lookups remain available even when an entity was omitted.
+Responses are bounded to 25,000 characters. Search first shortens summaries and
+source errors, then removes derived evidence/candidates/links/conflicts, trailing
+entities (keeping at least one), trailing records, and finally large identifier
+arrays if necessary. A minimal entity shell is the last resort; an unrepresentable
+shell returns an explicit tool error, never a false empty successful page.
+`truncated` marks output loss; `entitiesOmitted` counts removed entities, and
+per-entity `omitted` counts removed summaries, collections, records, identifier
+values, and actions. Any loss sets `partial: true`; coverage counts remain
+pre-bound. Retained identifiers, URLs, and source+id actions remain exact.
+
+NDC resolution links RxNorm concepts only from NLM package crosswalk evidence,
+not openFDA's label-wide RxCUI arrays. Product records still retain those source
+arrays. Ingredient UNIIs appear when supplied by the source; default openFDA
+directory ingredient rows can lack identifiers. To request SPL label UNIIs,
+use `drugdata_resolve_identifiers` with `include_label_ingredients: true`.
 
 This replaces the source-grouped search output contract. See
 [ADR-0006](docs/decisions/ADR-0006-entity-centric-search.md).

@@ -197,6 +197,27 @@ it("rejects an unrepresentable minimal shell instead of returning empty success"
   expect(() => boundEntitySearch(value, "product")).toThrow(/cannot fit/);
 });
 
+it("rejects unrepresentable metadata even when there were no entities", () => {
+  const value = input(0);
+  value.query = "x".repeat(30000);
+  expect(() => boundEntitySearch(value, "product")).toThrow(/cannot fit/);
+});
+
+it("continues record removal when removing only one record is insufficient", () => {
+  const value = input();
+  const first = value.entities[0];
+  assert(first?.records[0]);
+  for (const id of ["second", "third"])
+    first.records.push({
+      ...first.records[0],
+      name: "x".repeat(30000),
+      source: { ...first.records[0].source, id },
+    });
+  const output = boundEntitySearch(value, "product").value;
+  expect(output.entities[0]?.records).toHaveLength(1);
+  expect(output.entities[0]?.omitted?.records).toBe(2);
+});
+
 for (const field of ["candidates", "links", "conflicts"] as const) {
   it(`bounds oversized ${field} without dropping records`, () => {
     const value = input();
