@@ -1429,7 +1429,6 @@ async function resolveNdcProduct(
         "RxNorm",
         signal,
       )) ?? []),
-      ...(record?.product.identifiers.rxcui ?? []),
     ]);
     for (const rxcui of rxcuis) state.links.push(rxnormLink(rxcui));
 

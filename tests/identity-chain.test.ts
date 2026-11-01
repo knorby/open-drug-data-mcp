@@ -651,6 +651,53 @@ describe("identity chain (b): ambiguity stays a candidate set", () => {
 });
 
 describe("identity chain (c): product resolution", () => {
+  for (const mode of ["success", "failure", "disabled"] as const) {
+    it(`uses package RxNorm evidence without label-wide fallback (${mode})`, async () => {
+      const rxcuis = Array.from({ length: 48 }, (_, i) => String(2600000 + i));
+      const record = productRecord(
+        {
+          name: "Zepbound",
+          category: "medication",
+          identifiers: { ndc: ["0002-0152-01", "0002-0152-04"], rxcui: rxcuis },
+          source: {
+            database: "openFDA",
+            id: "0002-0152",
+            url: "https://example.test/ndc",
+            retrievedAt: ISO,
+          },
+        },
+        [],
+      );
+      const lookup = vi.fn(async () => {
+        if (mode === "failure") throw new Error("RxNorm unavailable");
+        return ["2679323"];
+      });
+      const result = await createIdentityResolver(
+        deps({
+          openfda: { productByNdc: async () => record },
+          nlm: { rxcuisForNdc: lookup },
+        }),
+        mode === "disabled" ? ["nlm"] : [],
+      ).resolve({ ndc: "0002-0152-01" }, {});
+      expect(result.kind).toBe("product");
+      if (result.kind !== "product") return;
+      expect(
+        result.links
+          .filter((link) => link.database === "RxNorm")
+          .map((link) => link.id),
+      ).toEqual(mode === "success" ? ["2679323"] : []);
+      expect(record.product.identifiers.rxcui).toEqual(rxcuis);
+      if (mode === "failure")
+        expect(result.errors).toContainEqual(
+          expect.objectContaining({ database: "RxNorm" }),
+        );
+      if (mode === "success") {
+        expect(lookup).toHaveBeenCalledWith("0002-0152-01", undefined);
+        expect(lookup).toHaveBeenCalledWith("0002-0152-04", undefined);
+      }
+      if (mode === "disabled") expect(lookup).not.toHaveBeenCalled();
+    });
+  }
   it("returns product links and role-annotated ingredient refs for an NDC", async () => {
     const record = productRecord(
       {
@@ -2035,7 +2082,7 @@ describe("edge paths", () => {
     ).toEqual(["derived", "derived"]);
   });
 
-  it("uses record RxCUIs and application details when NLM has none", async () => {
+  it("keeps application details without label-wide RxCUIs when NLM has none", async () => {
     const result = await createIdentityResolver(
       deps({
         openfda: {
@@ -2064,7 +2111,6 @@ describe("edge paths", () => {
     expect(result.links.map((link) => link.id)).toEqual([
       "00093-1046",
       "NDA020702",
-      "617314",
     ]);
   });
 
