@@ -125,7 +125,7 @@ export function registerSearchIngredientsTool(
             timeoutMs: config.config.DRUGDATA_SEARCH_TIMEOUT_MS,
           }).searchIngredients({ type, query, page }, ctx.mcpReq.signal),
         );
-        const bounded = boundEntitySearch(output);
+        const bounded = boundEntitySearch(output, "ingredient");
 
         if (response_format === "json") {
           return {

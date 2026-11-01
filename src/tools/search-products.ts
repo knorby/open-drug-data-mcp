@@ -122,7 +122,7 @@ export function registerSearchProductsTool(
             timeoutMs: config.config.DRUGDATA_SEARCH_TIMEOUT_MS,
           }).searchProducts({ type, query, category, page }, ctx.mcpReq.signal),
         );
-        const bounded = boundEntitySearch(output);
+        const bounded = boundEntitySearch(output, "product");
         const context: ZeroResultsContext = {
           kind: "product",
           hasCategory: category !== undefined,

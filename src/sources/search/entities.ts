@@ -34,6 +34,8 @@ export interface EntitySearchResult<R extends ProductRef | IngredientRef> {
   sources: SourceSearchStatus[];
   coverage: SearchCoverage;
   partial: boolean;
+  truncated: boolean;
+  entitiesOmitted: number;
   nextSteps: NextStep[];
 }
 type Ref = IngredientRef | ProductRef;

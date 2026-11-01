@@ -64,6 +64,8 @@ describe("entity clustering", () => {
       },
       partial: false,
       nextSteps: [],
+      truncated: false,
+      entitiesOmitted: 0,
       unexpected: "drop",
     };
     expect(ingredientEntitySearchResultSchema.parse(result)).not.toHaveProperty(

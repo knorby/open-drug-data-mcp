@@ -333,6 +333,8 @@ export function createSearchCoordinator(deps: {
         : [];
       return {
         ...input,
+        truncated: false,
+        entitiesOmitted: 0,
         entities,
         sources: statuses,
         coverage: {

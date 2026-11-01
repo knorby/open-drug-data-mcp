@@ -139,6 +139,8 @@ it("renders an empty timed-out search as unavailable, not a successful miss", ()
       resolutionCapped: false,
     },
     partial: true,
+    truncated: false,
+    entitiesOmitted: 0,
     nextSteps: [],
   };
   const context = { kind: "ingredient" as const, hasCategory: false };
@@ -147,14 +149,17 @@ it("renders an empty timed-out search as unavailable, not a successful miss", ()
     renderEntitySearch(result, context, false, (value) => value.name),
   ).toContain("Search deadline exceeded.");
   expect(
-    boundEntitySearch({
-      ...result,
-      sources: result.sources.map((source) => ({
-        ...source,
-        status: "error",
-        error: "x".repeat(30000),
-      })),
-    }).value.sources[0]?.error,
+    boundEntitySearch(
+      {
+        ...result,
+        sources: result.sources.map((source) => ({
+          ...source,
+          status: "error",
+          error: "x".repeat(30000),
+        })),
+      },
+      "ingredient",
+    ).value.sources[0]?.error,
   ).toHaveLength(500);
 });
 for (const name of [

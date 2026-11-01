@@ -267,7 +267,21 @@ export const resolutionErrorSchema = z.object({
     .string()
     .describe("Actionable, database-only explanation of the failure."),
 });
+export const entityOmissionsSchema = z.object({
+  summaries: z.number().int().nonnegative().optional(),
+  evidence: z.number().int().nonnegative().optional(),
+  candidates: z.number().int().nonnegative().optional(),
+  links: z.number().int().nonnegative().optional(),
+  conflicts: z.number().int().nonnegative().optional(),
+  errors: z.number().int().nonnegative().optional(),
+  records: z.number().int().nonnegative().optional(),
+  recordIdentifiers: z.number().int().nonnegative().optional(),
+  identifiers: z.number().int().nonnegative().optional(),
+  nextSteps: z.number().int().nonnegative().optional(),
+});
+export type EntityOmissions = z.infer<typeof entityOmissionsSchema>;
 const entityFields = {
+  omitted: entityOmissionsSchema.optional(),
   name: z.string(),
   links: z.array(sourceLinkSchema),
   evidence: z.array(
@@ -315,6 +329,8 @@ export const searchCoverageSchema = z.object({
 });
 export type SearchCoverage = z.infer<typeof searchCoverageSchema>;
 const searchResultFields = {
+  truncated: z.boolean(),
+  entitiesOmitted: z.number().int().nonnegative(),
   query: z.string(),
   type: z.string(),
   page: z.number().int(),
