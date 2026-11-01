@@ -57,10 +57,12 @@ limits and existing get tools as the selective detail path.
 
 ## Consequences
 
-This changes the search output contract; clients must replace `groups` with
-`entities` and source metadata. A minor changeset records the pre-1.0 change.
+The unreleased search interface returns `entities` and source metadata; there
+is no released consumer contract to migrate or version against.
 Evidence can remain ambiguous or conflict. A search may be partial even when
 its returned records are valid, and completed enrichment is not exhaustive
-database coverage. Coarse bounding can omit an entire oversized entity; narrow
-the query or use a known source+id. Uncancellable clients remain bounded by
+database coverage. Bounding can omit trailing entities or slim the final entity,
+with counted omissions; a non-empty result retains at least one entity or
+returns an explicit error. Narrow the query or use a known source+id for details.
+Uncancellable clients remain bounded by
 their existing per-attempt policy, not by the search-return deadline.

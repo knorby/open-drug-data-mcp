@@ -89,7 +89,7 @@ scanning). Both are needed for full coverage.
 | `npm test` | Run tests once (Vitest) |
 | `npm run test:watch` | Run tests in watch mode |
 | `npm run test:coverage` | Run tests with coverage reporting |
-| `npx changeset` | Create a changeset (required for any change that affects published output) |
+| `npx changeset` | Record a published-output change after the first release; not required during private unreleased development |
 
 ---
 
@@ -144,7 +144,12 @@ This repo uses [Changesets](https://github.com/changesets/changesets) for
 versioning. Versioning is **decoupled from merges** — you can merge multiple
 PRs and release them all at once.
 
-- **Before a PR that changes published output**: run `npx changeset`, select
+**Current state: private, in development, never released.** Do not add
+per-change changesets, migration notices, or compatibility promises for this
+unreleased implementation. The release workflow below is future setup. Start
+recording changes against a released baseline only after the first release.
+
+- **After the first release, before a PR that changes published output**: run `npx changeset`, select
   bump type (patch/minor/major), write a summary. Commit the generated
   `.changeset/*.md` file alongside the code change.
 - **To release**: `npx changeset version` (bumps `package.json` +
@@ -269,7 +274,7 @@ These rules are mandatory. Follow them strictly.
   still answers `tools/list`.
 - **Bound responses** — paginate large collections and respect
   `CHARACTER_LIMIT`.
-- **Add a changeset for anything that changes published output.**
+- **After the first release, add a changeset for anything that changes published output.** Do not add per-change changesets during private unreleased development.
 
 ### Documentation
 
@@ -279,6 +284,8 @@ These rules are mandatory. Follow them strictly.
   decision records (ADRs). See `docs/README.md` for the ADR template.
 - Treat `docs/` as living documentation. Create an ADR in `docs/decisions/`
   for significant design decisions.
+- Correct or remove incorrect ADRs. They describe the current design, not an
+  immutable history of unreleased decisions.
 
 ### Before declaring done
 
@@ -421,7 +428,7 @@ verification and DrugCentral's exact PUBCHEM_CID crosswalk; DrugCentral
    weak name match is a candidate, never a link.
 7. Add fixture-backed tests for search, lookup, zero matches, and failures;
    extend the sourcing leak sweep; keep coverage at 100%.
-8. Update the README source table and add a changeset.
+8. Update the README source table; add a changeset only after the first release.
 
 Adding a search type is smaller: add the enum value in `src/sources/types.ts`,
 add it to the tool's input enum, and declare it on the adapters that can
@@ -492,7 +499,9 @@ substring-based.
 - ADR-0001 records the platform and protocol posture; ADR-0002 the unified
   interface and sourcing policy; ADR-0003 the identity chain; ADR-0004 the
   INKEEDecoder inclusion.
-- Add a changeset for any published-output change. The release workflow is
+- After the first release, add a changeset for any published-output change.
+  No per-change changesets are needed during private unreleased development.
+  The release workflow is
   staged at `workflow-templates/release.yml`; activation waits for the public
   move, and the template's release setup above still applies.
 - Keep `docs/superpowers/` out of git. It is local planning scratch for a

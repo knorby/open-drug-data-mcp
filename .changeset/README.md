@@ -1,10 +1,13 @@
 # Changesets
 
-Changesets manage versioning and changelogs for this package. Each change is
+This MCP is private, in development, and has never been released. Do not add
+per-change changesets during this stage; there is no released baseline.
+
+After the first release, Changesets manage versioning and changelogs. Each change is
 recorded as a markdown file in this directory; when you're ready to release,
 changesets consumes them to bump the version and generate the changelog.
 
-## Workflow
+## Workflow after the first release
 
 1. **Make your code changes** (feature, bugfix, etc.) on a branch.
 2. **Create a changeset** describing the change:

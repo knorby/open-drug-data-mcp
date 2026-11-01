@@ -191,7 +191,7 @@ arrays. Ingredient UNIIs appear when supplied by the source; default openFDA
 directory ingredient rows can lack identifiers. To request SPL label UNIIs,
 use `drugdata_resolve_identifiers` with `include_label_ingredients: true`.
 
-This replaces the source-grouped search output contract. See
+For the current unreleased search design, see
 [ADR-0006](docs/decisions/ADR-0006-entity-centric-search.md).
 
 ## Historical worked example: aspirin
@@ -366,8 +366,10 @@ docs/decisions/       architecture decision records
 
 ## Releasing
 
-Versioning uses Changesets. Add a changeset for any change that affects
-published output, then merge; `npx changeset version` updates the manifest and
+The MCP is private, in development, and has no released baseline. Do not add
+per-change changesets or migration notices during this stage. After the first
+release, use Changesets for changes that affect published output;
+`npx changeset version` updates the manifest and
 changelog, and `npm run release` builds and publishes.
 
 The GitHub Actions release workflow is intentionally staged at
