@@ -1,52 +1,40 @@
 import type { McpServer } from "@modelcontextprotocol/server";
 import * as z from "zod/v4";
+import { readConfig } from "../config.js";
+import { applyCharacterLimit, RESPONSE_FORMATS } from "../lib/format.js";
 import {
-  applyCharacterLimit,
-  boundStructured,
-  morePagesNote,
-  RESPONSE_FORMATS,
-  truncationNote,
-} from "../lib/format.js";
-import { searchNextSteps } from "../lib/next-steps.js";
-import {
-  databaseIdSchema,
-  nextStepSchema,
   type ProductIdentifiers,
   type ProductRef,
-  paginatedFields,
   productCategorySchema,
-  productRefSchema,
+  productEntitySearchResultSchema,
 } from "../lib/schemas.js";
+import type { IdentityResolver } from "../sources/identity/chain.js";
+import { createSearchCoordinator } from "../sources/search/coordinator.js";
+import { PRODUCT_SEARCH_TYPES, type Registry } from "../sources/types.js";
 import {
-  PRODUCT_SEARCH_TYPES,
-  type ProductSearchType,
-  type Registry,
-} from "../sources/types.js";
+  boundEntitySearch,
+  entityJsonBlocks,
+  renderEntitySearch,
+} from "./entity-search-support.js";
+import { resolveResolver } from "./resolve-identifiers.js";
 import {
   type IdentifierField,
   identifierText,
-  itemCount,
-  jsonTextBlocks,
   messageError,
-  nextStepsText,
   resolveRegistry,
   toolError,
   type ZeroResultsContext,
-  zeroResultsNote,
 } from "./search-support.js";
 
 /**
  * `drugdata_search_products` — one product search across every capable source.
  *
- * The tool is deliberately thin: the registry decides which sources can answer
- * the requested search type and category, isolates failures, and returns
- * groups already labeled by upstream database. Here we validate the result
- * against a closed schema, derive follow-up calls, and render either markdown
- * or JSON.
+ * The coordinator selects capable sources, clusters identity evidence and
+ * enriches a bounded prefix; this tool validates and renders the result.
  */
 
 const DESCRIPTION =
-  "Search products across openFDA, DSLD, INKEEDecoder, RxNorm, and DailyMed. Choose the kind of value you have (name, brand, ingredient, barcode, or NDC); results are grouped by upstream database with identifiers, a deep link, and suggested follow-up calls. One `page` value applies to every source in the fan-out and re-queries all of them; each group's `hasMore` reports whether that source has another page. A group with an `error` means that one database failed — retry, or proceed with the other groups. No matches is a normal empty result, not an error.";
+  "Search products across openFDA, DSLD, INKEEDecoder, RxNorm, and DailyMed. Start free text with type 'name'; use 'brand' deliberately for brand-only search, which covers fewer sources. Use ingredient, barcode, or ndc when appropriate, and pass category medication/supplement/cosmetic when known. Returns evidence-grouped entities with original records, confirmed links, source-attributed conflicts, unconfirmed candidates, and per-entity nextSteps. A product RxCUI or shared name alone does not merge products. For source+id use drugdata_get_product instead. Search enriches at most five entities, concurrency three, within a shared 45-second default deadline. Read partial, coverage, and sources (status ok/error/timeout); completed results survive a timeout. One page applies to every source and re-queries all of them; each source's hasMore is independent. Selectively fetch supplied URLs only when more page content is needed. No matches is normal, not an error.";
 
 const inputSchema = z.object({
   type: z
@@ -80,27 +68,9 @@ const inputSchema = z.object({
     ),
 });
 
-const groupSchema = z.object({
-  source: databaseIdSchema,
-  items: z.array(productRefSchema),
-  ...paginatedFields,
-  error: z
-    .string()
-    .optional()
-    .describe(
-      "Set when this database failed for the whole search; the other groups are still valid.",
-    ),
-});
-
-const outputSchema = z.object({
-  query: z.string(),
-  page: z.number().int().min(1),
-  groups: z.array(groupSchema),
-  nextSteps: z.array(nextStepSchema),
-});
+const outputSchema = productEntitySearchResultSchema;
 
 type ProductSearchInput = z.infer<typeof inputSchema>;
-type ProductSearchOutput = z.infer<typeof outputSchema>;
 
 /** Identifier labels in the order the markdown text shows them. */
 const IDENTIFIER_FIELDS: ReadonlyArray<IdentifierField<ProductIdentifiers>> = [
@@ -117,6 +87,7 @@ const IDENTIFIER_FIELDS: ReadonlyArray<IdentifierField<ProductIdentifiers>> = [
 export function registerSearchProductsTool(
   server: McpServer,
   registry?: Registry,
+  resolver?: IdentityResolver,
 ): void {
   server.registerTool(
     "drugdata_search_products",
@@ -140,25 +111,18 @@ export function registerSearchProductsTool(
         const resolved = resolveRegistry(registry);
         if (!resolved.ok) return messageError(resolved.error);
 
-        const groups = await resolved.registry.searchProducts(
-          type,
-          query,
-          {
-            category,
-            page,
-          },
-          ctx.mcpReq.signal,
+        const identity = resolveResolver(resolver);
+        if (!identity.ok) return messageError(identity.error);
+        const config = readConfig();
+        if (!config.ok) return messageError(config.error);
+        const output = outputSchema.parse(
+          await createSearchCoordinator({
+            registry: resolved.registry,
+            resolver: identity.resolver,
+            timeoutMs: config.config.DRUGDATA_SEARCH_TIMEOUT_MS,
+          }).searchProducts({ type, query, category, page }, ctx.mcpReq.signal),
         );
-        const output = outputSchema.parse({
-          query,
-          page,
-          groups,
-          nextSteps: searchNextSteps(type, groups),
-        });
-        const bounded = boundStructured(output);
-        // Paging advice must describe what the rendered groups actually show,
-        // so read `hasMore` after bounding rather than from the raw fan-out.
-        const anyHasMore = bounded.value.groups.some((group) => group.hasMore);
+        const bounded = boundEntitySearch(output, "product");
         const context: ZeroResultsContext = {
           kind: "product",
           hasCategory: category !== undefined,
@@ -166,7 +130,11 @@ export function registerSearchProductsTool(
 
         if (response_format === "json") {
           return {
-            content: jsonTextBlocks(bounded.value, context),
+            content: entityJsonBlocks(
+              bounded.value,
+              context,
+              bounded.truncated,
+            ),
             structuredContent: bounded.value,
           };
         }
@@ -176,12 +144,11 @@ export function registerSearchProductsTool(
             {
               type: "text" as const,
               text: applyCharacterLimit(
-                renderMarkdown(
-                  type,
+                renderEntitySearch(
                   bounded.value,
-                  anyHasMore,
-                  bounded.truncated,
                   context,
+                  bounded.truncated,
+                  productLine,
                 ),
               ),
             },
@@ -195,49 +162,6 @@ export function registerSearchProductsTool(
   );
 }
 
-/** Renders the markdown text block for a product search. */
-function renderMarkdown(
-  type: ProductSearchType,
-  output: ProductSearchOutput,
-  anyHasMore: boolean,
-  truncated: boolean,
-  context: ZeroResultsContext,
-): string {
-  const sections = [
-    `Product search for ${JSON.stringify(output.query)} (type: ${type}) — page ${output.page}.`,
-    ...output.groups.map(groupSection),
-  ];
-
-  if (itemCount(output.groups) === 0) {
-    sections.push(zeroResultsNote(output.groups, context));
-  }
-
-  const steps = nextStepsText(output.nextSteps);
-  if (steps !== undefined) sections.push(steps);
-
-  let text = sections.join("\n\n");
-  text += morePagesNote(anyHasMore, output.page + 1);
-  if (truncated) text += truncationNote();
-  return text;
-}
-
-/** Renders one source's section, including its failure as a warning. */
-function groupSection(group: ProductGroupOutput): string {
-  if (group.error !== undefined) {
-    return `### ${group.source} — unavailable\n⚠ ${group.source}: ${group.error}`;
-  }
-
-  const count = group.items.length;
-  const results = `${count} ${count === 1 ? "result" : "results"}`;
-  const more = group.hasMore ? ", more available" : "";
-  const header = `### ${group.source} — ${results} (page ${group.page}${more})`;
-  const lines =
-    group.items.length === 0
-      ? ["- No matches on this page."]
-      : group.items.map(productLine);
-  return [header, ...lines].join("\n");
-}
-
 /** Renders one product as a compact list line. */
 function productLine(item: ProductRef): string {
   const details = [`**${item.name}**`];
@@ -249,6 +173,3 @@ function productLine(item: ProductRef): string {
   details.push(item.source.url);
   return `- ${details.join(" · ")}`;
 }
-
-/** The group shape after output-schema parsing. */
-type ProductGroupOutput = ProductSearchOutput["groups"][number];

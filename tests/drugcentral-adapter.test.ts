@@ -7,6 +7,7 @@ import {
   type PopulationStampedSignal,
 } from "@knorby/drugcentral-client";
 import { describe, expect, it, vi } from "vitest";
+import { z } from "zod";
 import { resetClients } from "../src/clients.js";
 import { resetConfig } from "../src/config.js";
 import { ingredientRefSchema } from "../src/lib/schemas.js";
@@ -170,7 +171,6 @@ describe("DrugCentral name search", () => {
     expect(first?.identifiers).toEqual({
       structId: 74,
       cas: ["50-78-2"],
-      cid: [348],
       inchiKey: "BSYNRYMUTXBXSQ-UHFFFAOYSA-N",
     });
     expect(first?.summary).toContain("Status: OFP");
@@ -320,7 +320,6 @@ describe("DrugCentral identifier search", () => {
       structId: 74,
       unii: "R16CO5Y76E",
       cas: ["50-78-2"],
-      cid: [348],
       inchiKey: "BSYNRYMUTXBXSQ-UHFFFAOYSA-N",
     });
     expect(item?.matchBasis).toBe("UNII identifier match");
@@ -582,6 +581,48 @@ describe("DrugCentral error sanitation", () => {
 });
 
 describe("DrugCentral bridges", () => {
+  it.each([
+    { values: [], expected: [] },
+    {
+      values: ["", " ", "0", "-1", "1.5", "2e3", "9007199254740992", "abc"],
+      expected: [],
+    },
+    { values: [" 2244 ", "2244", "56843331"], expected: [2244, 56843331] },
+    { values: ["56843331"], expected: [56843331] },
+  ])(
+    "uses only valid PubChem crosswalk values: $values",
+    async ({ values, expected }) => {
+      const structure = fixture<Record<string, unknown>[]>(
+        "structures-id-74.json",
+      ).map((row) => ({ ...row, cd_id: 5064 }));
+      const { client } = clientFor({
+        "/structures/id/74": structure,
+        "/identifier/struct_id/74": values.map((identifier, id) => ({
+          identifier,
+          id,
+          id_type: "PUBCHEM_CID",
+          struct_id: 74,
+          parent_match: null,
+        })),
+        "/synonyms/id/74": [],
+        "/struct2obprod/struct_id/74": [],
+        "/struct2atc/struct_id/74": [],
+      });
+      const raw = await createDrugCentralAdapter(client).getIngredient(
+        "74",
+        {},
+      );
+      const result = z
+        .object({
+          ingredient: ingredientRefSchema,
+          profile: z.object({ cid: z.number().optional() }),
+        })
+        .parse(raw);
+      expect(result.ingredient.identifiers.cid ?? []).toEqual(expected);
+      expect(result.profile?.cid).toBe(expected[0]);
+    },
+  );
+
   it("resolves UNIIs and RxCUIs to structure ids", async () => {
     const { client } = clientFor({
       "/identifier/identifier/R16CO5Y76E": "identifier-unii-aspirin.json",
@@ -595,6 +636,27 @@ describe("DrugCentral bridges", () => {
     await expect(bridges.structIdsForRxcui("1191")).resolves.toEqual([74]);
     await expect(bridges.structIdsForUnii("short")).resolves.toEqual([]);
     await expect(bridges.structIdsForRxcui("12a")).resolves.toEqual([]);
+  });
+
+  it("resolves only exact PUBCHEM_CID crosswalk rows", async () => {
+    const rows = [
+      { id_type: "PUBCHEM_CID", identifier: "2244", struct_id: 74 },
+      { id_type: "PUBCHEM_CID", identifier: "22440", struct_id: 75 },
+      { id_type: "CAS", identifier: "2244", struct_id: 76 },
+    ].map((row, id) => ({ ...row, id, parent_match: null }));
+    const { client } = clientFor({ "/identifier/identifier/2244": rows });
+    const bridge = createDrugCentralBridges(client);
+    expect(await bridge.structIdsForCid("2244")).toEqual([74]);
+    expect(await bridge.structIdsForCid("-1")).toEqual([]);
+  });
+
+  it("treats a missing CID crosswalk as an ordinary miss", async () => {
+    const { client } = clientFor({
+      "/identifier/identifier/999999999": notFound,
+    });
+    expect(
+      await createDrugCentralBridges(client).structIdsForCid("999999999"),
+    ).toEqual([]);
   });
 
   it("assembles a structure profile", async () => {

@@ -236,10 +236,19 @@ function labelSummary(label: Label): string | undefined {
 function productRefOf(
   raw: SearchLabelSource | null | undefined,
   retrievedAt: string,
+  hitId?: string,
 ): ProductRef | null {
   if (raw === null || typeof raw !== "object") return null;
-  const id = raw.id;
-  if (typeof id !== "number" || !Number.isInteger(id) || id <= 0) return null;
+  const envelopeId =
+    hitId !== undefined && /^\d+$/.test(hitId) ? Number(hitId) : undefined;
+  const id =
+    envelopeId !== undefined &&
+    Number.isSafeInteger(envelopeId) &&
+    envelopeId > 0
+      ? envelopeId
+      : raw.id;
+  if (typeof id !== "number" || !Number.isSafeInteger(id) || id <= 0)
+    return null;
 
   const brand = nonEmpty(raw.brandName);
   const upc = nonEmpty(raw.upcSku);
@@ -267,7 +276,7 @@ function mapSearchResult(
   const items: ProductRef[] = [];
   const seen = new Set<number>();
   for (const hit of result.hits ?? []) {
-    const ref = productRefOf(hit._source, retrievedAt);
+    const ref = productRefOf(hit._source, retrievedAt, hit._id);
     if (ref === null) continue;
     const id = ref.identifiers.dsldId;
     if (id === undefined || seen.has(id)) continue;

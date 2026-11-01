@@ -29,4 +29,7 @@ What are the trade-offs, risks, and follow-up actions?
 ```
 
 Number ADRs sequentially (`ADR-0001`, `ADR-0002`, ...). Keep each record concise
-and factual; supersede rather than rewrite accepted records.
+and factual. Correct or remove an incorrect ADR, including an accepted one.
+During private unreleased development, keep the current design accurate rather
+than preserving wrong decisions as immutable history. Use supersession when the
+historical context is useful, not as a requirement to retain an error.

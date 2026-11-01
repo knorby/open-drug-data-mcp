@@ -11,6 +11,7 @@ const ENV_KEYS = [
   "OPENFDA_API_KEY",
   "DSLD_API_KEY",
   "DRUGDATA_TIMEOUT_MS",
+  "DRUGDATA_SEARCH_TIMEOUT_MS",
   "DRUGDATA_DISABLED_SOURCES",
 ] as const;
 
@@ -41,8 +42,24 @@ describe("readConfig", () => {
     expect(config.OPENFDA_API_KEY).toBeUndefined();
     expect(config.DSLD_API_KEY).toBeUndefined();
     expect(config.DRUGDATA_TIMEOUT_MS).toBe(DEFAULT_TIMEOUT_MS);
+    expect(config.DRUGDATA_SEARCH_TIMEOUT_MS).toBe(45000);
     expect(config.DRUGDATA_DISABLED_SOURCES).toEqual([]);
     expect(SOURCE_IDS).toHaveLength(6);
+  });
+
+  it.each(["0", "-1", "1.5", "nope"])(
+    "rejects invalid overall search timeout %s",
+    (value) => {
+      process.env.DRUGDATA_SEARCH_TIMEOUT_MS = value;
+      expect(readConfig().ok).toBe(false);
+    },
+  );
+  it.each([
+    ["65000", 65000],
+    [" ", 45000],
+  ])("parses overall search timeout %s", (value, expected) => {
+    process.env.DRUGDATA_SEARCH_TIMEOUT_MS = value;
+    expect(readOk().DRUGDATA_SEARCH_TIMEOUT_MS).toBe(expected);
   });
 
   it("parses keys, a timeout, and a comma-separated disabled list", () => {

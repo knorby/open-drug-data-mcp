@@ -1,51 +1,40 @@
 import type { McpServer } from "@modelcontextprotocol/server";
 import * as z from "zod/v4";
+import { readConfig } from "../config.js";
+import { applyCharacterLimit, RESPONSE_FORMATS } from "../lib/format.js";
 import {
-  applyCharacterLimit,
-  boundStructured,
-  morePagesNote,
-  RESPONSE_FORMATS,
-  truncationNote,
-} from "../lib/format.js";
-import { searchNextSteps } from "../lib/next-steps.js";
-import {
-  databaseIdSchema,
   type IngredientIdentifiers,
   type IngredientRef,
-  ingredientRefSchema,
-  nextStepSchema,
-  paginatedFields,
+  ingredientEntitySearchResultSchema,
 } from "../lib/schemas.js";
+import type { IdentityResolver } from "../sources/identity/chain.js";
+import { createSearchCoordinator } from "../sources/search/coordinator.js";
+import { INGREDIENT_SEARCH_TYPES, type Registry } from "../sources/types.js";
 import {
-  INGREDIENT_SEARCH_TYPES,
-  type IngredientSearchType,
-  type Registry,
-} from "../sources/types.js";
+  boundEntitySearch,
+  entityJsonBlocks,
+  renderEntitySearch,
+} from "./entity-search-support.js";
+import { resolveResolver } from "./resolve-identifiers.js";
 import {
   type IdentifierField,
   identifierText,
-  itemCount,
-  jsonTextBlocks,
   messageError,
-  nextStepsText,
   resolveRegistry,
   toolError,
   type ZeroResultsContext,
-  zeroResultsNote,
 } from "./search-support.js";
 
 /**
  * `drugdata_search_ingredients` — one ingredient search across every capable
  * source.
  *
- * Like its product counterpart, the registry owns the fan-out; this module
- * validates the closed output, derives identifier-driven follow-ups, and
- * renders markdown or JSON. A UNII in the results is the strongest pivot, so
- * next steps lead with `drugdata_resolve_identifiers` when one is present.
+ * The coordinator owns fan-out and bounded enrichment; this module validates
+ * the closed entity contract and renders markdown or JSON.
  */
 
 const DESCRIPTION =
-  "Search ingredients across openFDA, CosIng, DrugCentral, RxNorm, PubChem, and INKEEDecoder. Choose the kind of value you have (name, INCI name, UNII, CAS number, EC number, RxCUI, or PubChem CID); results are grouped by upstream database with identifiers, a deep link, and suggested follow-up calls. One `page` value applies to every source in the fan-out and re-queries all of them; each group's `hasMore` reports whether that source has another page. A group with an `error` means that one database failed — retry, or proceed with the other groups. No matches is a normal empty result, not an error.";
+  "Search ingredients across openFDA, CosIng, DrugCentral, RxNorm, PubChem, and INKEEDecoder. Start free text with type 'name'; use inci, unii, cas, ec, rxcui, or cid when that is the value you have. There is no ingredient category filter. Returns evidence-grouped entities with original records, confirmed links, source-attributed conflicts, unconfirmed candidates, and per-entity nextSteps. For source+id use drugdata_get_ingredient instead. Search enriches at most five entities, concurrency three, within a shared 45-second default deadline. Read partial, coverage, and sources (status ok/error/timeout); completed results survive a timeout. One page applies to every source and re-queries all of them; each source's hasMore is independent. Selectively fetch supplied URLs only when more page content is needed. No matches is normal, not an error.";
 
 const inputSchema = z.object({
   type: z
@@ -74,28 +63,9 @@ const inputSchema = z.object({
     ),
 });
 
-const groupSchema = z.object({
-  source: databaseIdSchema,
-  items: z.array(ingredientRefSchema),
-  ...paginatedFields,
-  error: z
-    .string()
-    .optional()
-    .describe(
-      "Set when this database failed for the whole search; the other groups are still valid.",
-    ),
-});
-
-const outputSchema = z.object({
-  query: z.string(),
-  page: z.number().int().min(1),
-  groups: z.array(groupSchema),
-  nextSteps: z.array(nextStepSchema),
-});
+const outputSchema = ingredientEntitySearchResultSchema;
 
 type IngredientSearchInput = z.infer<typeof inputSchema>;
-type IngredientSearchOutput = z.infer<typeof outputSchema>;
-type IngredientGroupOutput = IngredientSearchOutput["groups"][number];
 
 /** Empty-result advice for a tool that has no category filter. */
 const ZERO_CONTEXT: ZeroResultsContext = {
@@ -120,6 +90,7 @@ const IDENTIFIER_FIELDS: ReadonlyArray<IdentifierField<IngredientIdentifiers>> =
 export function registerSearchIngredientsTool(
   server: McpServer,
   registry?: Registry,
+  resolver?: IdentityResolver,
 ): void {
   server.registerTool(
     "drugdata_search_ingredients",
@@ -143,26 +114,26 @@ export function registerSearchIngredientsTool(
         const resolved = resolveRegistry(registry);
         if (!resolved.ok) return messageError(resolved.error);
 
-        const groups = await resolved.registry.searchIngredients(
-          type,
-          query,
-          { page },
-          ctx.mcpReq.signal,
+        const identity = resolveResolver(resolver);
+        if (!identity.ok) return messageError(identity.error);
+        const config = readConfig();
+        if (!config.ok) return messageError(config.error);
+        const output = outputSchema.parse(
+          await createSearchCoordinator({
+            registry: resolved.registry,
+            resolver: identity.resolver,
+            timeoutMs: config.config.DRUGDATA_SEARCH_TIMEOUT_MS,
+          }).searchIngredients({ type, query, page }, ctx.mcpReq.signal),
         );
-        const output = outputSchema.parse({
-          query,
-          page,
-          groups,
-          nextSteps: searchNextSteps(type, groups),
-        });
-        const bounded = boundStructured(output);
-        // Paging advice must describe what the rendered groups actually show,
-        // so read `hasMore` after bounding rather than from the raw fan-out.
-        const anyHasMore = bounded.value.groups.some((group) => group.hasMore);
+        const bounded = boundEntitySearch(output, "ingredient");
 
         if (response_format === "json") {
           return {
-            content: jsonTextBlocks(bounded.value, ZERO_CONTEXT),
+            content: entityJsonBlocks(
+              bounded.value,
+              ZERO_CONTEXT,
+              bounded.truncated,
+            ),
             structuredContent: bounded.value,
           };
         }
@@ -172,11 +143,11 @@ export function registerSearchIngredientsTool(
             {
               type: "text" as const,
               text: applyCharacterLimit(
-                renderMarkdown(
-                  type,
+                renderEntitySearch(
                   bounded.value,
-                  anyHasMore,
+                  ZERO_CONTEXT,
                   bounded.truncated,
+                  ingredientLine,
                 ),
               ),
             },
@@ -188,48 +159,6 @@ export function registerSearchIngredientsTool(
       }
     },
   );
-}
-
-/** Renders the markdown text block for an ingredient search. */
-function renderMarkdown(
-  type: IngredientSearchType,
-  output: IngredientSearchOutput,
-  anyHasMore: boolean,
-  truncated: boolean,
-): string {
-  const sections = [
-    `Ingredient search for ${JSON.stringify(output.query)} (type: ${type}) — page ${output.page}.`,
-    ...output.groups.map(groupSection),
-  ];
-
-  if (itemCount(output.groups) === 0) {
-    sections.push(zeroResultsNote(output.groups, ZERO_CONTEXT));
-  }
-
-  const steps = nextStepsText(output.nextSteps);
-  if (steps !== undefined) sections.push(steps);
-
-  let text = sections.join("\n\n");
-  text += morePagesNote(anyHasMore, output.page + 1);
-  if (truncated) text += truncationNote();
-  return text;
-}
-
-/** Renders one source's section, including its failure as a warning. */
-function groupSection(group: IngredientGroupOutput): string {
-  if (group.error !== undefined) {
-    return `### ${group.source} — unavailable\n⚠ ${group.source}: ${group.error}`;
-  }
-
-  const count = group.items.length;
-  const results = `${count} ${count === 1 ? "result" : "results"}`;
-  const more = group.hasMore ? ", more available" : "";
-  const header = `### ${group.source} — ${results} (page ${group.page}${more})`;
-  const lines =
-    group.items.length === 0
-      ? ["- No matches on this page."]
-      : group.items.map(ingredientLine);
-  return [header, ...lines].join("\n");
 }
 
 /** Renders one ingredient as a compact list line. */

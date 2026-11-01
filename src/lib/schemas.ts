@@ -233,6 +233,29 @@ export const candidateSetSchema = z.object({
 /** One ambiguous source result, never auto-linked. */
 export type CandidateSet = z.infer<typeof candidateSetSchema>;
 
+/** Competing identifier values with the exact upstream record attribution. */
+export const identifierConflictSchema = z.object({
+  field: z.string(),
+  values: z.array(
+    z.object({
+      record: sourceRefSchema,
+      value: z.union([
+        z.string(),
+        z.number(),
+        z.array(z.string()),
+        z.array(z.number()),
+      ]),
+    }),
+  ),
+});
+export type IdentifierConflict = z.infer<typeof identifierConflictSchema>;
+export const resolutionStateSchema = z.enum([
+  "complete",
+  "partial",
+  "skipped",
+  "unavailable",
+]);
+export type ResolutionState = z.infer<typeof resolutionStateSchema>;
 /** One non-fatal source failure recorded during identity resolution. */
 export const resolutionErrorSchema = z.object({
   database: z
@@ -243,6 +266,87 @@ export const resolutionErrorSchema = z.object({
   message: z
     .string()
     .describe("Actionable, database-only explanation of the failure."),
+});
+export const entityOmissionsSchema = z.object({
+  summaries: z.number().int().nonnegative().optional(),
+  evidence: z.number().int().nonnegative().optional(),
+  candidates: z.number().int().nonnegative().optional(),
+  links: z.number().int().nonnegative().optional(),
+  conflicts: z.number().int().nonnegative().optional(),
+  errors: z.number().int().nonnegative().optional(),
+  records: z.number().int().nonnegative().optional(),
+  recordIdentifiers: z.number().int().nonnegative().optional(),
+  identifiers: z.number().int().nonnegative().optional(),
+  nextSteps: z.number().int().nonnegative().optional(),
+});
+export type EntityOmissions = z.infer<typeof entityOmissionsSchema>;
+const entityFields = {
+  omitted: entityOmissionsSchema.optional(),
+  name: z.string(),
+  links: z.array(sourceLinkSchema),
+  evidence: z.array(
+    z.object({
+      kind: z.string(),
+      value: z.string(),
+      confidence: linkConfidenceSchema,
+    }),
+  ),
+  conflicts: z.array(identifierConflictSchema),
+  candidates: z.array(candidateSetSchema),
+  errors: z.array(resolutionErrorSchema).optional(),
+  resolution: resolutionStateSchema,
+  nextSteps: z.array(nextStepSchema),
+};
+export const ingredientSearchEntitySchema = z.object({
+  ...entityFields,
+  identifiers: ingredientIdentifiersSchema,
+  records: z.array(ingredientRefSchema),
+});
+export const productSearchEntitySchema = z.object({
+  ...entityFields,
+  identifiers: productIdentifiersSchema,
+  records: z.array(productRefSchema),
+});
+export type IngredientSearchEntity = z.infer<
+  typeof ingredientSearchEntitySchema
+>;
+export type ProductSearchEntity = z.infer<typeof productSearchEntitySchema>;
+export const sourceSearchStatusSchema = z.object({
+  source: databaseIdSchema,
+  status: z.enum(["ok", "error", "timeout"]),
+  page: z.number().int(),
+  hasMore: z.boolean(),
+  resultCount: z.number().int(),
+  error: z.string().optional(),
+});
+export type SourceSearchStatus = z.infer<typeof sourceSearchStatusSchema>;
+export const searchCoverageSchema = z.object({
+  entities: z.number().int(),
+  records: z.number().int(),
+  resolutionAttempted: z.number().int(),
+  resolutionCompleted: z.number().int(),
+  resolutionCapped: z.boolean(),
+});
+export type SearchCoverage = z.infer<typeof searchCoverageSchema>;
+const searchResultFields = {
+  truncated: z.boolean(),
+  entitiesOmitted: z.number().int().nonnegative(),
+  query: z.string(),
+  type: z.string(),
+  page: z.number().int(),
+  sources: z.array(sourceSearchStatusSchema),
+  coverage: searchCoverageSchema,
+  partial: z.boolean(),
+  nextSteps: z.array(nextStepSchema),
+};
+export const ingredientEntitySearchResultSchema = z.object({
+  ...searchResultFields,
+  entities: z.array(ingredientSearchEntitySchema),
+});
+export const productEntitySearchResultSchema = z.object({
+  ...searchResultFields,
+  category: productCategorySchema.optional(),
+  entities: z.array(productSearchEntitySchema),
 });
 
 /** One non-fatal source failure recorded during identity resolution. */

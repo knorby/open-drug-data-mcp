@@ -670,7 +670,7 @@ describe("get_ingredient — DrugCentral", () => {
       unii: "R16CO5Y76E",
       rxcui: ["1191"],
       inchiKey: "BSYNRYMUTXBXSQ-UHFFFAOYSA-N",
-      cid: [348],
+      cid: [2244],
     });
     expect(output.ingredient.identifiers.cas).toContain("50-78-2");
     expect(output.profile.identifiers).toContainEqual({
@@ -684,6 +684,7 @@ describe("get_ingredient — DrugCentral", () => {
     expect(output.profile.atc).toContain("A01AD05");
     expect(output.profile.atc).toContain("N02BA01");
     expect(output.profile.inchiKey).toBe("BSYNRYMUTXBXSQ-UHFFFAOYSA-N");
+    expect(output.profile.cid).toBe(2244);
     expect(output.profile.clinical).toBeUndefined();
     expect(output.regulatory).toBeUndefined();
 

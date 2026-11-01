@@ -30,7 +30,7 @@ licenses, attribution requirements, and source caveats are in
 - **Search by what you have.** A product name, brand, ingredient, barcode, or
   NDC; an ingredient name, INCI name, UNII, CAS number, EC number, RxCUI, or
   PubChem CID. You never choose a database first — the server fans out to
-  every source that can answer.
+  every source that can answer, then groups records into evidence-based entities.
 - **Resolve identity across sources.** One call walks the cross-source
   identity chain and returns trusted `links` (direct or derived) plus labeled
   `candidates` where the match is ambiguous. A link needs a direct identifier
@@ -115,6 +115,7 @@ never a key value.
 | `NLM_PUBMED_EMAIL` | unset | Optional contact address NCBI asks distributed software to send with PubMed requests. |
 | `NLM_PUBMED_TOOL` | unset | Optional tool name NCBI asks distributed software to send with PubMed requests. |
 | `DRUGDATA_TIMEOUT_MS` | `30000` | Per-request upstream timeout in milliseconds. Must be a positive integer when set; a blank value counts as unset. |
+| `DRUGDATA_SEARCH_TIMEOUT_MS` | `45000` | Shared wall-clock deadline for search fan-out and enrichment. Returns completed results with source timeout statuses and `partial` when incomplete. Positive integer; blank means default. Does not change by-source lookup timeouts. |
 | `DRUGDATA_DISABLED_SOURCES` | unset | Comma-separated adapter ids to switch off: `openfda`, `cosing`, `nlm`, `drugcentral`, `dsld`, `inkeedecoder`. `nlm` covers every NLM namespace (RxNorm, RxTerms, RxClass, DailyMed, MeSH, PubMed, MedlinePlus, UMLS, ClinicalTrials.gov) and the PubChem adapter, which shares the NLM client. Applies to searches, lookups, resolution, and reference searches. Unknown ids are a configuration error. |
 
 Configuration is read lazily when a tool runs, never at startup. A
@@ -128,15 +129,15 @@ positive integer.
 | Tool | Inputs | Returns |
 | --- | --- | --- |
 | `drugdata_ping` | optional `message` | Server name/version, every source's enabled state and whether its key is configured (including UMLS and PubMed reference keys), never a key value. No network. |
-| `drugdata_search_products` | `type`: `name`, `brand`, `ingredient`, `barcode`, `ndc`; `query`; optional `category`: `medication`, `supplement`, `cosmetic`; `page`; `response_format` | Product groups per upstream database, each item carrying identifiers, a deep link, and `matchBasis` where the match is weak. |
-| `drugdata_search_ingredients` | `type`: `name`, `inci`, `unii`, `cas`, `ec`, `rxcui`, `cid`; `query`; `page`; `response_format` | Ingredient groups per database, with UNII/CAS/EC/RxCUI and other identifiers the source knows. PubChem answers name and CID searches. |
+| `drugdata_search_products` | `type`: `name`, `brand`, `ingredient`, `barcode`, `ndc`; `query`; optional `category`: `medication`, `supplement`, `cosmetic`; `page`; `response_format` | Product entities with original source records, confirmed links, conflicts, candidates, per-entity next steps, source statuses, coverage, and `partial`. |
+| `drugdata_search_ingredients` | `type`: `name`, `inci`, `unii`, `cas`, `ec`, `rxcui`, `cid`; `query`; `page`; `response_format` | Ingredient entities with source-attributed identity evidence and the same coverage/status contract. PubChem answers name and CID searches. |
 | `drugdata_get_product` | `source`: `openfda`, `dsld`, `dailymed`, `inkeedecoder`; `id`; `include_label_sections` (default `false`); `include_ingredients` (default `true`); `page`; `response_format` | One product record, its ingredient rows and roles, source-specific details, links, and next steps. DailyMed usage sections are opt-in because they are large. |
 | `drugdata_get_ingredient` | `source`: `openfda`, `cosing`, `drugcentral`, `nlm`, `inkeedecoder`, `pubchem`; `id`; `include_clinical` (default `false`); `include_cosing_panel` (default `false`); `response_format` | One ingredient profile: identifiers, names, functions, regulatory notices, clinical assertions, chemistry (PubChem), RxTerms presentation (RxNorm), links, and next steps. DrugCentral clinical data and the INKEEDecoder CosIng panel are opt-in. |
-| `drugdata_resolve_identifiers` | exactly one of `unii`, `ndc`, `rxcui`, `cas`, `inci_name`, `substance_name`, `spl_setid`, `dsld_id`; `include_label_ingredients` (default `false`); `resolve_ingredients` (default `false`); `max_candidates` (default `5`); `response_format` | An identity graph for an ingredient, or a product's cross-source links plus its ingredient rows. `links` are trusted; `candidates` need judgment. |
+| `drugdata_resolve_identifiers` | exactly one of `unii`, `ndc`, `rxcui`, `cid`, `cas`, `inci_name`, `substance_name`, `spl_setid`, `dsld_id`; `include_label_ingredients` (default `false`); `resolve_ingredients` (default `false`); `max_candidates` (default `5`); `response_format` | An identity graph for an ingredient, or a product's cross-source links plus its ingredient rows. `links` are trusted; `candidates` need judgment. |
 | `drugdata_search_references` | `source`: `prescribable`, `rxclass`, `mesh`, `pubmed`, `medlineplus`, `medlineplus_genetics`, `medlineplus_connect`, `umls`, `clinicaltrials`; `type`: `name` (default), `rxcui`, `ndc`, `cui`; `query`; `limit` (default `10`); `cursor`; `response_format` | Titles, identifiers (PMID, NCT, MeSH id, CUI, RxCUI, class id), and deep links from one NLM reference source per call. Paginated sources return an opaque `cursor`. UMLS requires `UMLS_API_KEY`. |
 
 Pagination is per call. One `page` applies to every source in a search
-fan-out, and each group reports its own `hasMore`. Lookups page their own
+fan-out, and each entry in `sources` reports its own `hasMore`. Lookups page their own
 collections. Reference searches page through the `cursor` the previous
 response returned. Nothing walks pages automatically.
 
@@ -145,10 +146,59 @@ plus a readable markdown text block. Search, lookup, and resolve tools accept
 `response_format`; set it to `json` if a host wants JSON in the text block
 too.
 
-## Worked example: aspirin
+## Choosing the next call
+
+- Start free text with `type: "name"`. Use `brand` deliberately for a
+  brand-only search: fewer sources support it. Pass a product `category` when
+  known; ingredient searches have no category filter.
+- Read `entities`, not the old `groups` field. Each entity contains original
+  `records`, combined `identifiers`, resolver-confirmed `links`, grouping
+  `evidence`, source-attributed `conflicts`, unconfirmed `candidates`,
+  optional source-attributed resolution `errors`, `resolution`, and executable
+  `nextSteps` for every source record. Names
+  alone never merge records. Ingredients can join by UNII, RxCUI, dashed CAS,
+  CID, or InChIKey; products by full package NDC, SPL set id, or UPC — not
+  their ingredient RxCUI or application number.
+- Search enriches at most **five initial entities**, with **three concurrent
+  resolutions**, within one **45-second default deadline**. `sources` reports
+  `ok`, `error`, or `timeout`, page, `hasMore`, and `resultCount`. `coverage`
+  reports entity/record counts, attempted/completed resolutions, and whether
+  the cap applied. `partial` signals failed/timed-out sources or incomplete
+   enrichment, or response-budget omissions. Zero matches with `hasMore: true`
+   is still a successful page.
+- For an existing source+id, call `drugdata_get_product` or
+  `drugdata_get_ingredient` directly. Search does not return full profiles;
+  open only those needed for the question, with costly flags off by default.
+  PubChem uses `get_ingredient(source: "pubchem", id: "56843331")`; resolve a
+  CID with `resolve_identifiers(cid: "56843331")`.
+- If a returned page or article URL contains needed detail absent from tool
+  output, selectively fetch that supplied URL with the host's web tools.
+  Do not crawl or walk all pages.
+
+Responses are bounded to 25,000 characters. Search first shortens summaries and
+source errors, then removes derived evidence/candidates/links/conflicts, trailing
+entities (keeping at least one), trailing records, and finally large identifier
+arrays if necessary. A minimal entity shell is the last resort; an unrepresentable
+shell returns an explicit tool error, never a false empty successful page.
+`truncated` marks output loss; `entitiesOmitted` counts removed entities, and
+per-entity `omitted` counts removed summaries, collections, records, identifier
+values, and actions. Any loss sets `partial: true`; coverage counts remain
+pre-bound. Retained identifiers, URLs, and source+id actions remain exact.
+
+NDC resolution links RxNorm concepts only from NLM package crosswalk evidence,
+not openFDA's label-wide RxCUI arrays. Product records still retain those source
+arrays. Ingredient UNIIs appear when supplied by the source; default openFDA
+directory ingredient rows can lack identifiers. To request SPL label UNIIs,
+use `drugdata_resolve_identifiers` with `include_label_ingredients: true`.
+
+For the current unreleased search design, see
+[ADR-0006](docs/decisions/ADR-0006-entity-centric-search.md).
+
+## Historical worked example: aspirin
 
 These calls were run against the live sources on 2026-10-22. Output is
-abridged.
+abridged and show the older source-grouped rendering; current searches use
+the entity contract above and may already supply the links found in step 2.
 
 **1. Search by name.**
 
@@ -243,7 +293,7 @@ Attribution wording, licenses, and per-source caveats are in
 | [RxTerms](https://www.nlm.nih.gov/research/umls/rxnorm/rxterms.html) | Presentation names for clinical drugs (NLM RxNav) | RxCUI |
 | [RxClass](https://www.nlm.nih.gov/research/umls/rxnorm/rxclass.html) | Drug classifications across relationship sources (NLM RxNav) | class id, RxCUI |
 | [DailyMed](https://dailymed.nlm.nih.gov/) | Structured Product Label documents (NLM) | SPL set id, NDC, label ingredient UNIIs |
-| [DrugCentral](https://drugcentral.org/) | Active-ingredient structures, crosswalks, ATC, clinical assertions, FAERS signals | structId, UNII, RxCUI, CAS |
+| [DrugCentral](https://drugcentral.org/) | Active-ingredient structures, crosswalks, ATC, clinical assertions, FAERS signals | structId, UNII, RxCUI, CAS, PUBCHEM_CID crosswalk, InChIKey |
 | [DSLD](https://dsld.od.nih.gov/) | US dietary supplement labels (NIH ODS) | DSLD label id, barcode, ingredient names, UNIIs, CAS |
 | [INKEEDecoder](https://inkeedecoder.com/) | Cosmetic products and ingredient pages | product/ingredient slug, INCI name, CAS, EC |
 | [MeSH](https://id.nlm.nih.gov/mesh) | Biomedical subject headings and supplementary concept records (NLM) | MeSH descriptor id |
@@ -255,7 +305,7 @@ Attribution wording, licenses, and per-source caveats are in
 
 Not every source answers every search type. A source that cannot answer is
 simply absent from the result; a source that fails contributes an error
-group, and the other groups remain valid. Zero matches are a normal result,
+status, and the completed entities remain valid. Zero matches are a normal result,
 not an error.
 
 ## Development
@@ -316,8 +366,10 @@ docs/decisions/       architecture decision records
 
 ## Releasing
 
-Versioning uses Changesets. Add a changeset for any change that affects
-published output, then merge; `npx changeset version` updates the manifest and
+The MCP is private, in development, and has no released baseline. Do not add
+per-change changesets or migration notices during this stage. After the first
+release, use Changesets for changes that affect published output;
+`npx changeset version` updates the manifest and
 changelog, and `npm run release` builds and publishes.
 
 The GitHub Actions release workflow is intentionally staged at

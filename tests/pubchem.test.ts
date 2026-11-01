@@ -1,6 +1,9 @@
 import { NlmDrugsClient } from "@knorby/nlm-drugs-client";
 import { describe, expect, it, vi } from "vitest";
-import { createPubChemAdapter } from "../src/sources/pubchem.js";
+import {
+  createPubChemAdapter,
+  createPubChemBridges,
+} from "../src/sources/pubchem.js";
 import type {
   IngredientGroup,
   IngredientLookupRecord,
@@ -64,6 +67,27 @@ function propertiesResponse(cid: number, fields: object): Response {
 }
 
 describe("pubchem adapter — searchIngredients by name", () => {
+  it("resolves validated chemistry and treats unknown CIDs as empty", async () => {
+    const { client: nlm } = client((url) =>
+      url.pathname.includes("/2244/")
+        ? propertiesResponse(2244, {
+            IUPACName: "aspirin",
+            InChIKey: "ASPIRIN-KEY",
+          })
+        : jsonResponse({}, { status: 404 }),
+    );
+    const bridge = createPubChemBridges(nlm);
+    expect(await bridge.compoundByCid("2244")).toMatchObject({
+      name: "aspirin",
+      identifiers: { cid: [2244], inchiKey: "ASPIRIN-KEY" },
+    });
+    expect(await bridge.compoundByCid("0")).toBeNull();
+    expect(await bridge.compoundByCid("9999")).toBeNull();
+    const failed = client(() => jsonResponse({}, { status: 503 }));
+    await expect(
+      createPubChemBridges(failed.client).compoundByCid("2244"),
+    ).rejects.toThrow("PubChem returned HTTP 503");
+  });
   it("returns one ref per CID, named by the query, 20 per page", async () => {
     const { client: nlm } = client((url) =>
       url.pathname.endsWith("/cids/JSON")

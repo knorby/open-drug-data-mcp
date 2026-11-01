@@ -882,19 +882,30 @@ async function settleProductGroups(
   dailymed: Promise<ProductGroup>,
   page: number,
   signal: AbortSignal | undefined,
+  onGroups?: (groups: readonly ProductGroup[]) => void,
 ): Promise<ProductGroup[]> {
-  const settled = await Promise.allSettled([rxnorm, dailymed]);
+  const settled = await Promise.allSettled(
+    [rxnorm, dailymed].map(async (promise, index) => {
+      let group: ProductGroup;
+      try {
+        group = await promise;
+      } catch (error) {
+        group = failedProductGroup(
+          index === 0 ? "RxNorm" : "DailyMed",
+          page,
+          error,
+        );
+      }
+      onGroups?.([group]);
+      return group;
+    }),
+  );
   throwIfAborted(signal);
 
-  const [rx, dm] = settled;
-  return [
-    rx.status === "fulfilled"
-      ? rx.value
-      : failedProductGroup("RxNorm", page, rx.reason),
-    dm.status === "fulfilled"
-      ? dm.value
-      : failedProductGroup("DailyMed", page, dm.reason),
-  ];
+  return settled.map((outcome) => {
+    if (outcome.status === "rejected") throw outcome.reason;
+    return outcome.value;
+  });
 }
 
 /** A product group that carries one database's failure. @internal Exported for tests. */
@@ -931,6 +942,7 @@ export function createNlmAdapter(client?: NlmDrugsClient): SourceAdapter {
   return {
     id: "nlm",
     databases: ["RxNorm", "DailyMed"],
+    ingredientDatabases: ["RxNorm"],
     productSearchTypes,
     ingredientSearchTypes,
     productCategories: ["medication"],
@@ -940,6 +952,7 @@ export function createNlmAdapter(client?: NlmDrugsClient): SourceAdapter {
       query: string,
       page: number,
       signal?: AbortSignal,
+      onGroups?: (groups: readonly ProductGroup[]) => void,
     ): Promise<ProductGroup[]> {
       const trimmed = query.trim();
       const retrievedAt = new Date().toISOString();
@@ -967,6 +980,7 @@ export function createNlmAdapter(client?: NlmDrugsClient): SourceAdapter {
           dailyMedProductsByNdcSafely(nlm, ndc, page, retrievedAt, signal),
           page,
           signal,
+          onGroups,
         );
       }
 
@@ -982,6 +996,7 @@ export function createNlmAdapter(client?: NlmDrugsClient): SourceAdapter {
           ),
           page,
           signal,
+          onGroups,
         );
       }
 
@@ -1084,6 +1099,11 @@ export function createNlmAdapter(client?: NlmDrugsClient): SourceAdapter {
 
 /** The identifier bridges the identity chain consumes. */
 export interface NlmBridges {
+  /** A verified RxNorm concept, or null when absent or malformed. */
+  conceptByRxcui(
+    rxcui: string,
+    signal?: AbortSignal,
+  ): Promise<IngredientRef | null>;
   /** RxCUIs that RxNorm maps a UNII to. */
   rxcuisForUnii(unii: string, signal?: AbortSignal): Promise<string[]>;
   /** RxCUIs that RxNorm maps a canonical or dashed NDC to. */
@@ -1109,6 +1129,22 @@ export function createNlmBridges(client?: NlmDrugsClient): NlmBridges {
   const clients = () => client ?? getClients().nlm;
 
   return {
+    async conceptByRxcui(rxcui, signal) {
+      const id = rxcui.trim();
+      if (!RXCUI.test(id)) return null;
+      try {
+        const concept = await clients().rxNorm.getConcept(id, { signal });
+        return concept === undefined
+          ? null
+          : ingredientRefOf(
+              concept.rxcui,
+              concept.name,
+              new Date().toISOString(),
+            );
+      } catch (error) {
+        throw nlmFailure("The RxNorm concept lookup", "RxNorm", error);
+      }
+    },
     async rxcuisForUnii(unii, signal) {
       const trimmed = unii.trim().toUpperCase();
       if (!isUnii(trimmed)) return [];

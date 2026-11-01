@@ -89,7 +89,7 @@ scanning). Both are needed for full coverage.
 | `npm test` | Run tests once (Vitest) |
 | `npm run test:watch` | Run tests in watch mode |
 | `npm run test:coverage` | Run tests with coverage reporting |
-| `npx changeset` | Create a changeset (required for any change that affects published output) |
+| `npx changeset` | Record a published-output change after the first release; not required during private unreleased development |
 
 ---
 
@@ -144,7 +144,12 @@ This repo uses [Changesets](https://github.com/changesets/changesets) for
 versioning. Versioning is **decoupled from merges** — you can merge multiple
 PRs and release them all at once.
 
-- **Before a PR that changes published output**: run `npx changeset`, select
+**Current state: private, in development, never released.** Do not add
+per-change changesets, migration notices, or compatibility promises for this
+unreleased implementation. The release workflow below is future setup. Start
+recording changes against a released baseline only after the first release.
+
+- **After the first release, before a PR that changes published output**: run `npx changeset`, select
   bump type (patch/minor/major), write a summary. Commit the generated
   `.changeset/*.md` file alongside the code change.
 - **To release**: `npx changeset version` (bumps `package.json` +
@@ -269,7 +274,7 @@ These rules are mandatory. Follow them strictly.
   still answers `tools/list`.
 - **Bound responses** — paginate large collections and respect
   `CHARACTER_LIMIT`.
-- **Add a changeset for anything that changes published output.**
+- **After the first release, add a changeset for anything that changes published output.** Do not add per-change changesets during private unreleased development.
 
 ### Documentation
 
@@ -279,6 +284,8 @@ These rules are mandatory. Follow them strictly.
   decision records (ADRs). See `docs/README.md` for the ADR template.
 - Treat `docs/` as living documentation. Create an ADR in `docs/decisions/`
   for significant design decisions.
+- Correct or remove incorrect ADRs. They describe the current design, not an
+  immutable history of unreleased decisions.
 
 ### Before declaring done
 
@@ -317,7 +324,7 @@ DrugCentral, NIH DSLD, INKEEDecoder, and PubChem:
 - `drugdata_get_ingredient` — openFDA, CosIng, DrugCentral, RxNorm,
   INKEEDecoder, or PubChem.
 - `drugdata_resolve_identifiers` — exactly one of `unii`, `ndc`, `rxcui`,
-  `cas`, `inci_name`, `substance_name`, `spl_setid`, `dsld_id`.
+  `cid`, `cas`, `inci_name`, `substance_name`, `spl_setid`, `dsld_id`.
 - `drugdata_search_references` — one NLM reference source per call
   (`prescribable`, `rxclass`, `mesh`, `pubmed`, `medlineplus`,
   `medlineplus_genetics`, `medlineplus_connect`, `umls`, `clinicaltrials`)
@@ -327,7 +334,15 @@ DrugCentral, NIH DSLD, INKEEDecoder, and PubChem:
 
 The loop is search → resolve → get, plus a reference step for literature and
 classification sources. Every search and resolution returns `nextSteps`.
-Results are source-grouped, bounded, and credited to the upstream database.
+Search results are entity-grouped, bounded, and credited to the upstream
+database. `sources` holds per-database status/paging metadata, not duplicate
+records. When modifying search, read ADR-0006 for clustering, deadline,
+enrichment, and response-bounding invariants.
+
+Bounding preserves at least one entity or returns an explicit error. Any
+output loss sets `partial` and `truncated`; `entitiesOmitted` and per-entity
+`omitted` count loss while coverage stays pre-bound. NDC-derived RxNorm links
+use NLM package evidence, never openFDA label-wide RxCUI arrays.
 
 ### Hard sourcing policy
 
@@ -368,6 +383,7 @@ These are release-blocking rules, not style preferences:
 ```text
 src/sources/types.ts        SourceAdapter contract + capability declarations
 src/sources/registry.ts     search fan-out (allSettled) and lookup routing
+src/sources/search/         pure entity clustering + deadline/enrichment coordinator
 src/sources/<source>.ts     one adapter per upstream source module
 src/sources/nlm-references/ reference search handlers + cursor pagination
 src/tools/search-support.ts SEARCH_ADAPTERS, registry resolution, error groups
@@ -387,7 +403,9 @@ dispatches to one handler per source in `src/sources/nlm-references/` through
 than product/ingredient search. PubChem is an adapter
 (`src/sources/pubchem.ts`) that shares the NLM client and the `nlm`
 disable id; it serves ingredient searches (name, CID) and ingredient
-profiles (a `chemistry` block), not products or the identity chain.
+profiles (a `chemistry` block), not products. CID resolution uses PubChem
+verification and DrugCentral's exact PUBCHEM_CID crosswalk; DrugCentral
+`cd_id` is not a CID. RxCUI input is fetched before becoming a direct link.
 
 #### Adding a source
 
@@ -410,7 +428,7 @@ profiles (a `chemistry` block), not products or the identity chain.
    weak name match is a candidate, never a link.
 7. Add fixture-backed tests for search, lookup, zero matches, and failures;
    extend the sourcing leak sweep; keep coverage at 100%.
-8. Update the README source table and add a changeset.
+8. Update the README source table; add a changeset only after the first release.
 
 Adding a search type is smaller: add the enum value in `src/sources/types.ts`,
 add it to the tool's input enum, and declare it on the adapters that can
@@ -481,7 +499,9 @@ substring-based.
 - ADR-0001 records the platform and protocol posture; ADR-0002 the unified
   interface and sourcing policy; ADR-0003 the identity chain; ADR-0004 the
   INKEEDecoder inclusion.
-- Add a changeset for any published-output change. The release workflow is
+- After the first release, add a changeset for any published-output change.
+  No per-change changesets are needed during private unreleased development.
+  The release workflow is
   staged at `workflow-templates/release.yml`; activation waits for the public
   move, and the template's release setup above still applies.
 - Keep `docs/superpowers/` out of git. It is local planning scratch for a

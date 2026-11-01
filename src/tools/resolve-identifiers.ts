@@ -59,6 +59,7 @@ const IDENTIFIER_KEYS = [
   "unii",
   "ndc",
   "rxcui",
+  "cid",
   "cas",
   "inci_name",
   "substance_name",
@@ -112,7 +113,7 @@ const INGREDIENT_FIELDS: ReadonlyArray<IdentifierField<IngredientIdentifiers>> =
   ];
 
 const DESCRIPTION =
-  "Resolve one identifier across openFDA, CosIng, RxNorm, DrugCentral, DailyMed, DSLD, and INKEEDecoder. Pass exactly one of unii, ndc, rxcui, cas, inci_name, substance_name, spl_setid, or dsld_id. Ingredient identifiers return an identity graph of confident cross-source links with labeled candidate sets for ambiguity; product identifiers (ndc, spl_setid, dsld_id) return the product's cross-source links plus its ingredient rows. `include_label_ingredients` parses SPL XML for ingredient UNIIs — extra request, default false. `resolve_ingredients` runs the full resolution per ingredient — many requests on multi-ingredient products, default false — and returns graphs for a prefix of the ingredient rows, capped at 20. `max_candidates` caps the options per ambiguous source result. Results carry a compact confidence count and suggested follow-up calls. An identifier of the wrong shape is an error result naming the search tool that finds a valid one; zero matches are ordinary and in-band.";
+  "Resolve one identifier across openFDA, CosIng, RxNorm, DrugCentral, DailyMed, DSLD, INKEEDecoder, and PubChem. Pass exactly one of unii, ndc, rxcui, cid (PubChem compound id), cas, inci_name, substance_name, spl_setid, or dsld_id. Ingredient identifiers return an identity graph of confident cross-source links with labeled candidate sets for ambiguity; product identifiers (ndc, spl_setid, dsld_id) return the product's cross-source links plus its ingredient rows. `include_label_ingredients` parses SPL XML for ingredient UNIIs — extra request, default false. `resolve_ingredients` runs the full resolution per ingredient — many requests on multi-ingredient products, default false — and returns graphs for a prefix of the ingredient rows, capped at 20. `max_candidates` caps the options per ambiguous source result. Results carry a compact confidence count and suggested follow-up calls. An identifier of the wrong shape is an error result naming the search tool that finds a valid one; zero matches are ordinary and in-band.";
 
 /** The fields one identifier family may be supplied through. */
 const identifierFields = {
@@ -132,6 +133,12 @@ const identifierFields = {
     .string()
     .optional()
     .describe('RxNorm concept identifier — numeric, for example "1191".'),
+  cid: z
+    .string()
+    .optional()
+    .describe(
+      'PubChem compound identifier — a positive safe integer, for example "56843331".',
+    ),
   cas: z
     .string()
     .optional()
@@ -265,6 +272,7 @@ function invalidIdentifier(
 
 /** Advice for a malformed exact identifier. */
 const IDENTIFIER_ADVICE: Readonly<Record<IdentifierKey, string>> = {
+  cid: 'Use drugdata_search_ingredients with type "cid" or "name" to find a valid PubChem CID.',
   unii: 'Use drugdata_search_ingredients with type "unii" to find a valid UNII, or pass inci_name or substance_name for a name lookup.',
   ndc: 'Use drugdata_search_products with type "ndc" to find a valid NDC, then pass it back unchanged.',
   rxcui:
@@ -299,6 +307,17 @@ function prepareResolveInput(input: ResolveToolInput): PreparedInput {
   };
 
   switch (key) {
+    case "cid": {
+      const value = String(input.cid).trim();
+      if (!/^[1-9]\d*$/.test(value) || !Number.isSafeInteger(Number(value)))
+        return invalidIdentifier(
+          key,
+          "expects a positive safe integer PubChem CID",
+          input.cid,
+          IDENTIFIER_ADVICE.cid,
+        );
+      return { ok: true, input: { cid: value }, opts, query: `cid ${value}` };
+    }
     case "unii": {
       const value = String(input.unii).trim();
       if (!isUnii(value)) {
@@ -497,6 +516,7 @@ const PRODUCT_LINK_TARGETS: Partial<Record<DatabaseId, LinkTarget>> = {
 
 /** Product-to-ingredient lookups, in the database vocabulary. */
 const INGREDIENT_LINK_TARGETS: Partial<Record<DatabaseId, LinkTarget>> = {
+  PubChem: { tool: GET_INGREDIENT, source: "pubchem", id: numericId },
   openFDA: {
     tool: GET_INGREDIENT,
     source: "openfda",

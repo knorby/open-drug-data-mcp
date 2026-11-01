@@ -202,12 +202,14 @@ function baseDeps(): IdentityDeps {
       byCas: async () => [],
     },
     nlm: {
+      conceptByRxcui: async () => null,
       rxcuisForUnii: async () => [],
       rxcuisForNdc: async () => [],
       splsForNdc: async () => [],
       getSplXml: async () => "",
     },
     drugcentral: {
+      structIdsForCid: async () => [],
       structIdsForUnii: async () => [],
       structIdsForRxcui: async () => [],
       getProfile: async () => profile([]),
@@ -219,6 +221,7 @@ function baseDeps(): IdentityDeps {
     inkeedecoder: {
       getIngredient: async () => null,
     },
+    pubchem: { compoundByCid: async () => null },
   };
 }
 
@@ -236,6 +239,7 @@ function deps(overrides: DepOverrides = {}): IdentityDeps {
     drugcentral: { ...base.drugcentral, ...overrides.drugcentral },
     dsld: { ...base.dsld, ...overrides.dsld },
     inkeedecoder: { ...base.inkeedecoder, ...overrides.inkeedecoder },
+    pubchem: { ...base.pubchem, ...overrides.pubchem },
   };
 }
 
@@ -252,6 +256,164 @@ async function resolveIngredient(
   if (result.kind !== "ingredient") throw new Error("expected an ingredient");
   return result.graph;
 }
+
+describe("validated direct RxCUI", () => {
+  it("retains the DrugCentral InChIKey when PubChem has no compound", async () => {
+    const result = profile([idRow("PUBCHEM_CID", "2244")]);
+    if (result.data.structure)
+      result.data.structure.inchikey = "BSYNRYMUTXBXSQ-UHFFFAOYSA-N";
+    const graph = await resolveIngredient(
+      { unii: "R16CO5Y76E" },
+      {
+        drugcentral: {
+          structIdsForUnii: async () => [74],
+          getProfile: async () => result,
+        },
+        pubchem: { compoundByCid: async () => null },
+      },
+    );
+    expect(graph.identifiers.inchiKey).toBe("BSYNRYMUTXBXSQ-UHFFFAOYSA-N");
+    expect(
+      graph.records?.find((record) => record.source.database === "DrugCentral")
+        ?.identifiers.inchiKey,
+    ).toBe("BSYNRYMUTXBXSQ-UHFFFAOYSA-N");
+    expect(graph.links.some((link) => link.database === "PubChem")).toBe(false);
+  });
+  it("derives PubChem links from UNII crosswalks without conflating multiple CIDs", async () => {
+    const single = await resolveIngredient(
+      { unii: "53AXN4NNHX" },
+      {
+        drugcentral: {
+          structIdsForUnii: async () => [5267],
+          getProfile: async () =>
+            profile([idRow("PUBCHEM_CID", "56843331", 5267)]),
+        },
+        pubchem: {
+          compoundByCid: async () =>
+            ingredient("semaglutide", {
+              identifiers: { cid: [56843331] },
+              source: {
+                database: "PubChem",
+                id: "56843331",
+                url: "https://pubchem.ncbi.nlm.nih.gov/compound/56843331",
+                retrievedAt: ISO,
+              },
+            }),
+        },
+      },
+    );
+    expect(single.links).toContainEqual(
+      expect.objectContaining({ database: "PubChem", confidence: "derived" }),
+    );
+    const multiple = await resolveIngredient(
+      { unii: "53AXN4NNHX" },
+      {
+        drugcentral: {
+          structIdsForUnii: async () => [5267],
+          getProfile: async () =>
+            profile([
+              idRow("PUBCHEM_CID", "56843331", 5267),
+              idRow("PUBCHEM_CID", "2244", 5267),
+            ]),
+        },
+      },
+    );
+    expect(multiple.candidates).toContainEqual(
+      expect.objectContaining({
+        database: "PubChem",
+        reason: "multiple-cid-matches",
+      }),
+    );
+    expect(multiple.links.some((link) => link.database === "PubChem")).toBe(
+      false,
+    );
+  });
+  it("traverses a CID crosswalk through DrugCentral and PubChem", async () => {
+    const graph = await resolveIngredient(
+      { cid: "56843331" },
+      {
+        drugcentral: {
+          structIdsForCid: async () => [5267],
+          getProfile: async () =>
+            profile(
+              [
+                idRow("UNII", "53AXN4NNHX", 5267),
+                idRow("PUBCHEM_CID", "56843331", 5267),
+              ],
+              "semaglutide",
+            ),
+        },
+        nlm: { rxcuisForUnii: async () => ["1991302"] },
+        pubchem: {
+          compoundByCid: async () =>
+            ingredient("semaglutide", {
+              identifiers: {
+                cid: [56843331],
+                inchiKey: "DLSWIYLPEUIQAV-CCUURXOWSA-N",
+              },
+              source: {
+                database: "PubChem",
+                id: "56843331",
+                url: "https://pubchem.ncbi.nlm.nih.gov/compound/56843331",
+                retrievedAt: ISO,
+              },
+            }),
+        },
+      },
+    );
+    expect(graph.identifiers.cid).toEqual([56843331]);
+    expect(graph.identifiers.inchiKey).toBe("DLSWIYLPEUIQAV-CCUURXOWSA-N");
+    expect(graph.links).toContainEqual(
+      expect.objectContaining({
+        database: "DrugCentral",
+        id: "5267",
+        matchedVia: "cid",
+      }),
+    );
+    expect(graph.links).toContainEqual(
+      expect.objectContaining({
+        database: "PubChem",
+        id: "56843331",
+        confidence: "direct",
+      }),
+    );
+    expect(graph.links).toContainEqual(
+      expect.objectContaining({ database: "RxNorm", id: "1991302" }),
+    );
+  });
+
+  it("does not fabricate a link for an unknown concept", async () => {
+    const graph = await resolveIngredient({ rxcui: "999999999" });
+    expect(graph.links).toEqual([]);
+    expect(graph.identifiers.rxcui).toEqual(["999999999"]);
+  });
+
+  it("uses the actual fetched concept name", async () => {
+    const graph = await resolveIngredient(
+      { rxcui: "202433" },
+      {
+        nlm: {
+          conceptByRxcui: async () =>
+            ingredient("Tylenol", {
+              identifiers: { rxcui: ["202433"] },
+              source: {
+                database: "RxNorm",
+                id: "202433",
+                url: "https://mor.nlm.nih.gov/RxNav/search?searchBy=RXCUI&searchTerm=202433",
+                retrievedAt: ISO,
+              },
+            }),
+        },
+      },
+    );
+    expect(graph.subject.name).toBe("Tylenol");
+    expect(graph.links[0]).toMatchObject({
+      database: "RxNorm",
+      id: "202433",
+      confidence: "direct",
+    });
+  });
+});
 
 /** The loaded ingredient-group fixture, exposed as refs by the bridge. */
 const DSLD_GROUPS: IngredientRef[] = [
@@ -376,6 +538,18 @@ describe("identity chain (a): confident cross-source links", () => {
     const graph = await resolveIngredient(
       { rxcui: "1191" },
       {
+        nlm: {
+          conceptByRxcui: async () =>
+            ingredient("aspirin", {
+              identifiers: { rxcui: ["1191"] },
+              source: {
+                database: "RxNorm",
+                id: "1191",
+                url: "https://example.test/rxnorm/1191",
+                retrievedAt: ISO,
+              },
+            }),
+        },
         drugcentral: {
           structIdsForRxcui: async () => [74],
           getProfile: async () => profile([idRow("RXNORM", "1191")]),
@@ -397,7 +571,7 @@ describe("identity chain (a): confident cross-source links", () => {
   it("does not adopt an RxCUI as the subject name", async () => {
     const graph = await resolveIngredient({ rxcui: "1191" });
     expect(graph.subject).toEqual({});
-    expect(graph.links[0]?.database).toBe("RxNorm");
+    expect(graph.links).toEqual([]);
   });
 });
 
@@ -477,6 +651,63 @@ describe("identity chain (b): ambiguity stays a candidate set", () => {
 });
 
 describe("identity chain (c): product resolution", () => {
+  for (const mode of [
+    "success",
+    "product-level",
+    "failure",
+    "disabled",
+  ] as const) {
+    it(`uses package RxNorm evidence without label-wide fallback (${mode})`, async () => {
+      const rxcuis = Array.from({ length: 48 }, (_, i) => String(2600000 + i));
+      const record = productRecord(
+        {
+          name: "Zepbound",
+          category: "medication",
+          identifiers: { ndc: ["0002-0152-01", "0002-0152-04"], rxcui: rxcuis },
+          source: {
+            database: "openFDA",
+            id: "0002-0152",
+            url: "https://example.test/ndc",
+            retrievedAt: ISO,
+          },
+        },
+        [],
+      );
+      const lookup = vi.fn(async () => {
+        if (mode === "failure") throw new Error("RxNorm unavailable");
+        return ["2679323"];
+      });
+      const result = await createIdentityResolver(
+        deps({
+          openfda: { productByNdc: async () => record },
+          nlm: { rxcuisForNdc: lookup },
+        }),
+        mode === "disabled" ? ["nlm"] : [],
+      ).resolve(
+        { ndc: mode === "product-level" ? "0002-0152" : "0002-0152-01" },
+        {},
+      );
+      expect(result.kind).toBe("product");
+      if (result.kind !== "product") return;
+      expect(
+        result.links
+          .filter((link) => link.database === "RxNorm")
+          .map((link) => link.id),
+      ).toEqual(
+        mode === "success" || mode === "product-level" ? ["2679323"] : [],
+      );
+      expect(record.product.identifiers.rxcui).toEqual(rxcuis);
+      if (mode === "failure")
+        expect(result.errors).toContainEqual(
+          expect.objectContaining({ database: "RxNorm" }),
+        );
+      if (mode === "success" || mode === "product-level") {
+        expect(lookup).toHaveBeenCalledWith("0002-0152-01", undefined);
+        expect(lookup).toHaveBeenCalledWith("0002-0152-04", undefined);
+      }
+      if (mode === "disabled") expect(lookup).not.toHaveBeenCalled();
+    });
+  }
   it("returns product links and role-annotated ingredient refs for an NDC", async () => {
     const record = productRecord(
       {
@@ -1861,7 +2092,7 @@ describe("edge paths", () => {
     ).toEqual(["derived", "derived"]);
   });
 
-  it("uses record RxCUIs and application details when NLM has none", async () => {
+  it("keeps application details without label-wide RxCUIs when NLM has none", async () => {
     const result = await createIdentityResolver(
       deps({
         openfda: {
@@ -1890,7 +2121,6 @@ describe("edge paths", () => {
     expect(result.links.map((link) => link.id)).toEqual([
       "00093-1046",
       "NDA020702",
-      "617314",
     ]);
   });
 

@@ -10,10 +10,14 @@ import { searchNextSteps } from "../src/lib/next-steps.js";
 import type {
   DatabaseId,
   IngredientRef,
+  IngredientSearchEntity,
   NextStep,
   ProductIdentifiers,
   ProductRef,
+  ProductSearchEntity,
+  SourceSearchStatus,
 } from "../src/lib/schemas.js";
+import type { IdentityResolver } from "../src/sources/identity/chain.js";
 import { createRegistry } from "../src/sources/registry.js";
 import type {
   IngredientGroup,
@@ -52,14 +56,16 @@ function clearEnv(): void {
 interface ProductSearchOutput {
   query: string;
   page: number;
-  groups: ProductGroup[];
+  entities: ProductSearchEntity[];
+  sources: SourceSearchStatus[];
   nextSteps: NextStep[];
 }
 
 interface IngredientSearchOutput {
   query: string;
   page: number;
-  groups: IngredientGroup[];
+  entities: IngredientSearchEntity[];
+  sources: SourceSearchStatus[];
   nextSteps: NextStep[];
 }
 
@@ -179,14 +185,23 @@ function fakeAdapter(input: FakeAdapterInput): SourceAdapter {
   };
 }
 
-async function start(registry?: Registry): Promise<TestHarness> {
+const noResolution: IdentityResolver = {
+  resolve: async () => ({
+    kind: "ingredient",
+    graph: { subject: {}, identifiers: {}, links: [], candidates: [] },
+  }),
+};
+async function start(
+  registry?: Registry,
+  resolver: IdentityResolver = noResolution,
+): Promise<TestHarness> {
   return createTestClient(() => {
     const server = new McpServer({
       name: SERVER_NAME,
       version: SERVER_VERSION,
     });
-    registerSearchProductsTool(server, registry);
-    registerSearchIngredientsTool(server, registry);
+    registerSearchProductsTool(server, registry, resolver);
+    registerSearchIngredientsTool(server, registry, resolver);
     return server;
   });
 }
@@ -311,31 +326,30 @@ describe("search tools", () => {
     const output = result.structuredContent as ProductSearchOutput;
     expect(output.query).toBe("aspirin");
     expect(output.page).toBe(1);
-    expect(output.groups.map((group) => group.source)).toEqual([
+    expect(output.sources.map((group) => group.source)).toEqual([
       "openFDA",
       "DSLD",
     ]);
-    expect(output.groups[0]?.items).toHaveLength(2);
-    expect(output.groups[1]?.items).toHaveLength(1);
+    expect(output.entities).toHaveLength(3);
+    expect(output.sources.map((source) => source.resultCount)).toEqual([2, 1]);
 
     // The output schema is closed: an adapter's stray field is stripped.
-    const firstItem = output.groups[0]?.items[0];
+    const firstItem = output.entities[0]?.records[0];
     expect(firstItem).toBeDefined();
     expect(
       (firstItem as unknown as Record<string, unknown>).upstreamSecret,
     ).toBeUndefined();
     expect(JSON.stringify(result)).not.toContain("must not reach the model");
 
-    expect(output.nextSteps).toHaveLength(2);
-    expect(output.nextSteps[0]).toMatchObject({
+    expect(output.entities[0]?.nextSteps[0]).toMatchObject({
       tool: "drugdata_get_product",
       input: { source: "openfda", id: "00000000001" },
     });
-    expect(output.nextSteps[1]).toMatchObject({
+    expect(output.entities[2]?.nextSteps[0]).toMatchObject({
       tool: "drugdata_get_product",
       input: { source: "dsld", id: "82118" },
     });
-    expect(output.nextSteps[0]?.why).toContain("name search");
+    expect(output.nextSteps[0]?.input.page).toBe(2);
 
     const text = textOf(result);
     expect(text).toContain("### openFDA — 2 results (page 1, more available)");
@@ -379,13 +393,13 @@ describe("search tools", () => {
 
     expect(result.isError).toBeFalsy();
     const output = result.structuredContent as ProductSearchOutput;
-    const errorGroup = output.groups.find((group) => group.source === "DSLD");
-    expect(errorGroup?.items).toEqual([]);
+    const errorGroup = output.sources.find((group) => group.source === "DSLD");
+    expect(errorGroup?.resultCount).toBe(0);
     expect(errorGroup?.error).toContain("upstream service");
     expect(errorGroup?.error).not.toMatch(/@knorby|client/i);
     expect(
-      output.groups.find((group) => group.source === "openFDA")?.items,
-    ).toHaveLength(1);
+      output.sources.find((group) => group.source === "openFDA")?.resultCount,
+    ).toBe(1);
 
     const serialized = JSON.stringify(result);
     expect(serialized).not.toMatch(/@knorby|client/i);
@@ -410,8 +424,8 @@ describe("search tools", () => {
 
     expect(result.isError).toBeFalsy();
     const output = result.structuredContent as ProductSearchOutput;
-    expect(output.groups).toHaveLength(1);
-    expect(output.groups[0]?.items).toEqual([]);
+    expect(output.sources).toHaveLength(1);
+    expect(output.entities).toEqual([]);
     expect(output.nextSteps).toEqual([]);
     expect(textOf(result)).toContain("### openFDA — 0 results");
     expect(textOf(result)).toContain("- No matches on this page.");
@@ -492,7 +506,7 @@ describe("search tools", () => {
 
     expect(result.isError).toBeFalsy();
     const output = result.structuredContent as ProductSearchOutput;
-    expect(output.groups).toEqual([]);
+    expect(output.sources).toEqual([]);
     expect(textOf(result)).toContain(
       "No source covers this search type and filter.",
     );
@@ -563,11 +577,12 @@ describe("search tools", () => {
       "vitamin",
       2,
       expect.any(AbortSignal),
+      expect.any(Function),
     );
     const output = result.structuredContent as ProductSearchOutput;
     expect(output.page).toBe(2);
-    expect(output.groups.map((group) => group.source)).toEqual(["DSLD"]);
-    expect(output.groups[0]?.page).toBe(2);
+    expect(output.sources.map((group) => group.source)).toEqual(["DSLD"]);
+    expect(output.sources[0]?.page).toBe(2);
   });
 
   it("returns JSON text when response_format is json", async () => {
@@ -696,13 +711,14 @@ describe("search tools", () => {
     expect(result.isError).toBeFalsy();
     const output = result.structuredContent as IngredientSearchOutput;
     expect(output.query).toBe("niacinamide");
-    expect(output.groups).toHaveLength(1);
-    expect(output.groups[0]?.items).toHaveLength(3);
-    expect(output.nextSteps[0]).toMatchObject({
-      tool: "drugdata_resolve_identifiers",
-      input: { unii: "25X51I8RD4" },
-    });
-    expect(output.nextSteps[0]?.why).toContain("name search");
+    expect(output.sources).toHaveLength(1);
+    expect(output.entities).toHaveLength(3);
+    expect(output.entities[0]?.nextSteps).toContainEqual(
+      expect.objectContaining({
+        tool: "drugdata_resolve_identifiers",
+        input: { unii: "25X51I8RD4" },
+      }),
+    );
 
     const text = textOf(result);
     expect(text).toContain("### openFDA — 3 results (page 1)");
@@ -833,7 +849,7 @@ describe("search tools", () => {
     expect(text).toContain("### CosIng — 1 result (page 1, more available)");
     expect(text).toContain("### RxNorm — 0 results (page 1)");
     expect(text).toContain("- No matches on this page.");
-    expect(text).toContain("Some fields were shortened");
+    expect(text).toContain("Response truncated");
     expect(text).toContain("call this tool again with page: 2");
   });
 
@@ -913,10 +929,10 @@ describe("search tools", () => {
     expect(JSON.stringify(result.structuredContent).length).toBeLessThanOrEqual(
       CHARACTER_LIMIT,
     );
-    expect(textOf(result)).toContain("Some fields were shortened");
+    expect(textOf(result)).toContain("Response truncated");
   });
 
-  it("derives paging advice from the rendered groups after bounding", async () => {
+  it("preserves source paging advice when entities are bounded", async () => {
     const sources: DatabaseId[] = [
       "openFDA",
       "DSLD",
@@ -958,8 +974,8 @@ describe("search tools", () => {
     });
 
     const output = result.structuredContent as ProductSearchOutput;
-    expect(output.groups.length).toBeLessThan(sources.length);
-    expect(textOf(result)).not.toContain("More results available");
+    expect(output.sources.length).toBe(sources.length);
+    expect(textOf(result)).toContain("More results available");
   });
 
   it("builds the default registry from valid configuration", () => {

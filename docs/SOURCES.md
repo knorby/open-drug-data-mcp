@@ -88,6 +88,11 @@ redistributing data.
 
 ## openFDA
 
+Product UPC/RxCUI arrays are source-published label-level crosswalk data, not
+package-specific resolution evidence. They remain on source records unchanged;
+NDC resolution uses only NLM's package crosswalk for RxNorm links. Directory
+ingredient rows can lack UNIIs; SPL label ingredients are an explicit opt-in.
+
 | | |
 | --- | --- |
 | **Publisher** | U.S. Food and Drug Administration (FDA) |
@@ -444,6 +449,13 @@ in a marketed sense; one ingredient name can match several compounds (salts,
 hydrates, mixtures), and compound identity is not a regulatory status.
 
 ## DrugCentral
+
+Identity caveat: DrugCentral's structure `cd_id` is internal metadata, not a
+PubChem CID. Only explicit positive integer `PUBCHEM_CID` crosswalk rows
+populate CID fields. CID-to-structure resolution requires exact identifier
+and type matches. Conflicting InChIKeys from DrugCentral and PubChem remain
+source-attributed conflicts, not silently replaced values. Search records do
+not acquire a CID from `cd_id`.
 
 | | |
 | --- | --- |

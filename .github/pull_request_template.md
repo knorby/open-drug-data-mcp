@@ -16,5 +16,5 @@
 - [ ] Type checking passes (`npm run typecheck`)
 - [ ] Tests pass (`npm test`)
 - [ ] Build succeeds (`npm run build`)
-- [ ] A changeset has been added (`npx changeset`) if this affects published output
+- [ ] After the first release only: a changeset has been added (`npx changeset`) if this affects published output; not applicable during private unreleased development
 - [ ] Commit message follows [conventional commits](https://www.conventionalcommits.org/)

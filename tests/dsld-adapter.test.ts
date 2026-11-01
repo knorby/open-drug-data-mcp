@@ -145,12 +145,10 @@ function fullSearchPage(): unknown {
     ?._source;
   const hits = Array.from({ length: 20 }, (_, index) => ({
     _id: String(1000 + index),
-    _source: { ...base, id: 1000 + index },
+    _source: { ...base },
   }));
   // Duplicate the last label id: the same label can arrive for two variants.
-  (hits[19] as { _source: object })._source = {
-    ...(hits[18] as { _source: object })._source,
-  };
+  hits[19] = hits[18] as (typeof hits)[number];
   return { hits };
 }
 
@@ -187,6 +185,34 @@ describe("DSLD adapter capabilities", () => {
 });
 
 describe("DSLD product name search", () => {
+  it.each([
+    {
+      hit: { _id: "271123", _source: { fullName: "Vitamin C 1000 mg", id: 1 } },
+      expected: [271123],
+    },
+    { hit: { _source: { id: 42 } }, expected: [42] },
+    ...[undefined, "", "0", "-1", "1.5", "1e3", "9007199254740992", "abc"].map(
+      (_id) => ({ hit: { _id, _source: {} }, expected: [] }),
+    ),
+    { hit: { _id: "bad", _source: { id: 9007199254740992 } }, expected: [] },
+  ])(
+    "validates the search envelope identity: $hit",
+    async ({ hit, expected }) => {
+      const { client } = clientFor(searchOnly({ hits: [hit] }));
+      const groups = await createDsldAdapter(client).searchProducts(
+        "name",
+        "Vitamin C",
+        1,
+      );
+      expect(groups[0]?.items.map((item) => item.identifiers.dsldId)).toEqual(
+        expected,
+      );
+      expect(groups[0]?.items.map((item) => item.source.id)).toEqual(
+        expected.map(String),
+      );
+    },
+  );
+
   it("maps search hits to product refs without fetching labels", async () => {
     const { client, fetchMock } = clientFor(searchOnly(searchPage()));
     const adapter = createDsldAdapter(client);

@@ -1,5 +1,5 @@
 import * as z from "zod/v4";
-import { DEFAULT_TIMEOUT_MS } from "./constants.js";
+import { DEFAULT_SEARCH_TIMEOUT_MS, DEFAULT_TIMEOUT_MS } from "./constants.js";
 
 /**
  * Adapter ids, in the order the registry and diagnostics report them.
@@ -61,6 +61,13 @@ const optionalKey = () =>
  * because hosts often emit `"VAR": ""` for every variable in a config block.
  */
 const EnvSchema = z.object({
+  DRUGDATA_SEARCH_TIMEOUT_MS: z.preprocess(
+    (value) =>
+      typeof value === "string" && value.trim().length === 0
+        ? undefined
+        : value,
+    z.coerce.number().int().positive().default(DEFAULT_SEARCH_TIMEOUT_MS),
+  ),
   /**
    * openFDA API key. Optional: keyless requests work at a lower rate limit.
    * Never echoed to a tool response.

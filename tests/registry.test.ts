@@ -26,6 +26,32 @@ import {
 
 const RETRIEVED_AT = "2026-10-21T12:00:00.000Z";
 
+it("surfaces an internal observer failure rather than inventing an upstream failure", async () => {
+  const registry = createRegistry(
+    [
+      makeAdapter({
+        id: "openfda",
+        databases: ["openFDA"],
+        ingredientSearchTypes: ["name"],
+        searchIngredients: async () => [ingredientGroup("openFDA")],
+      }),
+    ],
+    [],
+  );
+  const error = new Error("observer failed");
+  await expect(
+    registry.searchIngredients(
+      "name",
+      "aspirin",
+      { page: 1 },
+      undefined,
+      () => {
+        throw error;
+      },
+    ),
+  ).rejects.toBe(error);
+});
+
 function productRef(database: DatabaseId, name: string): ProductRef {
   return {
     name,
