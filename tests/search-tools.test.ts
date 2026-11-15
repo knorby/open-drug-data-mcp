@@ -430,6 +430,8 @@ describe("search tools", () => {
     expect(textOf(result)).toContain("### openFDA — 0 results");
     expect(textOf(result)).toContain("- No matches on this page.");
     expect(textOf(result)).toContain("No matches found.");
+    expect(textOf(result)).toContain("only the brand");
+    expect(textOf(result)).toContain("only the ingredient");
   });
 
   it("explains empty results when some sources failed", async () => {
@@ -670,6 +672,8 @@ describe("search tools", () => {
     expect(JSON.parse(jsonBlock.text)).toEqual(result.structuredContent);
     expect(guidance.text).toContain("No matches found.");
     expect(guidance.text).toContain("remove the category filter");
+    expect(guidance.text).toContain("only the brand");
+    expect(guidance.text).toContain("only the ingredient");
   });
 
   it("renders ingredient results and suggests resolving a UNII", async () => {

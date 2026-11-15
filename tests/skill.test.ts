@@ -131,6 +131,8 @@ describe("agent skill", () => {
       "drugcentral",
       "substring",
       "zero matches",
+      "only the brand",
+      "only the ingredient",
       "page",
       "hasmore",
       "cite",

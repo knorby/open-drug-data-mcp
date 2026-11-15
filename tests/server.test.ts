@@ -331,6 +331,10 @@ describe("server assembly", () => {
       "hasMore",
       "cite",
       "deep link",
+      "only the brand",
+      "only the ingredient",
+      "Natrol",
+      "melatonin",
       DISCLAIMER,
     ]) {
       expect(instructions).toContain(expected);
@@ -377,6 +381,10 @@ describe("server assembly", () => {
       "partial",
       "timeout",
       "entities",
+      "only the brand",
+      "only the ingredient",
+      "Natrol",
+      "melatonin",
     ])
       expect(text).toContain(expected);
     expect(text).toContain(DISCLAIMER);
@@ -410,6 +418,17 @@ describe("server assembly", () => {
     expect(product?.description).toContain("when supplied by the source");
     expect(product?.description).toContain("include_label_ingredients: true");
     expect(product?.description).toContain("drugdata_resolve_identifiers");
+    const search = tools.find(
+      (tool) => tool.name === "drugdata_search_products",
+    );
+    for (const term of [
+      "only the brand",
+      "only the ingredient",
+      "Natrol",
+      "melatonin",
+    ]) {
+      expect(search?.description).toContain(term);
+    }
   });
 
   it("serves server://info with the disclaimer and enabled sources", async () => {
