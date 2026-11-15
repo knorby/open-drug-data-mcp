@@ -664,6 +664,15 @@ describe("DrugCentral bridges", () => {
     ).toEqual([]);
   });
 
+  it("reports a failed CID crosswalk as a DrugCentral error", async () => {
+    const { client } = clientFor({
+      "/identifier/identifier/2244": () => failure(500),
+    });
+    await expect(
+      createDrugCentralBridges(client).structIdsForCid("2244"),
+    ).rejects.toThrow(/DrugCentral/);
+  });
+
   it("assembles a structure profile", async () => {
     const { client } = clientFor({
       "/structures/id/74": "structures-id-74.json",

@@ -1,5 +1,6 @@
 import { NlmDrugsClient } from "@knorby/nlm-drugs-client";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { resetClients } from "../src/clients.js";
 import {
   createPubChemAdapter,
   createPubChemBridges,
@@ -9,6 +10,11 @@ import type {
   IngredientLookupRecord,
 } from "../src/sources/types.js";
 import { jsonResponse } from "./helpers.js";
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+  resetClients();
+});
 
 /**
  * PubChem adapter tests.
@@ -67,6 +73,19 @@ function propertiesResponse(cid: number, fields: object): Response {
 }
 
 describe("pubchem adapter — searchIngredients by name", () => {
+  it("uses the shared PubChem client for explicit identity resolution", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => propertiesResponse(2244, { IUPACName: "aspirin" })),
+    );
+    resetClients();
+    expect(await createPubChemBridges().compoundByCid("2244")).toMatchObject({
+      name: "aspirin",
+      identifiers: { cid: [2244] },
+      source: { database: "PubChem", id: "2244" },
+    });
+  });
+
   it("resolves validated chemistry and treats unknown CIDs as empty", async () => {
     const { client: nlm } = client((url) =>
       url.pathname.includes("/2244/")

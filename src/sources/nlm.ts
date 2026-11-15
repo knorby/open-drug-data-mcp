@@ -489,13 +489,13 @@ async function ingredientNameGroup(
   }
 
   const candidates = [...byRxcui.values()];
-  const items: IngredientRef[] = [];
-  for (const match of pageWindow(candidates, page)) {
-    const ref = ingredientRefOf(match.rxcui, match.name, retrievedAt, {
-      matchBasis: "approximate name match",
-    });
-    if (ref !== null) items.push(ref);
-  }
+  const items = pageWindow(candidates, page)
+    .map((match) =>
+      ingredientRefOf(match.rxcui, match.name, retrievedAt, {
+        matchBasis: "approximate name match",
+      }),
+    )
+    .filter((ref): ref is IngredientRef => ref !== null);
 
   return {
     source: "RxNorm",

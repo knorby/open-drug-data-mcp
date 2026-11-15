@@ -712,7 +712,7 @@ describe("openFDA ingredient search", () => {
           results: [
             { substance_name: "NO UNII" },
             { substance_name: "MISSING", unii: "AAAAAAAAAA" },
-            { substance_name: "NO NAME", unii: "BBBBBBBBBB" },
+            { unii: "BBBBBBBBBB" },
           ],
         });
       }
@@ -730,6 +730,7 @@ describe("openFDA ingredient search", () => {
     expect(group?.items.every((item) => item.inciName === undefined)).toBe(
       true,
     );
+    expect(group?.items[1]?.name).toBe("BBBBBBBBBB");
     expect(group?.hasMore).toBe(false);
     const urls = requests(fetchMock);
     expect(urls).toHaveLength(1);

@@ -166,19 +166,19 @@ too.
   reports entity/record counts, attempted/completed resolutions, and whether
   the cap applied. Unrequested resolution has zero counts and is not partial.
   `partial` signals failed/timed-out sources or requested but incomplete
-   enrichment, or response-budget omissions. Zero matches with `hasMore: true`
-   is still a successful page.
+  enrichment, or response-budget omissions. Zero matches with `hasMore: true`
+  is still a successful page.
 - For an existing source+id, call `drugdata_get_product` or
   `drugdata_get_ingredient` directly. Search does not return full profiles;
   open only those needed for the question, with costly flags off by default.
+  PubChem uses `get_ingredient(source: "pubchem", id: "56843331")`; resolve a
+  CID with `resolve_identifiers(cid: "56843331")`.
 - DSLD product lookups fetch one label by default, retaining its own ingredient
   names, roles, quantities, UNIIs, and row categories/groups.
   `include_ingredient_enrichment: true` adds nutrient CAS/group metadata with up
   to **20 extra serial requests**. `include_ingredients: false` skips DSLD row
   mapping and enrichment even when the enrichment flag is true. Other sources
   still fetch their base record; the tool omits unwanted ingredient output.
-  PubChem uses `get_ingredient(source: "pubchem", id: "56843331")`; resolve a
-  CID with `resolve_identifiers(cid: "56843331")`.
 - If a returned page or article URL contains needed detail absent from tool
   output, selectively fetch that supplied URL with the host's web tools.
   Do not crawl or walk all pages.
