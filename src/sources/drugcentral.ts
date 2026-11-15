@@ -92,8 +92,8 @@ const RXCUI = /^\d+$/;
 /** A CAS Registry Number, in the conventional dashed spelling. */
 const CAS = /^\d{2,7}-\d{2}-\d$/;
 
-/** A prefixed crosswalk identifier, e.g. `DRUGBANK_ID:DB00945`. */
-const PREFIXED_IDENTIFIER = /^([A-Za-z][A-Za-z0-9_]{1,30}):(.+)$/;
+/** A prefixed crosswalk identifier, split at its first colon. */
+const PREFIXED_IDENTIFIER = /^([^:]*):(.+)$/;
 
 /** Clinical assertion rows emitted per category. */
 const CLINICAL_LIMIT = 50;
@@ -227,16 +227,13 @@ const ID_TYPE_ALIASES: Readonly<Record<string, string>> = {
 };
 
 /**
- * Identifier vocabularies the guided resolver accepts, including the aliases
- * this module maps onto client vocabulary names. Tool validation uses this so
- * a `TYPE:value` id never reaches a resolver that cannot handle it.
+ * Known identifier vocabularies and local aliases, for guidance only.
+ * The guided resolver also accepts vocabularies absent from this snapshot.
  */
 export const DRUGCENTRAL_IDENTIFIER_TYPES: readonly string[] = unique([
   ...KNOWN_IDENTIFIER_TYPES,
   ...Object.keys(ID_TYPE_ALIASES),
 ]);
-
-const SUPPORTED_IDENTIFIER_TYPES = new Set(DRUGCENTRAL_IDENTIFIER_TYPES);
 
 /**
  * Whether a crosswalk row's identifier equals the queried one.
@@ -721,10 +718,8 @@ async function resolveStructId(
   const unii = isUnii(id.toUpperCase()) ? id.toUpperCase() : undefined;
   const cas = unii === undefined && CAS.test(id) ? id : undefined;
   const prefixed = PREFIXED_IDENTIFIER.exec(id);
-  const prefixType =
-    prefixed === null ? undefined : (prefixed[1] as string).toUpperCase();
-  const prefixValue =
-    prefixed === null ? undefined : (prefixed[2] as string).trim();
+  const prefixType = nonEmpty(prefixed?.[1])?.toUpperCase();
+  const prefixValue = nonEmpty(prefixed?.[2]);
   const resolvedPrefixType =
     prefixType === undefined
       ? undefined
@@ -743,11 +738,6 @@ async function resolveStructId(
       }),
     );
   } else if (resolvedPrefixType !== undefined && prefixValue !== undefined) {
-    if (!SUPPORTED_IDENTIFIER_TYPES.has(resolvedPrefixType)) {
-      throw new SourceInputError(
-        `DrugCentral does not support crosswalk type "${prefixType}". Supported types: ${DRUGCENTRAL_IDENTIFIER_TYPES.join(", ")}. Pass identifiers.structId from a DrugCentral result, or use drugdata_search_ingredients to find a valid identifier.`,
-      );
-    }
     matches = await guarded("The DrugCentral identifier lookup", () =>
       client.guide.resolveIdentifier({
         type: resolvedPrefixType,

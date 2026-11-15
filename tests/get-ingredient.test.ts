@@ -368,22 +368,33 @@ describe("get_ingredient tool", () => {
     }
   });
 
-  it("rejects an unsupported DrugCentral crosswalk type with the supported vocabulary", async () => {
-    harness = await start(createRegistry([], []));
+  it("resolves a PubChem crosswalk identifier through the tool", async () => {
+    const adapter = createDrugCentralAdapter(
+      drugCentralClient({
+        ...ASPIRIN_PROFILE,
+        "/identifier/identifier/2244": [
+          {
+            identifier: "2244",
+            id: 1890115,
+            id_type: "PUBCHEM_CID",
+            struct_id: 74,
+            parent_match: null,
+          },
+        ],
+      }),
+    );
+    harness = await start(createRegistry([adapter], []));
 
-    const result = await harness.client.callTool({
-      name: "drugdata_get_ingredient",
-      arguments: { source: "drugcentral", id: "PUBCHEM_CID:2244" },
+    const output = await getIngredient(harness, {
+      source: "drugcentral",
+      id: "PUBCHEM_CID:2244",
     });
 
-    expect(result.isError).toBe(true);
-    const text = textOf(result);
-    expect(text).toContain("does not support crosswalk type");
-    expect(text).toContain("PUBCHEM_CID");
-    expect(text).toContain("DRUGBANK_ID");
-    expect(text).toContain("identifiers.structId");
-    expect(text).toContain("drugdata_search_ingredients");
-    expect(text).not.toContain("failed unexpectedly");
+    expect(output.ingredient.name).toBe("acetylsalicylic acid");
+    expect(output.ingredient.identifiers).toMatchObject({
+      structId: 74,
+      cid: [2244],
+    });
   });
 
   it("prepares ids for every source, normalizing where the database is case-insensitive", () => {
@@ -419,9 +430,22 @@ describe("get_ingredient tool", () => {
       ok: true,
       id: "DRUGBANK_ID:DB00945",
     });
-    expect(
-      prepareIngredientId("drugcentral", "PUBCHEM_CID:2244"),
-    ).toMatchObject({ ok: false });
+    for (const id of [
+      "PUBCHEM_CID:2244",
+      "ChEMBL_ID:Chembl25",
+      "INXIGHT DRUGS:example",
+      "VUID:4017536",
+    ]) {
+      expect(prepareIngredientId("drugcentral", id)).toEqual({
+        ok: true,
+        id,
+      });
+    }
+    for (const id of [":2244", "PUBCHEM_CID:", "PUBCHEM_CID:   "]) {
+      expect(prepareIngredientId("drugcentral", id)).toMatchObject({
+        ok: false,
+      });
+    }
     expect(prepareIngredientId("nlm", "0083367")).toEqual({
       ok: true,
       id: "83367",
@@ -842,6 +866,38 @@ describe("get_ingredient — DrugCentral", () => {
     }
   });
 
+  it.each([
+    { id: "PUBCHEM_CID:2244", type: "PUBCHEM_CID", value: "2244" },
+    { id: "ChEMBL_ID:Chembl25", type: "ChEMBL_ID", value: "Chembl25" },
+    { id: "INXIGHT DRUGS:example", type: "INXIGHT DRUGS", value: "example" },
+    { id: "VUID:4017536", type: "VUID", value: "4017536" },
+  ])(
+    "resolves the source crosswalk identifier $id",
+    async ({ id, type, value }) => {
+      const adapter = createDrugCentralAdapter(
+        drugCentralClient({
+          ...ASPIRIN_PROFILE,
+          [`/identifier/identifier/${value}`]: [
+            {
+              identifier: value,
+              id: 1,
+              id_type: type,
+              struct_id: 74,
+              parent_match: null,
+            },
+          ],
+        }),
+      );
+
+      await expect(ingredientLookup(adapter, id)).resolves.toMatchObject({
+        ingredient: {
+          name: "acetylsalicylic acid",
+          identifiers: { structId: 74 },
+        },
+      });
+    },
+  );
+
   it("refuses ambiguous identifier matches and names the structure-id alternative", async () => {
     const ambiguous = [
       {
@@ -1166,9 +1222,11 @@ describe("get_ingredient — DrugCentral", () => {
     await expect(ingredientLookup(adapter, "0")).rejects.toThrow(
       /Expected a positive DrugCentral structure id/,
     );
-    await expect(ingredientLookup(adapter, "PUBCHEM_CID:2244")).rejects.toThrow(
-      /does not support crosswalk type/,
-    );
+    for (const id of [":2244", "PUBCHEM_CID:", "PUBCHEM_CID:   "]) {
+      await expect(ingredientLookup(adapter, id)).rejects.toThrow(
+        /Expected a DrugCentral structure id or identifier/,
+      );
+    }
   });
 });
 
