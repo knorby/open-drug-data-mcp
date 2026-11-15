@@ -133,9 +133,11 @@ export function zeroResultsNote(
   if (context.kind === "ingredient") {
     return "No matches found. Try a different search type or a name search, or a shorter or broader query.";
   }
+  const fallback =
+    "No matches found. For a full product name, retry type 'name' with only the brand (Natrol) or only the ingredient (melatonin); compare brand, variant, strength, and dosage form before selecting a record.";
   return context.hasCategory
-    ? "No matches found. Try a different type, a shorter or broader query, or remove the category filter."
-    : "No matches found. Try a different type or a shorter or broader query.";
+    ? `${fallback} You can also remove the category filter.`
+    : fallback;
 }
 
 /**

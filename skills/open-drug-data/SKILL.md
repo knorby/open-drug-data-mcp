@@ -241,7 +241,9 @@ direct links, derived links, and candidate sets the response actually contains.
 
 - **Zero matches are normal.** An empty group is not an error. Try another
   search type, a broader name, or a different source before concluding the
-  record is absent.
+  record is absent. For a full product name, retry `type: "name"` with only the brand
+  (Natrol) or only the ingredient (melatonin); compare brand, variant, strength,
+  and dosage form before selecting a record. `type: "brand"` reaches fewer sources.
 - **An error group is one database failing.** Other groups remain valid.
   Retry the search (there is no single-source retry: one call re-queries the
   whole fan-out) or proceed with the rest; `drugdata_ping` shows whether a
