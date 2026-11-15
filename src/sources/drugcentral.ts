@@ -52,7 +52,7 @@ import type {
  * - `unii`, `rxcui`, and `cas` resolve through the identifier crosswalk.
  *   DrugCentral records primary CAS numbers on the structure row and
  *   **secondary** CAS numbers in the crosswalk, so the `cas` type queries
- *   `SECONDARY_CAS_RN` and includes the structure's primary CAS when present.
+ *   `SECONDARY_CAS_RN` and retains the queried CAS.
  *   A primary CAS that DrugCentral did not also record as a secondary number
  *   is an ordinary miss.
  *
@@ -68,13 +68,10 @@ import type {
  * same page window over their (normally one-to-one) matches. Neither path
  * walks pages on its own.
  *
- * **Enrichment.** Every emitted ref costs two enrichment requests — the
- * structure row (primary CAS, InChIKey, status, preferred name
- * when the hit came from the crosswalk) and its ATC assignments (the
- * `ATC: …` summary). The pair is bounded to one page of hits and never walks
- * pages. The full identity view (complete crosswalk, synonyms, Orange Book
- * links, ATC rows) stays behind {@link createDrugCentralBridges}, which the
- * identity chain and `get_ingredient` call deliberately.
+ * **Details.** Search maps only its returned candidates and crosswalk rows.
+ * The full identity view (structure, crosswalk, synonyms, Orange Book links,
+ * ATC rows) stays behind {@link createDrugCentralBridges}, which the identity
+ * chain and `get_ingredient` call deliberately.
  *
  * **Signals.** No resource or guided method in the DrugCentral client accepts
  * an `AbortSignal` (verified against the published type declarations), so an
@@ -143,12 +140,6 @@ function sourceOf(structId: number, retrievedAt: string): SourceRef {
   };
 }
 
-/** The structure row and ATC assignments fetched for one search hit. */
-interface StructureEnrichment {
-  structure: DrugStructure | undefined;
-  atc: Struct2Atc[];
-}
-
 /**
  * A short source-faithful summary: the structure's status flag and any ATC
  * codes assigned to it. Labels are ours; every value is DrugCentral's.
@@ -171,38 +162,21 @@ function summaryOf(
   return parts.length > 0 ? parts.join(" · ") : undefined;
 }
 
-/** Chemistry identifiers carried on the structure row itself. */
-function structureIdentifiers(
-  structure: DrugStructure | undefined,
-): IngredientIdentifiers {
-  const cas = nonEmpty(structure?.cas_reg_no);
-  const inchikey = nonEmpty(structure?.inchikey);
-
-  return {
-    ...(cas === undefined ? {} : { cas: [cas] }),
-    ...(inchikey === undefined ? {} : { inchiKey: inchikey }),
-  };
-}
-
 /** Maps one guided name candidate to an ingredient ref. */
 function candidateRef(
   candidate: StructureCandidate,
-  enrichment: StructureEnrichment,
   retrievedAt: string,
 ): IngredientRef {
-  const summary = summaryOf(enrichment.structure, enrichment.atc);
   return {
     name: nonEmpty(candidate.name) ?? String(candidate.structId),
     identifiers: {
       structId: candidate.structId,
-      ...structureIdentifiers(enrichment.structure),
     },
     source: sourceOf(candidate.structId, retrievedAt),
     matchBasis:
       candidate.matchReason === "synonym"
         ? "synonym match"
         : "preferred-name match",
-    ...(summary === undefined ? {} : { summary }),
   };
 }
 
@@ -272,40 +246,31 @@ function uniqueMatches(matches: readonly IdentifierMatch[]): IdentifierMatch[] {
 
 /**
  * The identifiers an identifier-search ref can prove: the structure id, the
- * queried identifier, and whatever the structure row supplies.
+ * queried identifier.
  */
 function identifierFields(
   match: IdentifierMatch,
-  enrichment: StructureEnrichment,
   identity: QueryIdentity,
 ): IngredientIdentifiers {
-  const structureFields = structureIdentifiers(enrichment.structure);
-  const queryCas = identity.kind === "cas" ? [identity.value] : [];
-  const cas = unique([...queryCas, ...(structureFields.cas ?? [])]);
-
   return {
     structId: match.structId,
     ...(identity.kind === "unii" ? { unii: identity.value } : {}),
     ...(identity.kind === "rxcui" ? { rxcui: [identity.value] } : {}),
-    ...structureFields,
-    ...(cas.length === 0 ? {} : { cas }),
+    ...(identity.kind === "cas" ? { cas: [identity.value] } : {}),
   };
 }
 
-/** Maps one crosswalk match plus its structure enrichment to a ref. */
+/** Maps only the identity proven by the crosswalk row to a ref. */
 function identifierRef(
   match: IdentifierMatch,
-  enrichment: StructureEnrichment,
   identity: QueryIdentity,
   retrievedAt: string,
 ): IngredientRef {
-  const summary = summaryOf(enrichment.structure, enrichment.atc);
   return {
-    name: nonEmpty(enrichment.structure?.name) ?? match.identifier,
-    identifiers: identifierFields(match, enrichment, identity),
+    name: match.identifier,
+    identifiers: identifierFields(match, identity),
     source: sourceOf(match.structId, retrievedAt),
     matchBasis: `${IDENTITY_LABEL[identity.kind]} ${match.matchKind} match`,
-    ...(summary === undefined ? {} : { summary }),
   };
 }
 
@@ -350,54 +315,6 @@ async function guarded<T>(
   }
 }
 
-/**
- * Fetches one structure row. A 404 here means the crosswalk points at a
- * structure the API no longer returns; the ref still has its identifier, so
- * that is a missing enrichment, not a failed search.
- */
-async function structureById(
-  client: DrugCentralClient,
-  structId: number,
-): Promise<DrugStructure | undefined> {
-  try {
-    return (await client.structures.byId(structId))[0];
-  } catch (error) {
-    if (error instanceof DrugCentralNotFoundError) return undefined;
-    throw drugCentralFailure("The DrugCentral ingredient search", error);
-  }
-}
-
-/**
- * Fetches one structure's ATC assignments. A 404 means DrugCentral assigned
- * no ATC code; that is absent data, not a failed search.
- */
-async function atcById(
-  client: DrugCentralClient,
-  structId: number,
-): Promise<Struct2Atc[]> {
-  try {
-    return await client.struct2atc.byStructId(structId);
-  } catch (error) {
-    if (error instanceof DrugCentralNotFoundError) return [];
-    throw drugCentralFailure("The DrugCentral ingredient search", error);
-  }
-}
-
-/**
- * Fetches the two enrichment tables for one hit concurrently. The pair is
- * bounded per page: at most two requests per emitted ref, never a page walk.
- */
-async function enrichmentById(
-  client: DrugCentralClient,
-  structId: number,
-): Promise<StructureEnrichment> {
-  const [structure, atc] = await Promise.all([
-    structureById(client, structId),
-    atcById(client, structId),
-  ]);
-  return { structure, atc };
-}
-
 /** Runs one guided name search and maps its page. */
 async function nameGroup(
   client: DrugCentralClient,
@@ -408,13 +325,9 @@ async function nameGroup(
     client.guide.searchStructuresByName(query, { limit: page * PAGE_SIZE }),
   );
 
-  const items: IngredientRef[] = [];
-  for (const candidate of pageWindow(result.data, page)) {
-    const enrichment = await enrichmentById(client, candidate.structId);
-    items.push(
-      candidateRef(candidate, enrichment, result.provenance.retrievedAt),
-    );
-  }
+  const items = pageWindow(result.data, page).map((candidate) =>
+    candidateRef(candidate, result.provenance.retrievedAt),
+  );
 
   return {
     source: "DrugCentral",
@@ -447,13 +360,9 @@ async function identifierGroup(
   const matches = uniqueMatches(
     result.data.filter((match) => matchesIdentity(match, identity)),
   );
-  const items: IngredientRef[] = [];
-  for (const match of pageWindow(matches, page)) {
-    const enrichment = await enrichmentById(client, match.structId);
-    items.push(
-      identifierRef(match, enrichment, identity, result.provenance.retrievedAt),
-    );
-  }
+  const items = pageWindow(matches, page).map((match) =>
+    identifierRef(match, identity, result.provenance.retrievedAt),
+  );
 
   return {
     source: "DrugCentral",
