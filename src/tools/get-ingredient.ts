@@ -22,7 +22,6 @@ import {
   ingredientRegulatorySchema,
   type RecordLink,
 } from "../lib/schemas.js";
-import { DRUGCENTRAL_IDENTIFIER_TYPES } from "../sources/drugcentral.js";
 import type { Registry } from "../sources/types.js";
 import {
   type IdentifierField,
@@ -75,8 +74,8 @@ const SOURCE_DATABASES: Readonly<Record<IngredientSource, DatabaseId>> = {
 /** A CAS Registry Number, in the conventional dashed spelling. */
 const CAS = /^\d{2,7}-\d{2}-\d$/;
 
-/** A caller-supplied crosswalk identifier, e.g. `DRUGBANK_ID:DB00945`. */
-const PREFIXED_IDENTIFIER = /^([A-Za-z][A-Za-z0-9_]{1,30}):(\S+)$/;
+/** A caller-supplied crosswalk identifier, split at its first colon. */
+const PREFIXED_IDENTIFIER = /^([^:]*):(.+)$/;
 
 const DESCRIPTION =
   "Use this for an existing source+id, including an entity record or confirmed link; do not repeat a broad search. Fetch only needed records; selectively fetch supplied URLs with host web tools if more page content is needed. " +
@@ -194,13 +193,8 @@ export function prepareIngredientId(
       if (CAS.test(id)) return { ok: true, id };
       const prefixed = PREFIXED_IDENTIFIER.exec(id);
       if (prefixed !== null) {
-        const type = (prefixed[1] as string).toUpperCase();
-        return DRUGCENTRAL_IDENTIFIER_TYPES.includes(type)
-          ? { ok: true, id }
-          : {
-              ok: false,
-              error: `Error: drugdata_get_ingredient — source "drugcentral" does not support crosswalk type "${prefixed[1]}". Supported types: ${DRUGCENTRAL_IDENTIFIER_TYPES.join(", ")}. Pass identifiers.structId from a DrugCentral result, or use drugdata_search_ingredients to find a valid identifier.`,
-            };
+        const type = (prefixed[1] as string).trim();
+        if (type.length > 0) return { ok: true, id };
       }
       return invalidId(
         source,
