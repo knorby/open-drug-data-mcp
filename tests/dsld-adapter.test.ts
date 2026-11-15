@@ -631,6 +631,42 @@ describe("DSLD barcode search", () => {
 });
 
 describe("DSLD label lookup", () => {
+  it.each([
+    [{}, 21],
+    [{ includeIngredients: false }, 0],
+    [{ includeIngredients: false, includeIngredientEnrichment: true }, 0],
+  ])(
+    "fetches only the label with ingredient options %j",
+    async (opts, count) => {
+      const rows = Array.from({ length: 21 }, (_, index) => ({
+        order: index + 1,
+        name: `Ingredient ${index + 1}`,
+        uniiCode: "ABCDEFGHIJ",
+        quantity: [{ quantity: index + 1, unit: "mg" }],
+        ingredientGroup: "Label group",
+        category: "vitamin",
+      }));
+      const { client, fetchMock } = clientFor((url) =>
+        url.pathname.endsWith("/v9/label/892")
+          ? jsonResponse({ id: 892, ingredientRows: rows })
+          : jsonResponse(emptyList()),
+      );
+      const record = await createDsldAdapter(client).getProduct("892", opts);
+      expect(record.ingredients).toHaveLength(count);
+      if (count > 0) {
+        expect(record.ingredients[20]).toMatchObject({
+          name: "Ingredient 21",
+          role: "active",
+          quantity: "21 mg",
+          identifiers: { unii: "ABCDEFGHIJ" },
+          summary: "Category: vitamin · Group: Label group",
+        });
+      }
+      expect(groupRequests(fetchMock)).toHaveLength(0);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    },
+  );
+
   it("maps label rows to ingredient refs with UNII, roles, and quantities", async () => {
     const { client, fetchMock } = clientFor((url) => {
       if (url.pathname.endsWith("/v9/label/82118")) {
@@ -647,7 +683,9 @@ describe("DSLD label lookup", () => {
     });
     const adapter = createDsldAdapter(client);
 
-    const record = await adapter.getProduct("82118", {});
+    const record = await adapter.getProduct("82118", {
+      includeIngredientEnrichment: true,
+    });
 
     expect(record.product.name).toBe("Vitamin D3 1000 IU Softgels");
     expect(record.product.brand).toBe("Nature's Best");
@@ -794,7 +832,7 @@ describe("DSLD label lookup", () => {
     expect(record.ingredients[0]?.identifiers).toEqual({
       unii: "ABCDEFGHIJ",
     });
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it("leaves rows unenriched when nutrient info has no confident match", async () => {
@@ -833,7 +871,9 @@ describe("DSLD label lookup", () => {
     });
     const adapter = createDsldAdapter(client);
 
-    const record = await adapter.getProduct("889", {});
+    const record = await adapter.getProduct("889", {
+      includeIngredientEnrichment: true,
+    });
 
     const [other, plain, mystery, duplicate, unmatched, bangs] =
       record.ingredients;
@@ -872,7 +912,9 @@ describe("DSLD label lookup", () => {
     });
     const adapter = createDsldAdapter(client);
 
-    const record = await adapter.getProduct("888", {});
+    const record = await adapter.getProduct("888", {
+      includeIngredientEnrichment: true,
+    });
 
     expect(record.product.summary).toBe("2 ingredients");
     expect(record.ingredients).toHaveLength(2);
@@ -909,7 +951,9 @@ describe("DSLD label lookup", () => {
     });
     const adapter = createDsldAdapter(client);
 
-    const record = await adapter.getProduct("890", {});
+    const record = await adapter.getProduct("890", {
+      includeIngredientEnrichment: true,
+    });
 
     expect(record.ingredients[0]?.identifiers).toEqual({ cas: ["813-94-5"] });
     expect(record.ingredients[1]?.identifiers).toEqual({ cas: ["813-94-5"] });
@@ -947,7 +991,9 @@ describe("DSLD label lookup", () => {
     });
     const adapter = createDsldAdapter(client);
 
-    const record = await adapter.getProduct("891", {});
+    const record = await adapter.getProduct("891", {
+      includeIngredientEnrichment: true,
+    });
 
     expect(record.product.summary).toBe("1 ingredient");
     expect(record.ingredients[0]?.identifiers).toEqual({
@@ -977,7 +1023,9 @@ describe("DSLD label lookup", () => {
     });
     const adapter = createDsldAdapter(client);
 
-    const record = await adapter.getProduct("892", {});
+    const record = await adapter.getProduct("892", {
+      includeIngredientEnrichment: true,
+    });
 
     expect(record.ingredients).toHaveLength(21);
     const terms = groupRequests(fetchMock).map((url) =>
@@ -1164,7 +1212,7 @@ describe("DSLD identity bridges", () => {
   });
 
   it("maps one label to its product ref and ingredient rows", async () => {
-    const { client } = clientFor((url) => {
+    const { client, fetchMock } = clientFor((url) => {
       if (url.pathname.endsWith("/v9/label/82118")) {
         return jsonResponse(labelPage());
       }
@@ -1180,6 +1228,8 @@ describe("DSLD identity bridges", () => {
     const record = await createDsldBridges(client).label(82118);
     expect(record?.product.identifiers.dsldId).toBe(82118);
     expect(record?.ingredients.length).toBeGreaterThan(0);
+    expect(groupRequests(fetchMock)).toHaveLength(0);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it("rewords a label failure without naming the client", async () => {
