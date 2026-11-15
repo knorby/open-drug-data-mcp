@@ -124,6 +124,7 @@ describe("agent skill", () => {
       "direct",
       "derived",
       "include_label_sections",
+      "include_ingredient_enrichment",
       "resolve_ingredients",
       "include_clinical",
       "ndc",

@@ -382,6 +382,48 @@ describe("NLM product search by name", () => {
 });
 
 describe("NLM product search by NDC", () => {
+  it("uses 21 RxNorm requests for 20 concepts and retains only the anchor NDC", async () => {
+    const ids = Array.from({ length: 20 }, (_, index) => String(100 + index));
+    const { client, fetchMock } = clientFor((url) => {
+      if (url.pathname === "/REST/rxcui.json") {
+        return jsonResponse({ idGroup: { rxnormId: ids } });
+      }
+      const concept = /^\/REST\/rxcui\/(\d+)\/properties\.json$/.exec(
+        url.pathname,
+      );
+      if (concept) {
+        return jsonResponse({
+          properties: {
+            rxcui: concept[1],
+            name: `Concept ${concept[1]}`,
+            tty: "SCD",
+          },
+        });
+      }
+      if (url.pathname.endsWith("/ndcs.json")) {
+        return fixtureResponse("rxnorm-ndcs-617314.json");
+      }
+      return fixtureResponse("dailymed-spls-empty.json");
+    });
+    const [group] =
+      (await createNlmAdapter(client).searchProducts?.(
+        "ndc",
+        "58151-155-77",
+        1,
+      )) ?? [];
+    expect(group?.items).toHaveLength(20);
+    for (const item of group?.items ?? []) {
+      expect(item.identifiers.ndc).toEqual(["58151015577"]);
+    }
+    const rxRequests = requests(fetchMock).filter((url) =>
+      url.pathname.startsWith("/REST/"),
+    );
+    expect(rxRequests).toHaveLength(21);
+    expect(rxRequests.some((url) => url.pathname.endsWith("/ndcs.json"))).toBe(
+      false,
+    );
+  });
+
   it("resolves both databases and probes labeler spellings", async () => {
     const { client, fetchMock } = clientFor((url) => {
       if (url.pathname === "/REST/rxcui.json") {
@@ -411,9 +453,7 @@ describe("NLM product search by NDC", () => {
     const product = rxnorm?.items[0];
     expect(product?.name).toBe("atorvastatin 10 MG Oral Tablet [Lipitor]");
     expect(product?.identifiers.rxcui).toEqual(["617314"]);
-    expect(product?.identifiers.ndc?.[0]).toBe("58151015577");
-    expect(product?.identifiers.ndc).toContain("00071015523");
-    expect(product?.identifiers.ndc).toContain("58151015577");
+    expect(product?.identifiers.ndc).toEqual(["58151015577"]);
     expect(dailymed?.items).toHaveLength(1);
     expect(dailymed?.items[0]?.identifiers.splSetId).toBe(
       "a60cc18b-0631-4cf0-b021-9f52224ece65",
@@ -647,16 +687,54 @@ describe("NLM ingredient search", () => {
 
     const group = groups?.[0];
     expect(group?.items).toHaveLength(1);
-    expect(group?.items[0]?.name).toBe("atorvastatin");
+    expect(group?.items[0]?.name).toBe("ATORVASTATIN");
     expect(group?.items[0]?.identifiers.rxcui).toEqual(["83367"]);
     expect(group?.items[0]?.matchBasis).toBe("approximate name match");
     const conceptRequests = requests(fetchMock).filter((url) =>
       url.pathname.endsWith("/properties.json"),
     );
-    expect(conceptRequests).toHaveLength(1);
+    expect(conceptRequests).toHaveLength(0);
+    expect(requests(fetchMock)).toHaveLength(2);
   });
 
-  it("uses an approximate match name when the concept is missing", async () => {
+  it("uses two requests for ten approximate candidates without concept hydration", async () => {
+    const candidates = Array.from({ length: 10 }, (_, index) => ({
+      rxcui: String(100 + index),
+      name: `Candidate ${index}`,
+      rxaui: String(index),
+      score: "1",
+      rank: "1",
+    }));
+    const { client, fetchMock } = clientFor((url) => {
+      if (url.pathname === "/REST/rxcui.json")
+        return fixtureResponse("rxnorm-name-unknown.json");
+      if (url.pathname === "/REST/approximateTerm.json")
+        return jsonResponse({ approximateGroup: { candidate: candidates } });
+      const id = url.pathname.split("/")[3];
+      return jsonResponse({
+        properties: { rxcui: id, name: `Hydrated ${id}`, tty: "IN" },
+      });
+    });
+    const [group] =
+      (await createNlmAdapter(client).searchIngredients?.(
+        "name",
+        "candidate",
+        1,
+      )) ?? [];
+    expect(group?.items.map((item) => item.name)).toEqual(
+      candidates.map((item) => item.name),
+    );
+    expect(
+      group?.items.every(
+        (item) =>
+          item.source.database === "RxNorm" &&
+          item.matchBasis === "approximate name match",
+      ),
+    ).toBe(true);
+    expect(requests(fetchMock)).toHaveLength(2);
+  });
+
+  it("uses an approximate match name without needing a concept", async () => {
     const { client } = clientFor((url) => {
       if (url.pathname === "/REST/rxcui.json") {
         return fixtureResponse("rxnorm-name-unknown.json");
@@ -678,7 +756,7 @@ describe("NLM ingredient search", () => {
     expect(group?.items[0]?.identifiers.rxcui).toEqual(["83367"]);
   });
 
-  it("drops malformed approximate candidates and empty concepts", async () => {
+  it("drops empty approximate ids and retains named and unnamed candidates", async () => {
     const { client } = clientFor((url) => {
       if (url.pathname === "/REST/rxcui.json") {
         return fixtureResponse("rxnorm-name-unknown.json");
@@ -702,6 +780,7 @@ describe("NLM ingredient search", () => {
                 rank: "2",
                 name: "Ghost",
               },
+              { rxcui: "888", rxaui: "4", score: "0.5", rank: "3" },
             ],
           },
         });
@@ -721,9 +800,11 @@ describe("NLM ingredient search", () => {
     const [group] =
       (await adapter.searchIngredients?.("name", "atorvastatn", 1)) ?? [];
 
-    expect(group?.items).toHaveLength(1);
+    expect(group?.items).toHaveLength(3);
     expect(group?.items[0]?.name).toBe("ATV");
     expect(group?.items[0]?.identifiers.rxcui).toEqual(["83367"]);
+    expect(group?.items[1]?.identifiers.rxcui).toEqual(["999"]);
+    expect(group?.items[2]?.name).toBe("888");
   });
 
   it("maps a UNII lookup and uppercases the identifier", async () => {

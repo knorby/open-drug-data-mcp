@@ -27,8 +27,11 @@ application numbers alone do not join. Strong joins survive conflicting
 scalar evidence, which remains visible. Enrichment retains attributed
 ingredient refs internally, without adding them to the original search records.
 
-Enrich the first five resolvable initial entities, concurrency three, through
-the existing identity resolver. Use one shared 45,000 ms search deadline,
+Default searches cluster evidence already returned by sources, without
+identity resolution. `resolve_identities: true` opts in to enriching the first
+five resolvable initial entities, concurrency three, through the existing
+identity resolver. Unrequested resolution has zero attempted/completed counts,
+no cap, and does not make healthy results partial. Use one shared 45,000 ms search deadline,
 configurable by `DRUGDATA_SEARCH_TIMEOUT_MS`; preserve completed source
 subgroups and stop scheduling at expiry. Cancel supported calls, ignore late
 settlements, and handle their rejections. Existing 30,000 ms per-attempt fetch

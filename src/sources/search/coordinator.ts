@@ -41,6 +41,7 @@ type Input = {
   type: IngredientSearchType | ProductSearchType;
   page: number;
   category?: ProductCategory;
+  resolveIdentities?: boolean;
 };
 type Ref = IngredientRef | ProductRef;
 
@@ -119,7 +120,7 @@ export function createSearchCoordinator(deps: {
       const outcomes = new Map<number, IdentityGraph | ProductResolution>();
       const attempted = new Set<number>();
       const failed = new Set<number>();
-      const available = initial
+      const available = (input.resolveIdentities ? initial : [])
         .map((entity, index) => ({
           index,
           input:
@@ -347,11 +348,12 @@ export function createSearchCoordinator(deps: {
         partial:
           available.length > MAX_SEARCH_RESOLUTIONS ||
           statuses.some((source) => source.status !== "ok") ||
-          entities.some(
-            (entity) =>
-              entity.resolution === "partial" ||
-              entity.resolution === "skipped",
-          ),
+          (input.resolveIdentities === true &&
+            entities.some(
+              (entity) =>
+                entity.resolution === "partial" ||
+                entity.resolution === "skipped",
+            )),
         nextSteps,
       };
     } finally {
@@ -362,7 +364,12 @@ export function createSearchCoordinator(deps: {
   }
   return {
     searchIngredients: (
-      input: { type: IngredientSearchType; query: string; page: number },
+      input: {
+        type: IngredientSearchType;
+        query: string;
+        page: number;
+        resolveIdentities?: boolean;
+      },
       signal?: AbortSignal,
     ) =>
       search<IngredientRef>(
@@ -377,6 +384,7 @@ export function createSearchCoordinator(deps: {
         query: string;
         page: number;
         category?: ProductCategory;
+        resolveIdentities?: boolean;
       },
       signal?: AbortSignal,
     ) => search<ProductRef>(input, "product", clusterProductGroups, signal),

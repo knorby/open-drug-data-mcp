@@ -340,6 +340,7 @@ describe("server assembly", () => {
       expect(instructions).toContain(expected);
     }
     expect(instructions).not.toMatch(/@knorby|-client/i);
+    expect(instructions).toContain("resolve_identities");
   });
 
   it("registers a research_drug prompt that threads the input and context", async () => {
@@ -418,6 +419,8 @@ describe("server assembly", () => {
     expect(product?.description).toContain("when supplied by the source");
     expect(product?.description).toContain("include_label_ingredients: true");
     expect(product?.description).toContain("drugdata_resolve_identifiers");
+    expect(product?.description).toContain("include_ingredients");
+    expect(product?.description).toContain("include_ingredient_enrichment");
     const search = tools.find(
       (tool) => tool.name === "drugdata_search_products",
     );

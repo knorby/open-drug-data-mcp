@@ -750,14 +750,36 @@ async function crosswalkEntries(
   }
 }
 
-/**
- * Name/INCI search: the UNII crosswalk, then one substance fetch per hit.
- *
- * The crosswalk page controls pagination; the per-UNII records are
- * enrichments of that page, not additional results. Zero matches at either
- * level are ordinary empties. A 404 for one crosswalk entry simply drops that
- * candidate, matching ritualog's lookup.
- */
+/** Maps only the name and UNII proven by an openFDA crosswalk row. */
+function crosswalkIngredientRef(
+  entry: UniiRecord,
+  query: string,
+  retrievedAt: string,
+): IngredientRef | null {
+  const unii = nonEmpty(entry.unii);
+  if (unii === undefined) return null;
+  const name = nonEmpty(entry.substance_name) ?? unii;
+  const normalized = name.trim().toUpperCase();
+  const searched = query.trim().toUpperCase();
+  return {
+    name,
+    identifiers: { unii },
+    source: {
+      database: "openFDA",
+      id: unii,
+      url: `https://api.fda.gov/other/unii.json?search=${encodeURIComponent(field("unii", unii))}`,
+      retrievedAt,
+    },
+    matchBasis:
+      normalized === searched
+        ? "exact crosswalk name match"
+        : normalized.startsWith(searched)
+          ? "crosswalk name prefix match"
+          : "crosswalk name differs from query",
+  };
+}
+
+/** Name/INCI search maps the crosswalk page without fetching full substances. */
 async function crosswalkIngredients(
   client: OpenFdaClient,
   query: string,
@@ -766,32 +788,8 @@ async function crosswalkIngredients(
 ): Promise<IngredientGroup> {
   const entries = await crosswalkEntries(client, query, page);
 
-  const records: Substance[] = [];
-  for (const entry of entries) {
-    const unii = nonEmpty(entry.unii);
-    if (unii === undefined) continue;
-    try {
-      const response = await client.other.substance.search({
-        search: field("unii", unii),
-        limit: 1,
-      });
-      const record = response.results[0];
-      if (record !== undefined) records.push(record);
-    } catch (error) {
-      if (!(error instanceof OpenFdaNotFoundError)) {
-        throw openFdaFailure("The openFDA ingredient search", error);
-      }
-    }
-  }
-
-  const items = rankSubstances(records, query)
-    .map((record) =>
-      mapIngredient(
-        record,
-        retrievedAt,
-        MATCH_BASIS[matchSubstanceTier(record, query)],
-      ),
-    )
+  const items = entries
+    .map((entry) => crosswalkIngredientRef(entry, query, retrievedAt))
     .filter((item): item is IngredientRef => item !== null);
 
   return {

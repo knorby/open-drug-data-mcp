@@ -217,12 +217,16 @@ describe("get_product tool", () => {
     expect(tool.description).not.toMatch(/client/i);
     expect(Object.keys(tool.inputSchema.properties ?? {}).sort()).toEqual([
       "id",
+      "include_ingredient_enrichment",
       "include_ingredients",
       "include_label_sections",
       "page",
       "response_format",
       "source",
     ]);
+    expect(
+      tool.inputSchema.properties?.include_ingredient_enrichment,
+    ).toMatchObject({ default: false });
     const sourceSchema = tool.inputSchema.properties?.source as {
       enum?: string[];
     };
@@ -233,6 +237,43 @@ describe("get_product tool", () => {
       "inkeedecoder",
     ]);
   });
+
+  it.each([
+    [{}, { includeIngredients: true, includeIngredientEnrichment: false }],
+    [
+      { include_ingredients: false },
+      { includeIngredients: false, includeIngredientEnrichment: false },
+    ],
+    [
+      { include_ingredient_enrichment: true },
+      { includeIngredients: true, includeIngredientEnrichment: true },
+    ],
+  ])(
+    "passes ingredient options %j through the registry",
+    async (args, expected) => {
+      let received: Record<string, unknown> | undefined;
+      harness = await start(
+        createRegistry(
+          [
+            lookupAdapter("dsld", ["DSLD"], async (_id, opts) => {
+              received = opts;
+              return {
+                product: productRef("DSLD", "Supplement", { dsldId: 82118 }),
+                ingredients: [],
+              };
+            }),
+          ],
+          [],
+        ),
+      );
+      const result = await harness.client.callTool({
+        name: "drugdata_get_product",
+        arguments: { source: "dsld", id: "82118", ...args },
+      });
+      expect(result.isError).toBeFalsy();
+      expect(received).toMatchObject(expected);
+    },
+  );
 
   it("returns a DailyMed SPL product with parsed ingredients and next steps", async () => {
     const xml = textFixture("nlm/dailymed-spl-a1e07d5c.xml");
@@ -611,7 +652,11 @@ describe("get_product tool", () => {
     harness = await start(createRegistry([adapter], []));
     const result = await harness.client.callTool({
       name: "drugdata_get_product",
-      arguments: { source: "dsld", id: "82118" },
+      arguments: {
+        source: "dsld",
+        id: "82118",
+        include_ingredient_enrichment: true,
+      },
     });
 
     expect(result.isError).toBeFalsy();

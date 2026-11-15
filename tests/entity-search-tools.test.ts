@@ -10,6 +10,63 @@ import { createRegistry } from "../src/sources/registry.js";
 import { createTestClient, type TestHarness, textOf } from "./helpers.js";
 
 let harness: TestHarness | undefined;
+it("renders opt-in candidate warnings, source errors, and the resolution cap", async () => {
+  const registry = createRegistry(
+    [
+      {
+        id: "openfda",
+        databases: ["openFDA"],
+        productSearchTypes: [],
+        ingredientSearchTypes: ["name"],
+        productCategories: [],
+        searchIngredients: async () => [
+          {
+            source: "openFDA",
+            items: Array.from({ length: 6 }, (_, index) =>
+              ref("openFDA", String(index), { unii: `AAAAAAAAA${index}` }),
+            ),
+            page: 1,
+            hasMore: false,
+          },
+        ],
+      },
+    ],
+    [],
+  );
+  const resolver: IdentityResolver = {
+    resolve: async () => ({
+      kind: "ingredient",
+      graph: {
+        subject: {},
+        identifiers: {},
+        links: [],
+        candidates: [
+          {
+            database: "RxNorm",
+            matchedVia: "unii",
+            reason: "name-match",
+            options: [ref("RxNorm", "123", { rxcui: ["123"] })],
+          },
+        ],
+        errors: [{ database: "CosIng", message: "CosIng is unavailable." }],
+      },
+    }),
+  };
+  harness = await createTestClient(() => createServer({ registry, resolver }));
+  const result = await harness.client.callTool({
+    name: "drugdata_search_ingredients",
+    arguments: { query: "test", type: "name", resolve_identities: true },
+  });
+  expect(result.isError).toBeFalsy();
+  const output = ingredientEntitySearchResultSchema.parse(
+    result.structuredContent,
+  );
+  expect(output.coverage.resolutionCapped).toBe(true);
+  expect(textOf(result)).toContain("Unconfirmed candidates:");
+  expect(textOf(result)).toContain("⚠ CosIng: CosIng is unavailable.");
+  expect(textOf(result)).toContain("enrichment capped at five entities");
+});
+
 it("joins product NDC/SPL/UPC evidence but not a shared RxCUI", async () => {
   const records = [
     ref("openFDA", "ndc", {}),
@@ -204,6 +261,7 @@ it.each(["markdown", "json"])(
       arguments: {
         type: "name",
         query: "semaglutide",
+        resolve_identities: true,
         page: 2,
         response_format,
       },

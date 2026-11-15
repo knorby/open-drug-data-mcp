@@ -44,6 +44,26 @@ function registry(count = 6) {
 }
 afterEach(() => vi.useRealTimers());
 describe("search coordinator", () => {
+  it("returns healthy initial clusters without unsolicited resolution", async () => {
+    const resolve = vi.fn(emptyResolver.resolve);
+    const result = await createSearchCoordinator({
+      registry: registry(),
+      resolver: { resolve },
+      timeoutMs: 45000,
+    }).searchIngredients({ type: "name", query: "test", page: 1 });
+    expect(resolve).not.toHaveBeenCalled();
+    expect(result.coverage).toEqual({
+      entities: 6,
+      records: 6,
+      resolutionAttempted: 0,
+      resolutionCompleted: 0,
+      resolutionCapped: false,
+    });
+    expect(result.partial).toBe(false);
+    expect(result.entities[0]?.nextSteps).toContainEqual(
+      expect.objectContaining({ tool: "drugdata_resolve_identifiers" }),
+    );
+  });
   it("keeps database order when enrichment combines earlier clusters", async () => {
     const dc = {
       ...ref("74"),
@@ -90,7 +110,12 @@ describe("search coordinator", () => {
           },
         }),
       },
-    }).searchIngredients({ type: "name", query: "test", page: 1 });
+    }).searchIngredients({
+      type: "name",
+      query: "test",
+      page: 1,
+      resolveIdentities: true,
+    });
     expect(
       result.entities[0]?.records.map((record) => record.source.database),
     ).toEqual(["openFDA", "DrugCentral", "PubChem"]);
@@ -125,7 +150,12 @@ describe("search coordinator", () => {
           },
         }),
       },
-    }).searchIngredients({ type: "name", query: "test", page: 1 });
+    }).searchIngredients({
+      type: "name",
+      query: "test",
+      page: 1,
+      resolveIdentities: true,
+    });
     expect(result.entities[0]).toHaveProperty("errors", [
       { database: "CosIng", message: "CosIng is temporarily unavailable." },
     ]);
@@ -152,7 +182,12 @@ describe("search coordinator", () => {
           },
         }),
       },
-    }).searchIngredients({ type: "name", query: "test", page: 1 });
+    }).searchIngredients({
+      type: "name",
+      query: "test",
+      page: 1,
+      resolveIdentities: true,
+    });
     expect(result.entities).toHaveLength(1);
     expect(result.coverage.resolutionCapped).toBe(true);
     expect(result.partial).toBe(true);
@@ -193,7 +228,12 @@ describe("search coordinator", () => {
       registry: reg,
       resolver,
       timeoutMs: 45000,
-    }).searchIngredients({ type: "name", query: "aspirin", page: 1 });
+    }).searchIngredients({
+      type: "name",
+      query: "aspirin",
+      page: 1,
+      resolveIdentities: true,
+    });
     expect(
       result.entities[0]?.nextSteps.find(
         (step) => step.tool === "drugdata_resolve_identifiers",
@@ -210,7 +250,12 @@ describe("search coordinator", () => {
       registry: registry(),
       resolver,
       timeoutMs: 45000,
-    }).searchIngredients({ type: "name", query: "test", page: 1 });
+    }).searchIngredients({
+      type: "name",
+      query: "test",
+      page: 1,
+      resolveIdentities: true,
+    });
     await vi.advanceTimersByTimeAsync(45000);
     const result = await promise;
     expect(result.coverage.resolutionAttempted).toBe(3);
@@ -420,7 +465,12 @@ describe("search coordinator", () => {
       registry: reg,
       resolver,
       timeoutMs: 45000,
-    }).searchIngredients({ type: "name", query: "semaglutide", page: 1 });
+    }).searchIngredients({
+      type: "name",
+      query: "semaglutide",
+      page: 1,
+      resolveIdentities: true,
+    });
     expect(result.entities[0]?.records).toHaveLength(1);
     expect(result.entities[0]?.identifiers.cid).toEqual([56843331]);
     expect(result.entities[0]?.conflicts).toContainEqual(
@@ -487,7 +537,12 @@ describe("search coordinator", () => {
       registry: reg,
       resolver,
       timeoutMs: 45000,
-    }).searchIngredients({ type: "name", query: "semaglutide", page: 1 });
+    }).searchIngredients({
+      type: "name",
+      query: "semaglutide",
+      page: 1,
+      resolveIdentities: true,
+    });
     expect(result.entities).toHaveLength(1);
     expect(result.entities[0]?.records).toHaveLength(2);
     expect(result.entities[0]?.conflicts).toHaveLength(1);
@@ -509,7 +564,12 @@ describe("search coordinator", () => {
       registry: registry(),
       resolver,
       timeoutMs: 45000,
-    }).searchIngredients({ type: "name", query: "test", page: 1 });
+    }).searchIngredients({
+      type: "name",
+      query: "test",
+      page: 1,
+      resolveIdentities: true,
+    });
     expect(result.coverage).toEqual({
       entities: 6,
       records: 6,
@@ -585,7 +645,12 @@ describe("search coordinator", () => {
       registry: registry(1),
       resolver,
       timeoutMs: 45000,
-    }).searchIngredients({ type: "name", query: "test", page: 1 });
+    }).searchIngredients({
+      type: "name",
+      query: "test",
+      page: 1,
+      resolveIdentities: true,
+    });
     expect(result.entities[0]?.resolution).toBe("partial");
     expect(result.entities[0]?.records).toHaveLength(1);
     expect(result.sources[0]?.status).toBe("ok");

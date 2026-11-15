@@ -342,6 +342,12 @@ database. `sources` holds per-database status/paging metadata, not duplicate
 records. When modifying search, read ADR-0006 for clustering, deadline,
 enrichment, and response-bounding invariants.
 
+Search identity resolution is opt-in (`resolve_identities: true`); default
+searches cluster existing evidence without calling the identity resolver.
+DSLD product lookups include label-owned ingredient rows by default, but
+nutrient CAS/group enrichment requires `include_ingredient_enrichment: true`.
+`include_ingredients: false` skips both DSLD row mapping and enrichment.
+
 Bounding preserves at least one entity or returns an explicit error. Any
 output loss sets `partial` and `truncated`; `entitiesOmitted` and per-entity
 `omitted` count loss while coverage stays pre-bound. NDC-derived RxNorm links

@@ -230,7 +230,12 @@ it("does not treat product ingredients as ingredient-graph identity patches", as
         ingredients: [{ ...record, identifiers: { unii: "R16CO5Y76E" } }],
       }),
     },
-  }).searchIngredients({ type: "name", query: "aspirin", page: 1 });
+  }).searchIngredients({
+    type: "name",
+    query: "aspirin",
+    page: 1,
+    resolveIdentities: true,
+  });
   expect(result.entities[0]?.identifiers).toEqual({ cid: [2244] });
 });
 it("ignores a resolution that fulfills after the search deadline", async () => {
@@ -247,7 +252,12 @@ it("ignores a resolution that fulfills after the search deadline", async () => {
           finish = resolve;
         }),
     },
-  }).searchIngredients({ type: "name", query: "aspirin", page: 1 });
+  }).searchIngredients({
+    type: "name",
+    query: "aspirin",
+    page: 1,
+    resolveIdentities: true,
+  });
   await vi.advanceTimersByTimeAsync(10);
   const result = await pending;
   const snapshot = JSON.stringify(result);

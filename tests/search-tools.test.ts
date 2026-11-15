@@ -238,10 +238,17 @@ describe("search tools", () => {
         "category",
         "page",
         "query",
+        "resolve_identities",
         "response_format",
         "type",
       ],
-      drugdata_search_ingredients: ["page", "query", "response_format", "type"],
+      drugdata_search_ingredients: [
+        "page",
+        "query",
+        "resolve_identities",
+        "response_format",
+        "type",
+      ],
     };
 
     for (const [name, keys] of Object.entries(expectedInputs)) {
@@ -254,6 +261,10 @@ describe("search tools", () => {
       });
       expect(tool.description).toContain("page");
       expect(tool.description).toContain("hasMore");
+      expect(tool.description).toContain("resolve_identities");
+      expect(tool.inputSchema.properties?.resolve_identities).toMatchObject({
+        default: false,
+      });
       expect(tool.description).toContain("error");
       expect(tool.description).not.toMatch(/client/i);
       expect(Object.keys(tool.inputSchema.properties ?? {}).sort()).toEqual(
@@ -261,6 +272,60 @@ describe("search tools", () => {
       );
     }
   });
+
+  it.each(["drugdata_search_products", "drugdata_search_ingredients"])(
+    "%s resolves only when requested",
+    async (name) => {
+      const resolve = vi.fn(noResolution.resolve);
+      harness = await start(
+        createRegistry(
+          [
+            fakeAdapter({
+              id: "openfda",
+              databases: ["openFDA"],
+              productTypes: ["name"],
+              ingredientTypes: ["name"],
+              searchProducts: async () => [
+                productGroup("openFDA", [
+                  productRef("openFDA", "Aspirin", { ndc: ["00000000001"] }),
+                ]),
+              ],
+              searchIngredients: async () => [
+                ingredientGroup("openFDA", [
+                  ingredientRef("openFDA", "Aspirin", { unii: "R16CO5Y76E" }),
+                ]),
+              ],
+            }),
+          ],
+          [],
+        ),
+        { resolve },
+      );
+      const result = await harness.client.callTool({
+        name,
+        arguments: { type: "name", query: "aspirin" },
+      });
+      expect(result.isError).not.toBe(true);
+      expect(result.structuredContent).toMatchObject({
+        partial: false,
+        coverage: {
+          resolutionAttempted: 0,
+          resolutionCompleted: 0,
+          resolutionCapped: false,
+        },
+      });
+      expect(resolve).not.toHaveBeenCalled();
+      const enriched = await harness.client.callTool({
+        name,
+        arguments: { type: "name", query: "aspirin", resolve_identities: true },
+      });
+      expect(enriched.isError).not.toBe(true);
+      expect(enriched.structuredContent).toMatchObject({
+        coverage: { resolutionAttempted: 1, resolutionCompleted: 1 },
+      });
+      expect(resolve).toHaveBeenCalledTimes(1);
+    },
+  );
 
   it("returns grouped product results with closed structured content and next steps", async () => {
     const leaked = {

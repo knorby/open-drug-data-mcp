@@ -129,9 +129,9 @@ positive integer.
 | Tool | Inputs | Returns |
 | --- | --- | --- |
 | `drugdata_ping` | optional `message` | Server name/version, every source's enabled state and whether its key is configured (including UMLS and PubMed reference keys), never a key value. No network. |
-| `drugdata_search_products` | `type`: `name`, `brand`, `ingredient`, `barcode`, `ndc`; `query`; optional `category`: `medication`, `supplement`, `cosmetic`; `page`; `response_format` | Product entities with original source records, confirmed links, conflicts, candidates, per-entity next steps, source statuses, coverage, and `partial`. |
-| `drugdata_search_ingredients` | `type`: `name`, `inci`, `unii`, `cas`, `ec`, `rxcui`, `cid`; `query`; `page`; `response_format` | Ingredient entities with source-attributed identity evidence and the same coverage/status contract. PubChem answers name and CID searches. |
-| `drugdata_get_product` | `source`: `openfda`, `dsld`, `dailymed`, `inkeedecoder`; `id`; `include_label_sections` (default `false`); `include_ingredients` (default `true`); `page`; `response_format` | One product record, its ingredient rows and roles, source-specific details, links, and next steps. DailyMed usage sections are opt-in because they are large. |
+| `drugdata_search_products` | `type`: `name`, `brand`, `ingredient`, `barcode`, `ndc`; `query`; optional `category`: `medication`, `supplement`, `cosmetic`; `resolve_identities` (default `false`); `page`; `response_format` | Product entities with original source records, confirmed links, conflicts, candidates, per-entity next steps, source statuses, coverage, and `partial`. |
+| `drugdata_search_ingredients` | `type`: `name`, `inci`, `unii`, `cas`, `ec`, `rxcui`, `cid`; `query`; `resolve_identities` (default `false`); `page`; `response_format` | Ingredient entities with source-attributed identity evidence and the same coverage/status contract. PubChem answers name and CID searches. |
+| `drugdata_get_product` | `source`: `openfda`, `dsld`, `dailymed`, `inkeedecoder`; `id`; `include_label_sections` (default `false`); `include_ingredients` (default `true`); `include_ingredient_enrichment` (default `false`); `page`; `response_format` | One product record, its ingredient rows and roles, source-specific details, links, and next steps. DailyMed usage sections and DSLD nutrient CAS/group enrichment are opt-in. |
 | `drugdata_get_ingredient` | `source`: `openfda`, `cosing`, `drugcentral`, `nlm`, `inkeedecoder`, `pubchem`; `id`; `include_clinical` (default `false`); `include_cosing_panel` (default `false`); `response_format` | One ingredient profile: identifiers, names, functions, regulatory notices, clinical assertions, chemistry (PubChem), RxTerms presentation (RxNorm), links, and next steps. DrugCentral clinical data and the INKEEDecoder CosIng panel are opt-in. |
 | `drugdata_resolve_identifiers` | exactly one of `unii`, `ndc`, `rxcui`, `cid`, `cas`, `inci_name`, `substance_name`, `spl_setid`, `dsld_id`; `include_label_ingredients` (default `false`); `resolve_ingredients` (default `false`); `max_candidates` (default `5`); `response_format` | An identity graph for an ingredient, or a product's cross-source links plus its ingredient rows. `links` are trusted; `candidates` need judgment. |
 | `drugdata_search_references` | `source`: `prescribable`, `rxclass`, `mesh`, `pubmed`, `medlineplus`, `medlineplus_genetics`, `medlineplus_connect`, `umls`, `clinicaltrials`; `type`: `name` (default), `rxcui`, `ndc`, `cui`; `query`; `limit` (default `10`); `cursor`; `response_format` | Titles, identifiers (PMID, NCT, MeSH id, CUI, RxCUI, class id), and deep links from one NLM reference source per call. Paginated sources return an opaque `cursor`. UMLS requires `UMLS_API_KEY`. |
@@ -159,18 +159,26 @@ too.
   alone never merge records. Ingredients can join by UNII, RxCUI, dashed CAS,
   CID, or InChIKey; products by full package NDC, SPL set id, or UPC — not
   their ingredient RxCUI or application number.
-- Search enriches at most **five initial entities**, with **three concurrent
-  resolutions**, within one **45-second default deadline**. `sources` reports
+- Search defaults to lightweight evidence without identity resolution. Opt in
+  with `resolve_identities: true` to enrich at most **five initial entities**,
+  with **three concurrent resolutions**, within one **45-second default deadline**. `sources` reports
   `ok`, `error`, or `timeout`, page, `hasMore`, and `resultCount`. `coverage`
   reports entity/record counts, attempted/completed resolutions, and whether
-  the cap applied. `partial` signals failed/timed-out sources or incomplete
-   enrichment, or response-budget omissions. Zero matches with `hasMore: true`
-   is still a successful page.
+  the cap applied. Unrequested resolution has zero counts and is not partial.
+  `partial` signals failed/timed-out sources or requested but incomplete
+  enrichment, or response-budget omissions. Zero matches with `hasMore: true`
+  is still a successful page.
 - For an existing source+id, call `drugdata_get_product` or
   `drugdata_get_ingredient` directly. Search does not return full profiles;
   open only those needed for the question, with costly flags off by default.
   PubChem uses `get_ingredient(source: "pubchem", id: "56843331")`; resolve a
   CID with `resolve_identifiers(cid: "56843331")`.
+- DSLD product lookups fetch one label by default, retaining its own ingredient
+  names, roles, quantities, UNIIs, and row categories/groups.
+  `include_ingredient_enrichment: true` adds nutrient CAS/group metadata with up
+  to **20 extra serial requests**. `include_ingredients: false` skips DSLD row
+  mapping and enrichment even when the enrichment flag is true. Other sources
+  still fetch their base record; the tool omits unwanted ingredient output.
 - If a returned page or article URL contains needed detail absent from tool
   output, selectively fetch that supplied URL with the host's web tools.
   Do not crawl or walk all pages.

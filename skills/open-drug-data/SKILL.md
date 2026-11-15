@@ -148,7 +148,7 @@ follow those rather than assuming a particular source will appear.
 | `drugdata_ping` | Connectivity and configuration check. | Optional `message`. |
 | `drugdata_search_products` | Find products by name, brand, ingredient, barcode, or NDC. | `type`, `query`, optional `category`, `page`. |
 | `drugdata_search_ingredients` | Find ingredients by name, INCI, UNII, CAS, EC, RxCUI, or PubChem CID. | `type`, `query`, `page`. |
-| `drugdata_get_product` | Fetch one product from the database that owns it. | `source`, `id`, `include_label_sections`, `include_ingredients`, `page`. |
+| `drugdata_get_product` | Fetch one product from the database that owns it. | `source`, `id`, `include_label_sections`, `include_ingredients`, `include_ingredient_enrichment`, `page`. |
 | `drugdata_get_ingredient` | Fetch one ingredient profile from the database that owns it. | `source`, `id`, `include_clinical`, `include_cosing_panel`. |
 | `drugdata_resolve_identifiers` | Walk cross-source identity from one identifier. | Exactly one identifier, `include_label_ingredients`, `resolve_ingredients`, `max_candidates`. |
 | `drugdata_search_references` | Search one NLM reference source: PubMed, ClinicalTrials.gov, MedlinePlus, RxClass, MeSH, UMLS, prescribable RxNorm. | `source`, `type`, `query`, `limit`, `cursor`. |
@@ -270,6 +270,8 @@ deliberate.
 
 | Flag | Tool | What it costs | Use it when |
 | --- | --- | --- | --- |
+| `resolve_identities` | Both search tools | Runs the identity chain for up to five initial entities, concurrency three, within the shared search deadline. Default `false`; healthy unenriched results are not partial. | Cross-source identity is needed for several search hits. Otherwise follow the selected entity's resolution `nextSteps`. |
+| `include_ingredient_enrichment` | `drugdata_get_product` (DSLD) | Adds nutrient CAS/group metadata with up to 20 extra serial requests. Default `false`; label-owned ingredient data needs only the label request. | The task needs CAS or supplemental group metadata beyond the selected label's own rows. Has no effect with `include_ingredients: false`. |
 | `include_label_sections` | `drugdata_get_product` (DailyMed) | Extracts and returns SPL usage sections — dosage, directions, patient guidance. Large, often the biggest part of a response. Default `false`. | The task needs label instructions or patient-facing wording. Not for identity, brand, or ingredient-list questions. |
 | `resolve_ingredients` | `drugdata_resolve_identifiers` | Runs the full identity chain once per ingredient — many upstream requests on a multi-ingredient product. Graphs cover a prefix of the rows, capped at 20. Default `false`. | The product has one or a few ingredients and each needs its own cross-source identity. For long ingredient lists, resolve individual rows from `nextSteps` instead. |
 | `include_clinical` | `drugdata_get_ingredient` (DrugCentral) | Fetches indications, off-label uses, contraindications, and FAERS signals. Extra requests and often verbose. Default `false`. | The task is clinical or pharmacovigilance research. Not for identifying a structure or crosswalking an identifier. |
@@ -277,8 +279,9 @@ deliberate.
 | `include_label_ingredients` | `drugdata_resolve_identifiers` | Parses SPL XML for ingredient UNIIs — an extra request. Default `false`. | A product record lacks ingredient identifiers and you need them to pivot to ingredient profiles. |
 
 `drugdata_get_product` includes ingredient rows by default; set
-`include_ingredients: false` only when the rows are irrelevant and response
-size matters. Clinical and label content is source text, not a recommendation.
+`include_ingredients: false` when the rows are irrelevant. It also skips DSLD
+ingredient mapping and enrichment; other sources still fetch their base record.
+Clinical and label content is source text, not a recommendation.
 FAERS report counts are contingencies, not incidence rates, and do not establish
 causation.
 

@@ -43,11 +43,12 @@ import {
  * normalizing the ones that can, validating the adapter's record into the
  * closed product-detail schema, deriving follow-up calls, and rendering.
  *
- * `include_label_sections` is the costly switch. DailyMed SPL usage sections
+ * `include_label_sections` is a costly switch. DailyMed SPL usage sections
  * (dosage, directions, patient guidance) are large, so they are extracted only
  * when asked for; the false path never runs the section parser. Ingredient
  * rows are included by default and can be turned off with
- * `include_ingredients`. `page` pages both collections one page at a time.
+ * `include_ingredients`. DSLD nutrient CAS/group enrichment is separately
+ * opt-in with `include_ingredient_enrichment`. `page` pages both collections.
  */
 
 /** Databases that can answer a product lookup, in the tool's spelling. */
@@ -83,7 +84,7 @@ const DSLD_ID = /^\d+$/;
 
 const DESCRIPTION =
   "Use this for an existing source+id, including an entity record or confirmed link; do not repeat a broad search. Fetch only needed records; selectively fetch supplied URLs with host web tools if more page content is needed. " +
-  "Fetch one product record from openFDA, DSLD, DailyMed, or INKEEDecoder. The `id` is the database's own key: a product NDC (openFDA), a numeric label id (DSLD), an SPL set id (DailyMed), or a product slug/URL (INKEEDecoder). The result carries the unified product ref, source-specific details, ingredient rows (roles, quantities, UNIIs when supplied by the source), links, and suggested follow-up calls. openFDA directory ingredient rows may lack identifiers. For SPL label UNIIs use drugdata_resolve_identifiers with include_label_ingredients: true. `include_ingredients` is true by default; `include_label_sections` extracts DailyMed SPL usage sections — these are large and default false. `page` pages the ingredient and label-section collections one page at a time and re-fetches the record; it never walks pages automatically. A malformed id is an error result naming the search tool that finds a valid one; an upstream miss is an error result, not an empty product.";
+  "Fetch one product record from openFDA, DSLD, DailyMed, or INKEEDecoder. The `id` is the database's own key: a product NDC (openFDA), a numeric label id (DSLD), an SPL set id (DailyMed), or a product slug/URL (INKEEDecoder). The result carries the unified product ref, source-specific details, ingredient rows (roles, quantities, UNIIs when supplied by the source), links, and suggested follow-up calls. openFDA directory ingredient rows may lack identifiers. For SPL label UNIIs use drugdata_resolve_identifiers with include_label_ingredients: true. `include_ingredients` is true by default; false also skips DSLD ingredient mapping and enrichment. `include_ingredient_enrichment` adds DSLD nutrient CAS/group metadata with up to 20 extra serial requests, default false; it has no effect when ingredients are omitted. `include_label_sections` extracts DailyMed SPL usage sections — these are large and default false. `page` pages the ingredient and label-section collections one page at a time and re-fetches the record; it never walks pages automatically. A malformed id is an error result naming the search tool that finds a valid one; an upstream miss is an error result, not an empty product.";
 
 const inputSchema = z.object({
   source: z
@@ -111,6 +112,12 @@ const inputSchema = z.object({
     .default(true)
     .describe(
       "Include the product's ingredient rows with roles, quantities, and UNIIs when supplied by the source. openFDA directory rows may lack identifiers; use drugdata_resolve_identifiers with include_label_ingredients: true for SPL label UNIIs. Default true.",
+    ),
+  include_ingredient_enrichment: z
+    .boolean()
+    .default(false)
+    .describe(
+      "Add DSLD nutrient CAS/group metadata with up to 20 extra serial requests. Default false. Applies only to dsld when include_ingredients is true; ignored for other sources and when ingredients are omitted.",
     ),
   page: z
     .number()
@@ -536,6 +543,7 @@ export function registerGetProductTool(
         id,
         include_label_sections,
         include_ingredients,
+        include_ingredient_enrichment,
         page,
         response_format,
       }: GetProductInput,
@@ -553,6 +561,8 @@ export function registerGetProductTool(
           prepared.id,
           {
             includeLabelSections: include_label_sections,
+            includeIngredients: include_ingredients,
+            includeIngredientEnrichment: include_ingredient_enrichment,
           },
           ctx.mcpReq.signal,
         );

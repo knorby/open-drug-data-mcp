@@ -61,8 +61,8 @@ import type {
  *   supplement package barcode.
  *
  * **Cost.** A search maps only search-index hits; it never fetches a full
- * label. `getProduct` fetches one label, then enriches at most
- * {@link ENRICHMENT_LIMIT} distinct label ingredient names with nutrient-info
+ * label. `getProduct` fetches one label; explicit ingredient enrichment adds at
+ * most {@link ENRICHMENT_LIMIT} distinct label ingredient names with nutrient-info
  * rows (the only place DSLD publishes CAS). Enrichment is serial, stops at the
  * first failure, and is supplemental: the label still returns when nutrient
  * info is unavailable. A label whose ingredient names are all covered by the
@@ -694,6 +694,7 @@ async function labelIngredientRefs(
   client: DsldClient,
   label: Label,
   source: SourceRef,
+  includeEnrichment: boolean,
 ): Promise<IngredientRef[]> {
   const rows: { row: LabelIngredient; role: IngredientRole }[] = [
     ...(label.ingredientRows ?? []).map((row: IngredientRow) => ({
@@ -710,7 +711,9 @@ async function labelIngredientRefs(
     const name = ingredientName(row);
     if (name !== undefined) names.push(name);
   }
-  const enrichment = await groupInfoByName(client, names);
+  const enrichment = includeEnrichment
+    ? await groupInfoByName(client, names)
+    : new Map<string, GroupInfo>();
 
   const items: IngredientRef[] = [];
   for (const { row, role } of rows) {
@@ -742,6 +745,10 @@ async function labelRecord(
   client: DsldClient,
   label: Label,
   retrievedAt: string,
+  opts: {
+    includeIngredients?: boolean;
+    includeIngredientEnrichment?: boolean;
+  } = {},
 ): Promise<DsldLabelRecord> {
   const source = labelSourceRef(label.id, retrievedAt);
   const brand = nonEmpty(label.brandName);
@@ -774,7 +781,15 @@ async function labelRecord(
       ...(offMarket !== undefined ? { offMarket } : {}),
       ...(entryDate !== undefined ? { entryDate } : {}),
     },
-    ingredients: await labelIngredientRefs(client, label, source),
+    ingredients:
+      opts.includeIngredients === false
+        ? []
+        : await labelIngredientRefs(
+            client,
+            label,
+            source,
+            opts.includeIngredientEnrichment === true,
+          ),
   };
 }
 
@@ -875,7 +890,7 @@ export function createDsldAdapter(client?: DsldClient): DsldAdapter {
 
     async getProduct(
       id: string,
-      _opts: Record<string, unknown>,
+      opts: Record<string, unknown>,
       signal?: AbortSignal,
     ): Promise<DsldLabelRecord> {
       throwIfAborted(signal);
@@ -885,7 +900,11 @@ export function createDsldAdapter(client?: DsldClient): DsldAdapter {
 
       try {
         const label = await dsld.label.get(labelId);
-        return await labelRecord(dsld, label, retrievedAt);
+        return await labelRecord(dsld, label, retrievedAt, {
+          includeIngredients: opts.includeIngredients !== false,
+          includeIngredientEnrichment:
+            opts.includeIngredientEnrichment === true,
+        });
       } catch (error) {
         throw dsldFailure("The label lookup", error);
       }
