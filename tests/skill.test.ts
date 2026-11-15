@@ -158,6 +158,41 @@ describe("agent skill", () => {
 });
 
 describe.each(["drug-product-information"])("%s skill", (name) => {
+  it("provides an adaptable product answer outline before lookup guidance", () => {
+    const { body } = readSkill(
+      new URL(`../skills/${name}/SKILL.md`, import.meta.url),
+    );
+    for (const category of [
+      "Overview",
+      "What’s in it",
+      "Forms and variants",
+      "How it’s used",
+      "Safety and interactions",
+      "What’s unclear",
+      "Sources",
+    ]) {
+      expect(body).toContain(`**${category}**`);
+    }
+    const composeAt = body.indexOf("## Compose the answer");
+    const evidenceAt = body.indexOf("## Find supporting evidence");
+    expect(composeAt).toBeGreaterThanOrEqual(0);
+    expect(evidenceAt).toBeGreaterThan(composeAt);
+    const lower = body.toLowerCase().replace(/\s+/g, " ");
+    for (const guidance of [
+      "merge, omit, rename, or add",
+      "empty",
+      "natrol melatonin",
+      "general melatonin",
+      "inline markdown links",
+      "host-native citations",
+    ]) {
+      expect(lower).toContain(guidance);
+    }
+    expect(lower).not.toContain(
+      "cite the upstream database or publisher and deep link for each material claim",
+    );
+  });
+
   it("has discoverable, safe guidance with valid tool references", async () => {
     const url = new URL(`../skills/${name}/SKILL.md`, import.meta.url);
     const { frontmatter, text } = readSkill(url);
