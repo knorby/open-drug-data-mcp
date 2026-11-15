@@ -23,8 +23,8 @@ interface SkillDocument {
 }
 
 /** Reads `SKILL.md` and splits its flat frontmatter from the body. */
-function readSkill(): SkillDocument {
-  const text = readFileSync(SKILL_URL, "utf8");
+function readSkill(url = SKILL_URL): SkillDocument {
+  const text = readFileSync(url, "utf8");
   const match = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)([\s\S]*)$/.exec(text);
   if (match === null) {
     throw new Error(
@@ -154,5 +154,42 @@ describe("agent skill", () => {
     const readme = readFileSync(README_URL, "utf8");
 
     expect(readme).toContain("skills/open-drug-data/SKILL.md");
+  });
+});
+
+describe.each(["drug-product-information"])("%s skill", (name) => {
+  it("has discoverable, safe guidance with valid tool references", async () => {
+    const url = new URL(`../skills/${name}/SKILL.md`, import.meta.url);
+    const { frontmatter, text } = readSkill(url);
+    expect(frontmatter.get("name")).toBe(name);
+    expect(frontmatter.get("description")).toMatch(/^Use when/);
+    expect(frontmatter.get("description")?.length).toBeLessThanOrEqual(1024);
+    expect(readFileSync(README_URL, "utf8")).toContain(
+      `skills/${name}/SKILL.md`,
+    );
+    expect(text).not.toMatch(/@knorby|-client\b/i);
+    for (const term of [
+      "not medical advice",
+      "variant",
+      "strength",
+      "dosage form",
+      "labeled",
+      "interactions",
+      "toxicity",
+      "not found in the consulted sources",
+      "deep link",
+    ])
+      expect(text.toLowerCase()).toContain(term);
+    const harness = await createTestClient();
+    try {
+      const registered = new Set(
+        (await harness.client.listTools()).tools.map((tool) => tool.name),
+      );
+      const mentioned = mentionedTools(text);
+      expect(mentioned.length).toBeGreaterThan(0);
+      expect(mentioned.filter((tool) => !registered.has(tool))).toEqual([]);
+    } finally {
+      await harness.close();
+    }
   });
 });

@@ -307,6 +307,9 @@ These rules are mandatory. Follow them strictly.
 
 ## Project: Open Drug Data MCP
 
+Repository-only agent skills live in `skills/<name>/SKILL.md`; they are not
+npm-published. `tests/skill.test.ts` checks their guidance for drift.
+
 Project-specific rules for this server. The template guardrails above remain
 in force.
 
