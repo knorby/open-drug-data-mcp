@@ -224,8 +224,8 @@ function ingredientRefOf(
  *
  * Concepts are fetched sequentially to stay polite to RxNorm. A concept the
  * API no longer returns is dropped rather than emitted without identity.
- * `anchorNdc` opts into the NDC crosswalk for each concept; its canonical
- * spelling leads the identifier list because it is the caller's entry point.
+ * `anchorNdc` carries the canonical NDC already verified by the id lookup.
+ * Full NDC crosswalks belong to explicit concept lookups, not search pages.
  */
 async function conceptProducts(
   client: NlmDrugsClient,
@@ -240,13 +240,7 @@ async function conceptProducts(
     const concept = await client.rxNorm.getConcept(rxcui, { signal });
     if (concept === undefined) continue;
 
-    const ndcs =
-      anchorNdc === undefined
-        ? undefined
-        : unique([
-            anchorNdc,
-            ...(await client.rxNorm.getNdcs(rxcui, { signal })),
-          ]);
+    const ndcs = anchorNdc === undefined ? undefined : [anchorNdc];
     const ref = productRefOf(concept.rxcui, concept.name, retrievedAt, ndcs);
     if (ref !== null) items.push(ref);
   }
@@ -497,13 +491,9 @@ async function ingredientNameGroup(
   const candidates = [...byRxcui.values()];
   const items: IngredientRef[] = [];
   for (const match of pageWindow(candidates, page)) {
-    const concept = await client.rxNorm.getConcept(match.rxcui, { signal });
-    const ref = ingredientRefOf(
-      concept?.rxcui ?? match.rxcui,
-      concept?.name ?? match.name,
-      retrievedAt,
-      { matchBasis: "approximate name match" },
-    );
+    const ref = ingredientRefOf(match.rxcui, match.name, retrievedAt, {
+      matchBasis: "approximate name match",
+    });
     if (ref !== null) items.push(ref);
   }
 
