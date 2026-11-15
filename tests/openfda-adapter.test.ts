@@ -585,17 +585,19 @@ describe("openFDA ingredient search", () => {
       (await adapter.searchIngredients?.("name", "glycerin", 1)) ?? [];
 
     expect(group?.items).toHaveLength(1);
-    expect(group?.items[0]?.name).toBe("Glycerin");
+    expect(group?.items[0]?.name).toBe("GLYCERIN");
     expect(group?.items[0]?.identifiers.unii).toBe("PDC6A3C0OX");
-    expect(group?.items[0]?.matchBasis).toBe("INCI name match");
+    expect(group?.items[0]?.matchBasis).toBe("exact crosswalk name match");
     expect(group?.hasMore).toBe(false);
 
     const urls = requests(fetchMock);
-    expect(urls).toHaveLength(2);
+    expect(urls).toHaveLength(1);
     expect(searchOf(urls[0] as URL)).toContain("substance_name.exact:GLYCERIN");
     expect(urls[0]?.searchParams.get("limit")).toBe("5");
     expect(urls[0]?.searchParams.get("skip")).toBe("0");
-    expect(urls[1]?.pathname).toBe("/other/substance.json");
+    expect(group?.items[0]?.source.url).toBe(
+      "https://api.fda.gov/other/unii.json?search=unii%3APDC6A3C0OX",
+    );
   });
 
   it("falls back to the analyzed crosswalk and finds the exact substance", async () => {
@@ -617,9 +619,13 @@ describe("openFDA ingredient search", () => {
     const [group] =
       (await adapter.searchIngredients?.("name", "GLYCERIN", 2)) ?? [];
 
-    expect(group?.items).toHaveLength(1);
-    expect(group?.items[0]?.name).toBe("Glycerin");
-    expect(group?.items[0]?.identifiers.unii).toBe("PDC6A3C0OX");
+    expect(group?.items).toHaveLength(5);
+    expect(
+      group?.items.find((item) => item.identifiers.unii === "PDC6A3C0OX"),
+    ).toMatchObject({
+      name: "GLYCERIN",
+      matchBasis: "exact crosswalk name match",
+    });
     expect(group?.page).toBe(2);
     expect(group?.hasMore).toBe(true);
 
@@ -629,9 +635,10 @@ describe("openFDA ingredient search", () => {
     expect(searchOf(urls[1] as URL)).toContain("substance_name:GLYCERIN");
     expect(searchOf(urls[1] as URL)).not.toContain("substance_name.exact:");
     expect(urls[1]?.searchParams.get("skip")).toBe("5");
+    expect(urls).toHaveLength(2);
   });
 
-  it("ranks name hits by INCI, exact, then prefix match", async () => {
+  it("reports crosswalk text rather than profile-based INCI matches", async () => {
     const crosswalk = fixture("unii-crosswalk-glycerin.json");
     const substances: Record<string, Substance | "empty" | null> = {
       "42ESM1DR47": {
@@ -672,14 +679,18 @@ describe("openFDA ingredient search", () => {
       (await adapter.searchIngredients?.("name", "GLYCERIN", 2)) ?? [];
 
     expect(group?.items.map((item) => item.identifiers.unii)).toEqual([
-      "N7YC58165T",
       "42ESM1DR47",
+      "587WKM3S9Q",
+      "N7YC58165T",
+      "7QQ1EE6RCP",
       "913VR40115",
     ]);
     expect(group?.items.map((item) => item.matchBasis)).toEqual([
-      "INCI name match",
-      "name prefix match",
-      "name differs from query",
+      "crosswalk name prefix match",
+      "crosswalk name differs from query",
+      "crosswalk name differs from query",
+      "crosswalk name differs from query",
+      "crosswalk name differs from query",
     ]);
     expect(group?.page).toBe(2);
     expect(group?.hasMore).toBe(true);
@@ -690,9 +701,10 @@ describe("openFDA ingredient search", () => {
     expect(urls[1]?.pathname).toBe("/other/unii.json");
     expect(urls[1]?.searchParams.get("skip")).toBe("5");
     expect(urls[1]?.searchParams.get("limit")).toBe("5");
+    expect(urls).toHaveLength(2);
   });
 
-  it("skips crosswalk entries without a UNII and missing substance records", async () => {
+  it("skips only crosswalk entries without a UNII, without validating via substance records", async () => {
     const { client, fetchMock } = clientFor((url) => {
       if (url.pathname === "/other/unii.json") {
         return jsonResponse({
@@ -711,12 +723,16 @@ describe("openFDA ingredient search", () => {
     const [group] =
       (await adapter.searchIngredients?.("inci", "GLYCERIN", 1)) ?? [];
 
-    expect(group?.items).toEqual([]);
+    expect(group?.items.map((item) => item.identifiers.unii)).toEqual([
+      "AAAAAAAAAA",
+      "BBBBBBBBBB",
+    ]);
+    expect(group?.items.every((item) => item.inciName === undefined)).toBe(
+      true,
+    );
     expect(group?.hasMore).toBe(false);
     const urls = requests(fetchMock);
-    expect(urls).toHaveLength(3);
-    expect(urls[1]?.searchParams.get("search")).toContain("AAAAAAAAAA");
-    expect(urls[2]?.searchParams.get("search")).toContain("BBBBBBBBBB");
+    expect(urls).toHaveLength(1);
   });
 
   it("turns a zero-match crosswalk into an empty group", async () => {
@@ -761,7 +777,7 @@ describe("openFDA ingredient search", () => {
     ).rejects.toThrow(/rejected the request/);
   });
 
-  it("sanitizes a per-UNII failure", async () => {
+  it("does not let an unused substance endpoint failure affect search", async () => {
     const { client } = clientFor((url) => {
       if (url.pathname === "/other/unii.json") {
         return jsonResponse({
@@ -773,10 +789,52 @@ describe("openFDA ingredient search", () => {
     });
     const adapter = createOpenFdaAdapter(client);
 
-    await expect(
-      adapter.searchIngredients?.("name", "GLYCERIN", 1),
-    ).rejects.toThrow(/rate limited/);
+    expect(
+      (await adapter.searchIngredients?.("name", "GLYCERIN", 1))?.[0]?.items,
+    ).toHaveLength(1);
   });
+
+  it.each([false, true])(
+    "maps five crosswalk hits with no per-hit calls (fallback %s)",
+    async (fallback) => {
+      const rows = Array.from({ length: 5 }, (_, index) => ({
+        substance_name: index === 0 ? "GLYCERIN" : `GLYCERIN ${index}`,
+        unii: `000000000${index}`,
+      }));
+      const { client, fetchMock } = clientFor((url) => {
+        if (url.pathname === "/other/unii.json") {
+          if (fallback && searchOf(url).includes("substance_name.exact:"))
+            return notFound();
+          return jsonResponse({
+            meta: { results: { skip: 0, limit: 5, total: 5 } },
+            results: rows,
+          });
+        }
+        return jsonResponse(fixture("substance-unii-glycerin.json"));
+      });
+      const [group] =
+        (await createOpenFdaAdapter(client).searchIngredients?.(
+          "inci",
+          "glycerin",
+          1,
+        )) ?? [];
+      expect(requests(fetchMock)).toHaveLength(fallback ? 2 : 1);
+      expect(
+        requests(fetchMock).every((url) => url.pathname === "/other/unii.json"),
+      ).toBe(true);
+      expect(
+        group?.items.map((item) => ({
+          name: item.name,
+          unii: item.identifiers.unii,
+        })),
+      ).toEqual(
+        rows.map((row) => ({ name: row.substance_name, unii: row.unii })),
+      );
+      expect(group?.items[0]?.matchBasis).toBe("exact crosswalk name match");
+      expect(group?.items[1]?.matchBasis).toBe("crosswalk name prefix match");
+      expect(group?.hasMore).toBe(true);
+    },
+  );
 });
 
 describe("openFDA substance ranking", () => {
