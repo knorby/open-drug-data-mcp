@@ -159,11 +159,13 @@ too.
   alone never merge records. Ingredients can join by UNII, RxCUI, dashed CAS,
   CID, or InChIKey; products by full package NDC, SPL set id, or UPC — not
   their ingredient RxCUI or application number.
-- Search enriches at most **five initial entities**, with **three concurrent
-  resolutions**, within one **45-second default deadline**. `sources` reports
+- Search defaults to lightweight evidence without identity resolution. Opt in
+  with `resolve_identities: true` to enrich at most **five initial entities**,
+  with **three concurrent resolutions**, within one **45-second default deadline**. `sources` reports
   `ok`, `error`, or `timeout`, page, `hasMore`, and `resultCount`. `coverage`
   reports entity/record counts, attempted/completed resolutions, and whether
-  the cap applied. `partial` signals failed/timed-out sources or incomplete
+  the cap applied. Unrequested resolution has zero counts and is not partial.
+  `partial` signals failed/timed-out sources or requested but incomplete
    enrichment, or response-budget omissions. Zero matches with `hasMore: true`
    is still a successful page.
 - For an existing source+id, call `drugdata_get_product` or

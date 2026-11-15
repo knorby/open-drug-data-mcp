@@ -204,6 +204,7 @@ it.each(["markdown", "json"])(
       arguments: {
         type: "name",
         query: "semaglutide",
+        resolve_identities: true,
         page: 2,
         response_format,
       },

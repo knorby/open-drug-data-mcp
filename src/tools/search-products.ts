@@ -34,7 +34,7 @@ import {
  */
 
 const DESCRIPTION =
-  "Search products across openFDA, DSLD, INKEEDecoder, RxNorm, and DailyMed. Start free text with type 'name'; use 'brand' deliberately for brand-only search, which covers fewer sources. If a full product name has no matches, retry type 'name' with only the brand (Natrol) or only the ingredient (melatonin); compare brand, variant, strength, and dosage form before selecting a record. Use ingredient, barcode, or ndc when appropriate, and pass category medication/supplement/cosmetic when known. Returns evidence-grouped entities with original records, confirmed links, source-attributed conflicts, unconfirmed candidates, and per-entity nextSteps. A product RxCUI or shared name alone does not merge products. For source+id use drugdata_get_product instead. Search enriches at most five entities, concurrency three, within a shared 45-second default deadline. Read partial, coverage, and sources (status ok/error/timeout); completed results survive a timeout. One page applies to every source and re-queries all of them; each source's hasMore is independent. Selectively fetch supplied URLs only when more page content is needed. No matches is normal, not an error.";
+  "Search products across openFDA, DSLD, INKEEDecoder, RxNorm, and DailyMed. Start free text with type 'name'; use 'brand' deliberately for brand-only search, which covers fewer sources. If a full product name has no matches, retry type 'name' with only the brand (Natrol) or only the ingredient (melatonin); compare brand, variant, strength, and dosage form before selecting a record. Use ingredient, barcode, or ndc when appropriate, and pass category medication/supplement/cosmetic when known. Returns evidence-grouped entities with original records, confirmed links, source-attributed conflicts, unconfirmed candidates, and per-entity nextSteps. A product RxCUI or shared name alone does not merge products. For source+id use drugdata_get_product instead. Default searches return lightweight evidence without identity resolution; resolve_identities: true opts in to enrichment of at most five entities, concurrency three, within the shared 45-second default deadline. Read partial, coverage, and sources (status ok/error/timeout); completed results survive a timeout. One page applies to every source and re-queries all of them; each source's hasMore is independent. Selectively fetch supplied URLs only when more page content is needed. No matches is normal, not an error.";
 
 const inputSchema = z.object({
   type: z
@@ -59,6 +59,12 @@ const inputSchema = z.object({
     .default(1)
     .describe(
       "Page number for the fan-out, starting at 1. One page applies to every source and re-queries all of them.",
+    ),
+  resolve_identities: z
+    .boolean()
+    .default(false)
+    .describe(
+      "Opt in to identity enrichment for at most five entities, concurrency three. Default false: return lightweight search evidence and resolution nextSteps.",
     ),
   response_format: z
     .enum(RESPONSE_FORMATS)
@@ -104,7 +110,14 @@ export function registerSearchProductsTool(
       },
     },
     async (
-      { type, query, category, page, response_format }: ProductSearchInput,
+      {
+        type,
+        query,
+        category,
+        page,
+        resolve_identities,
+        response_format,
+      }: ProductSearchInput,
       ctx,
     ) => {
       try {
@@ -120,7 +133,16 @@ export function registerSearchProductsTool(
             registry: resolved.registry,
             resolver: identity.resolver,
             timeoutMs: config.config.DRUGDATA_SEARCH_TIMEOUT_MS,
-          }).searchProducts({ type, query, category, page }, ctx.mcpReq.signal),
+          }).searchProducts(
+            {
+              type,
+              query,
+              category,
+              page,
+              resolveIdentities: resolve_identities,
+            },
+            ctx.mcpReq.signal,
+          ),
         );
         const bounded = boundEntitySearch(output, "product");
         const context: ZeroResultsContext = {

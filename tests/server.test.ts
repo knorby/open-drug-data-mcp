@@ -340,6 +340,7 @@ describe("server assembly", () => {
       expect(instructions).toContain(expected);
     }
     expect(instructions).not.toMatch(/@knorby|-client/i);
+    expect(instructions).toContain("resolve_identities");
   });
 
   it("registers a research_drug prompt that threads the input and context", async () => {

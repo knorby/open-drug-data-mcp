@@ -270,6 +270,7 @@ deliberate.
 
 | Flag | Tool | What it costs | Use it when |
 | --- | --- | --- | --- |
+| `resolve_identities` | Both search tools | Runs the identity chain for up to five initial entities, concurrency three, within the shared search deadline. Default `false`; healthy unenriched results are not partial. | Cross-source identity is needed for several search hits. Otherwise follow the selected entity's resolution `nextSteps`. |
 | `include_label_sections` | `drugdata_get_product` (DailyMed) | Extracts and returns SPL usage sections — dosage, directions, patient guidance. Large, often the biggest part of a response. Default `false`. | The task needs label instructions or patient-facing wording. Not for identity, brand, or ingredient-list questions. |
 | `resolve_ingredients` | `drugdata_resolve_identifiers` | Runs the full identity chain once per ingredient — many upstream requests on a multi-ingredient product. Graphs cover a prefix of the rows, capped at 20. Default `false`. | The product has one or a few ingredients and each needs its own cross-source identity. For long ingredient lists, resolve individual rows from `nextSteps` instead. |
 | `include_clinical` | `drugdata_get_ingredient` (DrugCentral) | Fetches indications, off-label uses, contraindications, and FAERS signals. Extra requests and often verbose. Default `false`. | The task is clinical or pharmacovigilance research. Not for identifying a structure or crosswalking an identifier. |

@@ -34,7 +34,7 @@ import {
  */
 
 const DESCRIPTION =
-  "Search ingredients across openFDA, CosIng, DrugCentral, RxNorm, PubChem, and INKEEDecoder. Start free text with type 'name'; use inci, unii, cas, ec, rxcui, or cid when that is the value you have. There is no ingredient category filter. Returns evidence-grouped entities with original records, confirmed links, source-attributed conflicts, unconfirmed candidates, and per-entity nextSteps. For source+id use drugdata_get_ingredient instead. Search enriches at most five entities, concurrency three, within a shared 45-second default deadline. Read partial, coverage, and sources (status ok/error/timeout); completed results survive a timeout. One page applies to every source and re-queries all of them; each source's hasMore is independent. Selectively fetch supplied URLs only when more page content is needed. No matches is normal, not an error.";
+  "Search ingredients across openFDA, CosIng, DrugCentral, RxNorm, PubChem, and INKEEDecoder. Start free text with type 'name'; use inci, unii, cas, ec, rxcui, or cid when that is the value you have. There is no ingredient category filter. Returns evidence-grouped entities with original records, confirmed links, source-attributed conflicts, unconfirmed candidates, and per-entity nextSteps. For source+id use drugdata_get_ingredient instead. Default searches return lightweight evidence without identity resolution; resolve_identities: true opts in to enrichment of at most five entities, concurrency three, within the shared 45-second default deadline. Read partial, coverage, and sources (status ok/error/timeout); completed results survive a timeout. One page applies to every source and re-queries all of them; each source's hasMore is independent. Selectively fetch supplied URLs only when more page content is needed. No matches is normal, not an error.";
 
 const inputSchema = z.object({
   type: z
@@ -54,6 +54,12 @@ const inputSchema = z.object({
     .default(1)
     .describe(
       "Page number for the fan-out, starting at 1. One page applies to every source and re-queries all of them.",
+    ),
+  resolve_identities: z
+    .boolean()
+    .default(false)
+    .describe(
+      "Opt in to identity enrichment for at most five entities, concurrency three. Default false: return lightweight search evidence and resolution nextSteps.",
     ),
   response_format: z
     .enum(RESPONSE_FORMATS)
@@ -107,7 +113,13 @@ export function registerSearchIngredientsTool(
       },
     },
     async (
-      { type, query, page, response_format }: IngredientSearchInput,
+      {
+        type,
+        query,
+        page,
+        resolve_identities,
+        response_format,
+      }: IngredientSearchInput,
       ctx,
     ) => {
       try {
@@ -123,7 +135,10 @@ export function registerSearchIngredientsTool(
             registry: resolved.registry,
             resolver: identity.resolver,
             timeoutMs: config.config.DRUGDATA_SEARCH_TIMEOUT_MS,
-          }).searchIngredients({ type, query, page }, ctx.mcpReq.signal),
+          }).searchIngredients(
+            { type, query, page, resolveIdentities: resolve_identities },
+            ctx.mcpReq.signal,
+          ),
         );
         const bounded = boundEntitySearch(output, "ingredient");
 
