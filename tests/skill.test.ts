@@ -3,10 +3,9 @@ import { afterEach, describe, expect, it } from "vitest";
 import { createTestClient, type TestHarness } from "./helpers.js";
 
 /**
- * The agent skill is documentation, so the only way it can go wrong silently
- * is drift: a renamed tool, a dropped disclaimer, or a frontmatter field a
- * host cannot load. These tests parse the real file and compare it with the
- * server's live `tools/list` catalog.
+ * These static drift checks cover frontmatter, guidance, and references to
+ * the server's live `tools/list` catalog. They do not prove that a consuming
+ * agent produces a useful answer; that needs scenario evaluation as well.
  *
  * The frontmatter parser is deliberately tiny: the skill keeps a flat YAML
  * header with one `key: value` per line, so a full YAML dependency would add
@@ -230,6 +229,46 @@ describe.each(["drug-product-information"])("%s skill", (name) => {
 });
 
 describe("drug-ingredient-information skill", () => {
+  it("provides a cosmetic-aware ingredient answer outline before lookup guidance", () => {
+    const { body } = readSkill(
+      new URL(
+        "../skills/drug-ingredient-information/SKILL.md",
+        import.meta.url,
+      ),
+    );
+    for (const category of [
+      "What it is",
+      "How and where it’s used",
+      "Products, forms, and amounts",
+      "Safety and regulatory context",
+      "Evidence and limitations",
+      "Sources",
+    ]) {
+      expect(body).toContain(`**${category}**`);
+    }
+    const composeAt = body.indexOf("## Compose the answer");
+    const evidenceAt = body.indexOf("## Find supporting evidence");
+    expect(composeAt).toBeGreaterThanOrEqual(0);
+    expect(evidenceAt).toBeGreaterThan(composeAt);
+    const lower = body.toLowerCase().replace(/\s+/g, " ");
+    for (const guidance of [
+      "merge, omit, rename, or add",
+      "empty",
+      "xanthan",
+      "skincare",
+      "cosing",
+      "inkeedecoder",
+      "product examples",
+      "inline markdown links",
+      "host-native citations",
+    ]) {
+      expect(lower).toContain(guidance);
+    }
+    expect(lower).not.toContain(
+      "cite the upstream database or publisher and its deep link for each material claim",
+    );
+  });
+
   it("covers identity, evidence, dosing and safety", async () => {
     const name = "drug-ingredient-information";
     const { frontmatter, text } = readSkill(
