@@ -391,6 +391,7 @@ described in [`AGENTS.md`](AGENTS.md).
 - [`skills/open-drug-data/SKILL.md`](https://github.com/knorby/open-drug-data-mcp/blob/main/skills/open-drug-data/SKILL.md) — an
   installable agent skill teaching the search → resolve → get loop.
 - [`skills/drug-product-information/SKILL.md`](skills/drug-product-information/SKILL.md) — structured, sourced product reports.
+- [`skills/drug-ingredient-information/SKILL.md`](skills/drug-ingredient-information/SKILL.md) — structured, sourced ingredient reports.
 
 ## License
 

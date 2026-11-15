@@ -193,3 +193,44 @@ describe.each(["drug-product-information"])("%s skill", (name) => {
     }
   });
 });
+
+describe("drug-ingredient-information skill", () => {
+  it("covers identity, evidence, dosing and safety", async () => {
+    const name = "drug-ingredient-information";
+    const { frontmatter, text } = readSkill(
+      new URL(`../skills/${name}/SKILL.md`, import.meta.url),
+    );
+    expect(frontmatter.get("name")).toBe(name);
+    expect(frontmatter.get("description")).toMatch(/^Use when/);
+    expect(frontmatter.get("description")?.length).toBeLessThanOrEqual(1024);
+    expect(readFileSync(README_URL, "utf8")).toContain(
+      `skills/${name}/SKILL.md`,
+    );
+    expect(text).not.toMatch(/@knorby|-client\b/i);
+    for (const term of [
+      "not medical advice",
+      "include_clinical",
+      "interactions",
+      "toxicity",
+      "not found in the consulted sources",
+      "deep link",
+      "incidence",
+      "causation",
+      "candidate",
+      "confidence",
+      "product labels",
+    ])
+      expect(text.toLowerCase()).toContain(term);
+    const harness = await createTestClient();
+    try {
+      const registered = new Set(
+        (await harness.client.listTools()).tools.map((tool) => tool.name),
+      );
+      const mentioned = mentionedTools(text);
+      expect(mentioned.length).toBeGreaterThan(0);
+      expect(mentioned.filter((tool) => !registered.has(tool))).toEqual([]);
+    } finally {
+      await harness.close();
+    }
+  });
+});
