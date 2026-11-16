@@ -17,8 +17,8 @@ workflow, and how to publish releases.
 ## Getting started
 
 ```bash
-git clone <repo-url>
-cd <repo-name>
+git clone https://github.com/knorby/open-drug-data-mcp.git
+cd open-drug-data-mcp
 nvm use              # or: fnm use
 npm install          # installs deps (prepare blocked by .npmrc ignore-scripts)
 npx husky            # sets up Husky hooks (run after npm install)
@@ -107,61 +107,78 @@ docs: update README with publish instructions
 
 ## Versioning and releases
 
-This repo uses [Changesets](https://github.com/changesets/changesets) for
-versioning. Versioning is **decoupled from merges** — you can merge multiple
-PRs and release them all at once.
+Releases are cut by a **version bump in a pull request**. Ordinary changes can
+merge without releasing; a PR that raises the version releases on merge.
 
-### Adding a changeset
+### Cutting a release
 
-Every PR that changes published output should include a changeset:
+In the release PR, update all of these together:
 
-```bash
-npx changeset
-```
+- `version` in `package.json` and `server.json`;
+- both root version fields in `package-lock.json` (`npm install --package-lock-only`
+  updates them);
+- `CHANGELOG.md` with the release entry.
 
-Select the bump type (patch/minor/major) and write a short summary. A new
-`.md` file appears in `.changeset/` — commit it alongside your code.
+`tests/metadata.test.ts` keeps the package and registry metadata consistent.
 
 ### Releasing
 
-**Automated release (staged):** the release workflow is kept at
-`workflow-templates/release.yml` — GitHub only runs workflows from
-`.github/workflows/`, so it is inactive until the repository is made public and
-the workflow is moved. Activate it with:
+**Automated release (default):** `.github/workflows/release.yml` runs on every
+push to `main`. A `check` job compares `package.json`'s version against npm:
 
-```bash
-git mv workflow-templates/release.yml .github/workflows/release.yml
-```
+- **version not on npm** (a merged bump) → the `release` job runs the metadata
+  suite, builds, smoke-tests, publishes to npm via OIDC, and creates the
+  `v<version>` GitHub Release;
+- **version already published** → the release job is skipped;
+- **retry** → `workflow_dispatch` re-runs the release half; `npm publish` and
+  GitHub Release creation are guarded against existing artifacts.
 
-Once active, it runs on every push to `main`. With no pending changesets it
-is a no-op; with changesets, it opens a "Version Packages" PR (`changeset
-version` bumps `package.json`, updates `CHANGELOG.md`, and removes the
-consumed changesets). Merging that PR publishes to npm, tags the release,
-and creates a GitHub Release.
+A separate `mcp-registry` job runs after every release outcome, including a
+skip or failure, so it can publish or backfill the Official MCP Registry record
+for an npm version that already exists. It uses GitHub OIDC and verifies the
+published record through the public API. See
+[`docs/publishing-registries.md`](docs/publishing-registries.md).
 
-Prerequisites (one-time, repository owner): a `release` environment in repo
-Settings → Environments; workflow permissions set to Read and write with PR
-creation allowed; a trusted publisher configured on npmjs.com (repository,
-workflow filename `release.yml`, environment `release` — must match exactly);
-and npm 2FA (`npm profile enable-2fa auth-and-writes`). npm requires a package
-to exist before it can link a trusted publisher, so the very first publish is
-manual:
+CI never writes to a branch and never opens a PR.
+
+**First publish (manual, required once):** npm requires a package to exist
+before it can link a trusted publisher, so `@knorby/open-drug-data-mcp` 0.1.0 is
+published by hand before the workflow can take over. Run these commands from
+the `0.1.0` release branch **before merging its PR**, so the newly active
+workflow does not race the manual publish:
 
 ```bash
 npm login
 npm pkg delete publishConfig.provenance   # provenance needs CI + a public repo
-npm run release
+npm run build
+npm pack --dry-run                        # confirm the file list first
+npm run release                           # build + npm publish
 npm pkg set publishConfig.provenance=true
-git push origin main --follow-tags
-gh release create vX.Y.Z --notes-from-tag
 ```
 
-**Manual release (if needed):**
+After the release PR merges, the workflow skips the existing npm version and
+publishes the MCP Registry record. Create the first GitHub Release manually:
+
 ```bash
-npx changeset version    # bumps package.json + generates CHANGELOG.md
-npm run release          # builds + publishes to npm
-git add . && git commit -m "chore: release" && git push
+gh release create v0.1.0 --target main --title "v0.1.0" --generate-notes
 ```
+
+**One-time setup after the first publish (repository owner):**
+
+1. Repo **Settings → Actions → General → Workflow permissions**: select
+   **Read and write permissions** (the workflow scopes the token per job).
+2. Repo **Settings → Environments**: create an environment named `release`.
+3. On npmjs.com, add a **trusted publisher** for the package. Values must
+   match the workflow exactly: this repository, workflow filename `release.yml`,
+   environment `release`.
+4. Enable npm 2FA: `npm profile enable-2fa auth-and-writes`.
+5. Activate the repository on [Codecov](https://codecov.io/gh/knorby/open-drug-data-mcp).
+   Coverage uploads use OIDC and need no token on a public repository.
+
+**Manual release (fallback):** after updating all version and changelog files,
+run `npm run release` to build and publish to npm. Create the GitHub Release
+and publish the MCP Registry metadata with `mcp-publisher` if the workflow is
+unavailable.
 
 ### Before publishing, always verify
 
@@ -180,19 +197,19 @@ npm pack --dry-run    # verify only dist/, README.md, CHANGELOG.md, LICENSE
   attestation linking the published package to the commit + workflow).
   Requires a public repo and publishing from CI; the manual first publish
   temporarily removes `publishConfig.provenance`.
-- **Scoped names** — use `@yourscope/package` names to prevent dependency
-  confusion attacks; `publishConfig.access: "public"` is set because scoped
-  packages default to restricted visibility.
+- **Scoped name** — `@knorby/open-drug-data-mcp` prevents dependency confusion;
+  `publishConfig.access: "public"` is set because scoped packages default to
+  restricted visibility.
 - **No secrets in the package** — the `files` field in `package.json`
   whitelists only `dist`, `README.md`, `CHANGELOG.md`, and `LICENSE`.
 
 ## Pull request process
 
 1. Create a branch from `main`.
-2. Make your changes + add a changeset (`npx changeset`).
+2. Make your changes. If the PR is meant to release, update the version files and changelog together.
 3. Ensure all checks pass: `npm run lint && npm run typecheck &&
    npm run test:coverage && npm run build && npm run test:smoke`.
 4. Open a PR against `main`. CI runs lint, typecheck, build, coverage tests,
-   the smoke test, package-content and stdout-purity checks, and `npm audit`,
-   plus the pre-commit suite (file hygiene + secret scanning).
-5. After review, merge. Release separately via changesets.
+   the smoke test, package-content and stdout-purity checks, Codecov upload,
+   and `npm audit`, plus the pre-commit suite (file hygiene + secret scanning).
+5. After review, merge. A version-bump PR releases on merge; other PRs do not.

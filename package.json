@@ -1,6 +1,7 @@
 {
   "name": "@knorby/open-drug-data-mcp",
-  "version": "0.0.0",
+  "mcpName": "io.github.knorby/open-drug-data-mcp",
+  "version": "0.1.0",
   "description": "A local MCP server for unified open drug, supplement, and cosmetic ingredient research over openFDA, CosIng, NLM, DrugCentral, DSLD, and INKEEDecoder.",
   "license": "Apache-2.0",
   "repository": {
@@ -45,7 +46,7 @@
     "inspect": "mcp-inspector --config inspector.config.json",
     "inspect:cli": "mcp-inspector --cli --config inspector.config.json --server local --method tools/list",
     "test:smoke": "mcp-inspector --cli --config inspector.config.json --server local --method tools/list",
-    "release": "npm run build && changeset publish",
+    "release": "npm run build && npm publish",
     "prepare": "husky"
   },
   "lint-staged": {
@@ -69,7 +70,6 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^2.6.6",
-    "@changesets/cli": "^3.0.3",
     "@commitlint/cli": "^21.2.4",
     "@commitlint/config-conventional": "^21.2.4",
     "@modelcontextprotocol/client": "^2.4.0",

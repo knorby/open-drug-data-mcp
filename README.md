@@ -1,5 +1,13 @@
 # Open Drug Data MCP
 
+[![Codecov](https://codecov.io/gh/knorby/open-drug-data-mcp/branch/main/graph/badge.svg)](https://codecov.io/gh/knorby/open-drug-data-mcp)
+[![Tests](https://github.com/knorby/open-drug-data-mcp/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/knorby/open-drug-data-mcp/actions/workflows/tests.yml)
+[![npm version](https://img.shields.io/npm/v/@knorby/open-drug-data-mcp.svg)](https://www.npmjs.com/package/@knorby/open-drug-data-mcp)
+[![MCP](https://img.shields.io/badge/MCP-server-6E56CF)](https://registry.modelcontextprotocol.io/v0.1/servers/io.github.knorby%2Fopen-drug-data-mcp/versions)
+[![Node](https://img.shields.io/badge/node-%3E%3D22-339933?logo=node.js&logoColor=white)](https://nodejs.org)
+[![TypeScript](https://img.shields.io/badge/TypeScript-7.0-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![License](https://img.shields.io/github/license/knorby/open-drug-data-mcp.svg)](https://github.com/knorby/open-drug-data-mcp/blob/main/LICENSE)
+
 One research interface over open drug, supplement, and cosmetic data. A local
 MCP server that searches public databases by the kind of value you have,
 resolves identifiers across them, fetches full records with citations, and
@@ -7,6 +15,65 @@ pulls literature and classification references.
 
 The server is read-only, runs over stdio, and is launched by an MCP host. It
 does not cache, mirror, or redistribute any dataset.
+
+## Quick start
+
+### With an MCP host
+
+Add the server to an MCP host. Most hosts accept a JSON block shaped like
+this (see your host's documentation if it nests servers under a different
+key):
+
+```json
+{
+  "mcpServers": {
+    "open-drug-data": {
+      "command": "npx",
+      "args": ["-y", "@knorby/open-drug-data-mcp"],
+      "env": {
+        "OPENFDA_API_KEY": "your-key",
+        "DSLD_API_KEY": "your-key"
+      }
+    }
+  }
+}
+```
+
+Both keys are optional. Omit the `env` block entirely if you have neither;
+keyless access works at a lower upstream rate limit.
+
+Run `drugdata_ping` after connecting. It reports the server version, which
+sources are enabled, and whether each source's optional key is configured —
+never a key value.
+
+### Agent skills
+
+```bash
+npx skills add knorby/open-drug-data-mcp
+```
+
+Installs the bundled skills for source-guided search → resolve → get research
+and structured, cited product and ingredient reports.
+
+### From a local checkout
+
+```bash
+npm install
+npm run build
+```
+
+Point the host at the built entrypoint instead:
+
+```json
+{
+  "mcpServers": {
+    "open-drug-data": {
+      "command": "node",
+      "args": ["/absolute/path/to/open-drug-data-mcp/dist/index.js"]
+    }
+  }
+}
+```
 
 ## Not medical advice
 
@@ -51,58 +118,6 @@ licenses, attribution requirements, and source caveats are in
 The loop is **search → resolve → get**, plus a reference step for literature
 and classification sources. Every search and resolution ends with
 `nextSteps`, so an agent can continue without inventing an identifier.
-
-## Quick start
-
-**Not yet published.** The manifest is still `0.0.0` and the release workflow
-is staged, so install from a local checkout for now. The `npx` configuration
-is the intended setup once the first release is published.
-
-### From a local checkout (current option)
-
-```bash
-npm install
-npm run build
-```
-
-```json
-{
-  "mcpServers": {
-    "open-drug-data": {
-      "command": "node",
-      "args": ["/absolute/path/to/open-drug-data-mcp/dist/index.js"]
-    }
-  }
-}
-```
-
-### After the first release
-
-Add the server to an MCP host. Most hosts accept a JSON block shaped like
-this (see your host's documentation if it nests servers under a different
-key):
-
-```json
-{
-  "mcpServers": {
-    "open-drug-data": {
-      "command": "npx",
-      "args": ["-y", "@knorby/open-drug-data-mcp"],
-      "env": {
-        "OPENFDA_API_KEY": "your-key",
-        "DSLD_API_KEY": "your-key"
-      }
-    }
-  }
-}
-```
-
-Both keys are optional. Omit the `env` block entirely if you have neither;
-keyless access works at a lower upstream rate limit.
-
-Run `drugdata_ping` after connecting. It reports the server version, which
-sources are enabled, and whether each source's optional key is configured —
-never a key value.
 
 ## Environment variables
 
@@ -199,7 +214,7 @@ arrays. Ingredient UNIIs appear when supplied by the source; default openFDA
 directory ingredient rows can lack identifiers. To request SPL label UNIIs,
 use `drugdata_resolve_identifiers` with `include_label_ingredients: true`.
 
-For the current unreleased search design, see
+For the search design, see
 [ADR-0006](docs/decisions/ADR-0006-entity-centric-search.md).
 
 ## Historical worked example: aspirin
@@ -333,7 +348,7 @@ pre-commit install       # file hygiene + secret scanning
 | `npm run build` | Build the ESM bundle and type declarations. |
 | `npm run dev` | Run from source with a watch loop. |
 | `npm test` | Run the Vitest suite. |
-| `npm run test:coverage` | Run tests with 100% thresholds on statements, branches, functions, and lines. |
+| `npm run test:coverage` | Run tests with 100% thresholds and LCOV output for Codecov. |
 | `npm run typecheck` | Type-check `src/` and `tests/`. |
 | `npm run lint` | Biome lint and formatting check. |
 | `npm run check` | Biome lint and format, writing changes. |
@@ -374,24 +389,22 @@ docs/decisions/       architecture decision records
 
 ## Releasing
 
-The MCP is private, in development, and has no released baseline. Do not add
-per-change changesets or migration notices during this stage. After the first
-release, use Changesets for changes that affect published output;
-`npx changeset version` updates the manifest and
-changelog, and `npm run release` builds and publishes.
+Published to npm as `@knorby/open-drug-data-mcp` from GitHub Actions with OIDC
+trusted publishing — no npm tokens involved. A release is a version bump in a
+PR: update `package.json`, `package-lock.json`, `server.json`, and
+`CHANGELOG.md` together. Merging an unpublished version publishes the package,
+creates the GitHub Release, and publishes the Official MCP Registry record.
 
-The GitHub Actions release workflow is intentionally staged at
-`workflow-templates/release.yml` and is inactive while the repository is
-private. Activation is a deliberate step after the public move:
-`git mv workflow-templates/release.yml .github/workflows/release.yml`, then
-configure the npm trusted publisher and the `release` environment as
-described in [`AGENTS.md`](AGENTS.md).
+See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the manual first publish and
+[`docs/publishing-registries.md`](docs/publishing-registries.md) for registry
+retry and verification details.
 
 ## Documentation
 
 - [`docs/SOURCES.md`](docs/SOURCES.md) — per-database coverage, terms,
   licenses, attribution, and update cadence.
 - [`docs/decisions/`](docs/decisions/) — architecture decision records.
+- [`docs/publishing-registries.md`](docs/publishing-registries.md) — npm and MCP Registry publishing and retry behavior.
 - [`AGENTS.md`](AGENTS.md) — contributor and agent instructions, sourcing
   policy, and release setup.
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) — development workflow and commit
