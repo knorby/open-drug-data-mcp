@@ -173,45 +173,6 @@ After each npm release, the separate `mcp-registry` job publishes or backfills
 the registry record and verifies it through the public API (see
 `docs/publishing-registries.md`).
 
-### One-time release setup (repository owner)
-
-Required **after** the manual first publish — the trusted publisher needs the
-package to exist on npm first
-([npm/cli#8544](https://github.com/npm/cli/issues/8544)).
-
-1. Repo **Settings → Actions → General → Workflow permissions**: select **Read
-   and write permissions** (the workflow scopes the token per job).
-2. Repo **Settings → Environments**: create an environment named `release`.
-3. On npmjs.com, add a **trusted publisher** for the package. Values must
-   match the workflow exactly: this repository, workflow filename
-   `release.yml`, environment `release`.
-4. Enable npm 2FA: `npm profile enable-2fa auth-and-writes`.
-5. Activate the repository on [Codecov](https://codecov.io/gh/knorby/open-drug-data-mcp);
-   CI uploads with OIDC and needs no token on a public repository.
-
-### First publish (manual)
-
-npm requires a package to exist before it can link a trusted publisher, so the
-very first publish is manual. Run it from the `0.1.0` release branch **before
-merging that PR**, so the newly active workflow does not race the manual
-publish:
-
-```bash
-npm login
-npm pkg delete publishConfig.provenance   # provenance needs CI + public repo
-npm run build
-npm pack --dry-run                        # confirm the file list first
-npm run release                           # build + npm publish
-npm pkg set publishConfig.provenance=true
-```
-
-After the release PR merges, the workflow skips the existing npm version and
-publishes the MCP Registry record. Create the first GitHub Release manually:
-
-```bash
-gh release create v0.1.0 --target main --title "v0.1.0" --generate-notes
-```
-
 ### Release failure quick reference
 
 | Symptom | Likely cause / fix |
@@ -231,8 +192,7 @@ gh release create v0.1.0 --target main --title "v0.1.0" --generate-notes
   (`npm profile enable-2fa auth-and-writes`) because no token needs an OTP.
 - **Provenance** — `publishConfig.provenance: true` in `package.json` enables
   npm provenance attestation (cryptographic link to commit + workflow).
-  Provenance requires publishing from CI on a **public** repository; the
-  manual first publish temporarily removes it (see "First publish").
+  Provenance requires publishing from CI on a **public** repository.
 - **Scoped names** — use `@knorby/package`-style scoped names to prevent
   dependency confusion attacks. Scoped packages default to restricted
   visibility, so `publishConfig.access: "public"` is set.
@@ -297,7 +257,7 @@ These rules are mandatory. Follow them strictly.
 - Treat `docs/` as living documentation. Create an ADR in `docs/decisions/`
   for significant design decisions.
 - Correct or remove incorrect ADRs. They describe the current design, not an
-  immutable history of unreleased decisions.
+  immutable history.
 
 ### Before declaring done
 
@@ -524,5 +484,4 @@ substring-based.
   `package-lock.json` version fields, `server.json`, and `CHANGELOG.md`. The
   active release workflow publishes npm, GitHub, and MCP Registry artifacts;
   see `docs/publishing-registries.md`.
-- Keep `docs/superpowers/` out of git. It is local planning scratch for a
-  repository that is destined to be public.
+- Keep `docs/superpowers/` out of git. It is local planning scratch.
