@@ -395,9 +395,9 @@ PR: update `package.json`, `package-lock.json`, `server.json`, and
 `CHANGELOG.md` together. Merging an unpublished version publishes the package,
 creates the GitHub Release, and publishes the Official MCP Registry record.
 
-See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the manual first publish and
-[`docs/publishing-registries.md`](docs/publishing-registries.md) for registry
-retry and verification details.
+See [`AGENTS.md`](AGENTS.md#first-publish-manual) for the manual first publish
+and [`docs/publishing-registries.md`](docs/publishing-registries.md) for
+registry retry and verification details.
 
 ## Documentation
 

@@ -3,7 +3,7 @@
 The npm package, GitHub Release, and [Official MCP Registry](https://registry.modelcontextprotocol.io)
 listing are published by `.github/workflows/release.yml` after a version-bump
 PR merges to `main`. The one-time manual first publish is the exception; see
-[`CONTRIBUTING.md`](../CONTRIBUTING.md).
+[`AGENTS.md`](../AGENTS.md#first-publish-manual).
 
 ## Version consistency
 
