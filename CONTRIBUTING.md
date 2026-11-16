@@ -1,7 +1,7 @@
 # Contributing
 
-Thanks for contributing! This guide covers getting set up, the development
-workflow, and how to publish releases.
+Thanks for contributing! This guide covers getting set up and the development
+workflow.
 
 ## Prerequisites
 
@@ -17,8 +17,8 @@ workflow, and how to publish releases.
 ## Getting started
 
 ```bash
-git clone <repo-url>
-cd <repo-name>
+git clone https://github.com/knorby/open-drug-data-mcp.git
+cd open-drug-data-mcp
 nvm use              # or: fnm use
 npm install          # installs deps (prepare blocked by .npmrc ignore-scripts)
 npx husky            # sets up Husky hooks (run after npm install)
@@ -102,97 +102,16 @@ Examples:
 ```
 feat(auth): add token refresh logic
 fix: handle null response from API
-docs: update README with publish instructions
+docs: update development setup
 ```
-
-## Versioning and releases
-
-This repo uses [Changesets](https://github.com/changesets/changesets) for
-versioning. Versioning is **decoupled from merges** — you can merge multiple
-PRs and release them all at once.
-
-### Adding a changeset
-
-Every PR that changes published output should include a changeset:
-
-```bash
-npx changeset
-```
-
-Select the bump type (patch/minor/major) and write a short summary. A new
-`.md` file appears in `.changeset/` — commit it alongside your code.
-
-### Releasing
-
-**Automated release (staged):** the release workflow is kept at
-`workflow-templates/release.yml` — GitHub only runs workflows from
-`.github/workflows/`, so it is inactive until the repository is made public and
-the workflow is moved. Activate it with:
-
-```bash
-git mv workflow-templates/release.yml .github/workflows/release.yml
-```
-
-Once active, it runs on every push to `main`. With no pending changesets it
-is a no-op; with changesets, it opens a "Version Packages" PR (`changeset
-version` bumps `package.json`, updates `CHANGELOG.md`, and removes the
-consumed changesets). Merging that PR publishes to npm, tags the release,
-and creates a GitHub Release.
-
-Prerequisites (one-time, repository owner): a `release` environment in repo
-Settings → Environments; workflow permissions set to Read and write with PR
-creation allowed; a trusted publisher configured on npmjs.com (repository,
-workflow filename `release.yml`, environment `release` — must match exactly);
-and npm 2FA (`npm profile enable-2fa auth-and-writes`). npm requires a package
-to exist before it can link a trusted publisher, so the very first publish is
-manual:
-
-```bash
-npm login
-npm pkg delete publishConfig.provenance   # provenance needs CI + a public repo
-npm run release
-npm pkg set publishConfig.provenance=true
-git push origin main --follow-tags
-gh release create vX.Y.Z --notes-from-tag
-```
-
-**Manual release (if needed):**
-```bash
-npx changeset version    # bumps package.json + generates CHANGELOG.md
-npm run release          # builds + publishes to npm
-git add . && git commit -m "chore: release" && git push
-```
-
-### Before publishing, always verify
-
-```bash
-npm run build
-npm pack --dry-run    # verify only dist/, README.md, CHANGELOG.md, LICENSE
-```
-
-## Publishing security
-
-- **Trusted publishing (OIDC)** — the release workflow publishes with an OIDC
-  token minted by GitHub Actions; there are no npm tokens (no `NPM_TOKEN`
-  secret). Compatible with 2FA (`npm profile enable-2fa auth-and-writes`)
-  because no token needs an OTP.
-- **Provenance** — this repo publishes with `--provenance` (cryptographic
-  attestation linking the published package to the commit + workflow).
-  Requires a public repo and publishing from CI; the manual first publish
-  temporarily removes `publishConfig.provenance`.
-- **Scoped names** — use `@yourscope/package` names to prevent dependency
-  confusion attacks; `publishConfig.access: "public"` is set because scoped
-  packages default to restricted visibility.
-- **No secrets in the package** — the `files` field in `package.json`
-  whitelists only `dist`, `README.md`, `CHANGELOG.md`, and `LICENSE`.
 
 ## Pull request process
 
 1. Create a branch from `main`.
-2. Make your changes + add a changeset (`npx changeset`).
+2. Make your changes.
 3. Ensure all checks pass: `npm run lint && npm run typecheck &&
    npm run test:coverage && npm run build && npm run test:smoke`.
 4. Open a PR against `main`. CI runs lint, typecheck, build, coverage tests,
-   the smoke test, package-content and stdout-purity checks, and `npm audit`,
-   plus the pre-commit suite (file hygiene + secret scanning).
-5. After review, merge. Release separately via changesets.
+   the smoke test, package-content and stdout-purity checks, Codecov upload,
+   and `npm audit`, plus the pre-commit suite (file hygiene + secret scanning).
+5. After review, merge.

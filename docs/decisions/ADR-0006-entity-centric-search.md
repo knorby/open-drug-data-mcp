@@ -60,8 +60,7 @@ limits and existing get tools as the selective detail path.
 
 ## Consequences
 
-The unreleased search interface returns `entities` and source metadata; there
-is no released consumer contract to migrate or version against.
+The search interface returns `entities` and source metadata.
 Evidence can remain ambiguous or conflict. A search may be partial even when
 its returned records are valid, and completed enrichment is not exhaustive
 database coverage. Bounding can omit trailing entities or slim the final entity,

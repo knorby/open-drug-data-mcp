@@ -1,0 +1,221 @@
+name: Release
+
+# Releases when a merged PR bumps the version. The `check` job compares
+# package.json's version against the npm registry; if it is unpublished, the
+# `release` job verifies distribution metadata, builds, publishes to npm via
+# OIDC, and creates the `v<version>` GitHub Release. The `mcp-registry` job
+# then publishes server.json after any release outcome, so an already-published
+# npm version can still be registered or backfilled.
+#
+# The version bump travels in the release PR — CI never writes to a branch
+# and never opens a PR. No PAT or repository secret: only the job-scoped
+# built-in GITHUB_TOKEN plus OIDC.
+#
+# Prereqs (unchanged, do not rename): the `release` environment and an npm
+# trusted publisher registered for THIS workflow filename (release.yml).
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  check:
+    name: Is the package version published?
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      unpublished: ${{ steps.version.outputs.unpublished }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: ".nvmrc"
+      - name: Check the registry for the package version
+        id: version
+        run: |
+          VERSION="$(node -p "require('./package.json').version")"
+          FOUND="$(npm view "@knorby/open-drug-data-mcp@${VERSION}" version 2>/dev/null || true)"
+          if [ -n "${FOUND}" ]; then UNPUBLISHED=false; else UNPUBLISHED=true; fi
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "unpublished=${UNPUBLISHED}" >> "$GITHUB_OUTPUT"
+          echo "package version ${VERSION}: unpublished=${UNPUBLISHED}"
+
+  release:
+    name: Publish and create the release
+    needs: check
+    # workflow_dispatch is the retry path: the publish step re-checks the
+    # registry and skips an already-published version; release creation is
+    # idempotent.
+    if: needs.check.outputs.unpublished == 'true' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: release
+    permissions:
+      contents: write # create the tag/GitHub Release (never pushes a branch)
+      id-token: write # OIDC trusted publishing + provenance
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: ".nvmrc"
+          cache: npm
+
+      # Node 24's bundled npm may not satisfy npm >= 11.5.1 for OIDC.
+      - name: Upgrade npm for OIDC trusted publishing
+        run: npm install -g npm@latest
+      - run: npm ci
+
+      # Refuses to publish drifted metadata: the release PR must bump
+      # package.json and server.json together.
+      - name: Verify distribution metadata
+        run: npx vitest run tests/metadata.test.ts
+
+      - run: npm run build
+      - run: npm run test:smoke
+
+      - name: Publish to npm
+        run: |
+          VERSION="$(node -p "require('./package.json').version")"
+          FOUND="$(npm view "@knorby/open-drug-data-mcp@${VERSION}" version 2>/dev/null || true)"
+          if [ -n "${FOUND}" ]; then
+            echo "already published (${FOUND}); release-only retry"
+          else
+            npm publish
+          fi
+
+      - name: Create the GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION="$(node -p "require('./package.json').version")"
+          if gh release view "v${VERSION}" >/dev/null 2>&1; then
+            echo "release v${VERSION} already exists"
+          else
+            gh release create "v${VERSION}" --title "v${VERSION}" --generate-notes
+          fi
+
+      # MCP Registry (registry.modelcontextprotocol.io) hosts metadata only;
+      # the npm package above is the artifact. The dedicated mcp-registry job
+      # publishes server.json independently, so a skipped or failed release
+      # attempt cannot strand an npm version without a registry record.
+  mcp-registry:
+    needs: [check, release]
+    name: Publish to the MCP Registry
+    if: always() && needs.check.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      MCP_PUBLISHER_VERSION: v1.8.9
+      VERSION: ${{ needs.check.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: ".nvmrc"
+
+      - name: Check the MCP Registry record
+        id: registry
+        run: |
+          REGISTRY_URL="https://registry.modelcontextprotocol.io/v0.1/servers/io.github.knorby%2Fopen-drug-data-mcp/versions/${VERSION}"
+          HTTP_STATUS="$(curl --silent --show-error --location --max-time 20 --retry 6 --retry-delay 5 --output registry-existing.json --write-out '%{http_code}' "$REGISTRY_URL")"
+          case "$HTTP_STATUS" in
+            200)
+              echo "registry record already published (${VERSION})"
+              echo "published=true" >> "$GITHUB_OUTPUT"
+              ;;
+            404)
+              echo "registry record missing (${VERSION})"
+              echo "published=false" >> "$GITHUB_OUTPUT"
+              ;;
+            *)
+              echo "unexpected registry status ${HTTP_STATUS} for ${VERSION}; refusing to publish" >&2
+              exit 1
+              ;;
+          esac
+
+      - name: Check published npm metadata
+        if: steps.registry.outputs.published == 'false'
+        run: |
+          for ATTEMPT in 1 2 3 4 5 6; do
+            if npm view "@knorby/open-drug-data-mcp@${VERSION}" version mcpName --json > npm.json; then
+              break
+            fi
+            if [ "$ATTEMPT" -eq 6 ]; then
+              echo "npm has not published ${VERSION} after ${ATTEMPT} attempts" >&2
+              exit 1
+            fi
+            sleep 5
+          done
+          node <<'NODE'
+          import assert from "node:assert/strict";
+          import { readFileSync } from "node:fs";
+
+          const server = JSON.parse(readFileSync("server.json", "utf8"));
+          const npm = JSON.parse(readFileSync("npm.json", "utf8"));
+          const version = process.env.VERSION;
+
+          assert.equal(npm.version, version);
+          assert.equal(server.version, version);
+          assert.equal(npm.mcpName, "io.github.knorby/open-drug-data-mcp");
+          assert.equal(server.name, "io.github.knorby/open-drug-data-mcp");
+          assert.equal(server.packages.length, 1);
+          assert.equal(server.packages[0].registryType, "npm");
+          assert.equal(server.packages[0].identifier, "@knorby/open-drug-data-mcp");
+          assert.equal(server.packages[0].version, version);
+          NODE
+
+      - name: Install cosign
+        if: steps.registry.outputs.published == 'false'
+        uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
+
+      - name: Download and verify registry publisher
+        if: steps.registry.outputs.published == 'false'
+        run: |
+          ARCHIVE="mcp-publisher_linux_amd64.tar.gz"
+          BASE="https://github.com/modelcontextprotocol/registry/releases/download/${MCP_PUBLISHER_VERSION}"
+          curl --fail --location --silent --show-error --max-time 60 --retry 6 --retry-delay 5 --output "$ARCHIVE" "$BASE/$ARCHIVE"
+          curl --fail --location --silent --show-error --max-time 60 --retry 6 --retry-delay 5 --output "$ARCHIVE.sigstore.json" "$BASE/$ARCHIVE.sigstore.json"
+          cosign verify-blob \
+            --bundle "$ARCHIVE.sigstore.json" \
+            --certificate-identity "https://github.com/modelcontextprotocol/registry/.github/workflows/release.yml@refs/tags/${MCP_PUBLISHER_VERSION}" \
+            --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+            "$ARCHIVE"
+          tar xzf "$ARCHIVE" mcp-publisher
+
+      - name: Validate registry manifest
+        if: steps.registry.outputs.published == 'false'
+        run: ./mcp-publisher validate
+
+      - name: Authenticate to MCP Registry
+        if: steps.registry.outputs.published == 'false'
+        run: ./mcp-publisher login github-oidc
+
+      - name: Publish registry metadata
+        if: steps.registry.outputs.published == 'false'
+        run: ./mcp-publisher publish
+
+      - name: Verify published registry record
+        if: steps.registry.outputs.published == 'false'
+        run: |
+          REGISTRY_URL="https://registry.modelcontextprotocol.io/v0.1/servers/io.github.knorby%2Fopen-drug-data-mcp/versions/${VERSION}"
+          curl --fail --location --silent --show-error --max-time 20 --retry 6 --retry-delay 5 --retry-all-errors --output registry.json "$REGISTRY_URL"
+          node scripts/check-registry-record.mjs server.json registry.json

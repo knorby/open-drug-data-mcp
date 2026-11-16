@@ -16,5 +16,5 @@
 - [ ] Type checking passes (`npm run typecheck`)
 - [ ] Tests pass (`npm test`)
 - [ ] Build succeeds (`npm run build`)
-- [ ] After the first release only: a changeset has been added (`npx changeset`) if this affects published output; not applicable during private unreleased development
+- [ ] If this is a release PR: `package.json`, `package-lock.json`, and `server.json` carry the same new version, and `CHANGELOG.md` is updated
 - [ ] Commit message follows [conventional commits](https://www.conventionalcommits.org/)
